@@ -77,12 +77,17 @@ main() {
   local dest=/Applications
   if [ ! -w "$dest" ]; then dest="$HOME/Applications"; mkdir -p "$dest" || fail "Couldn't create $dest."; fi
 
-  # A running copy has to close before it can be replaced.
+  # A running copy has to close before it can be replaced. Ask it first, in
+  # the background: its "Close the setup wizard?" prompt can hold the quit
+  # (and osascript would wait on it), so after a few seconds force it. The
+  # server keeps running either way, and the app resumes where it was.
   if /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1; then
     say "Closing the running copy of Gonka Host Setup..."
-    /usr/bin/osascript -e "tell application \"$APP_NAME\" to quit" </dev/null >/dev/null 2>&1 || true
+    /usr/bin/osascript -e "tell application \"$APP_NAME\" to quit" </dev/null >/dev/null 2>&1 &
     local i
-    for i in $(seq 1 20); do /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 0.5; done
+    for i in $(seq 1 10); do /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 0.5; done
+    /usr/bin/pkill -9 -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || true
+    for i in $(seq 1 10); do /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 0.5; done
   fi
 
   say "Installing into $dest..."

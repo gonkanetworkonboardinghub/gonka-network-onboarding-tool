@@ -85,8 +85,21 @@ jobs:
           cat ci/install-test.sh | bash 2>&1 | tee ci/install.log
           test -d "/Applications/Gonka Host Setup.app"
           sleep 25
-          pgrep -f "Gonka Host Setup.app/Contents/MacOS/" >/dev/null
+          pgrep -f "Gonka Host Setup.app/Contents/MacOS/" > ci/first.pid
           screencapture -x ci/screenshot-installed.png || true
+
+      - name: Running install.sh again replaces an open app and reopens it
+        run: |
+          set -e
+          FIRST=$(cat ci/first.pid)
+          cat ci/install-test.sh | bash 2>&1 | tee ci/reinstall.log
+          sleep 25
+          NOW=$(pgrep -f "Gonka Host Setup.app/Contents/MacOS/" || true)
+          echo "before: $FIRST  after: $NOW"
+          # (explicit ifs: bash's set -e ignores a failing `! command`)
+          if [ -z "$NOW" ] || [ "$NOW" = "$FIRST" ]; then echo "the app did not reopen as a new process"; exit 1; fi
+          if kill -0 "$FIRST" 2>/dev/null; then echo "the old copy is still running"; exit 1; fi
+          screencapture -x ci/screenshot-reinstalled.png || true
 
       - name: In-app updater replaces the installed app and reopens it
         run: |
@@ -94,8 +107,9 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           SHA=$(shasum -a 256 ci/mirror/app-arm64.zip | awk '{print $1}')
           APP="/Applications/Gonka Host Setup.app"
-          pkill -f "Gonka Host Setup.app/Contents/MacOS/" || true
+          pkill -9 -f "Gonka Host Setup.app/Contents/MacOS/" || true   # plain SIGTERM meets the close prompt
           sleep 3
+          if pgrep -f "Gonka Host Setup.app/Contents/MacOS/" >/dev/null; then echo "couldn't stop the app before the test"; exit 1; fi
           touch "$APP/Contents/Resources/ci-old-marker"
           cat > ci/update-check.js <<'EOF'
           const U = require(process.argv[2] + "/Contents/Resources/app.asar/src/updater.js");
