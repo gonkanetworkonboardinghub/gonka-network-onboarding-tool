@@ -121,11 +121,16 @@ jobs:
           EOF
           ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Gonka Host Setup" ci/update-check.js "$APP" "$VERSION" "$SHA"
           sleep 20
-          test ! -e "$APP/Contents/Resources/ci-old-marker"   # the old bundle was replaced
-          test ! -e "$APP.update" && test ! -e "$APP.old"     # nothing left behind
-          pgrep -f "Gonka Host Setup.app/Contents/MacOS/" >/dev/null   # and it reopened
-          echo "self-update swap OK"
+          echo "--- swap log ---"
+          cat "$(node -p "require('os').tmpdir()")/gonka-update.log" | tee ci/update-swap.log || echo "(no swap log)"
+          ls -la /Applications | grep -i gonka || true
+          fail=0
+          if [ -e "$APP/Contents/Resources/ci-old-marker" ]; then echo "FAIL: the old bundle is still in place"; fail=1; fi
+          if [ -e "$APP.update" ] || [ -e "$APP.old" ]; then echo "FAIL: leftovers next to the app"; fail=1; fi
+          if ! pgrep -fl "Gonka Host Setup.app/Contents/MacOS/"; then echo "FAIL: the app did not reopen"; fail=1; fi
           screencapture -x ci/screenshot-after-update.png || true
+          if [ "$fail" = 0 ]; then echo "self-update swap OK"; fi
+          exit $fail
 
       - uses: actions/upload-artifact@v4
         if: always()

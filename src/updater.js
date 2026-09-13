@@ -122,17 +122,27 @@ async function startMacUpdate(u, tmpDir, onProgress) {
   fs.rmSync(staged, { recursive: true, force: true });
   await run("/usr/bin/ditto", [path.join(unpacked, inner), staged]);
 
+  const log = path.join(tmpDir, "gonka-update.log");
   const swap = [
-    'pid="$1"; app="$2"; staged="$3"; work="$4"',
+    'pid="$1"; app="$2"; staged="$3"; work="$4"; log="$5"',
+    'exec >>"$log" 2>&1',
+    'echo "$(date) update: waiting for pid $pid to exit"',
     // Wait (up to 30 s) for the running app to quit.
     'for i in $(seq 1 150); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done',
     'rm -rf "$app.old"',
-    'if mv "$app" "$app.old" && mv "$staged" "$app"; then rm -rf "$app.old"; else [ -d "$app" ] || mv "$app.old" "$app"; fi',
+    'if mv "$app" "$app.old" && mv "$staged" "$app"; then rm -rf "$app.old"; echo "swapped in the new version"',
+    'else echo "swap failed, keeping the old version"; [ -d "$app" ] || mv "$app.old" "$app"; fi',
     'xattr -dr com.apple.quarantine "$app" 2>/dev/null',
     'rm -rf "$work"',
-    'open "$app"'
+    // Reopen. `open` can quietly do nothing while LaunchServices still thinks
+    // the old copy is running, so check, then insist, then launch it directly.
+    'running() { pgrep -f "$app/Contents/MacOS/" >/dev/null 2>&1; }',
+    'waitrun() { for i in $(seq 1 25); do running && return 0; sleep 0.4; done; return 1; }',
+    'open "$app"; if waitrun; then echo "reopened"; exit 0; fi',
+    'echo "open did not start it; trying open -n"; open -n "$app"; if waitrun; then echo "reopened (open -n)"; exit 0; fi',
+    'echo "starting the executable directly"; nohup "$app/Contents/MacOS/$(basename "$app" .app)" >/dev/null 2>&1 &'
   ].join("\n");
-  const child = spawn("/bin/bash", ["-c", swap, "gonka-update", String(process.pid), bundle, staged, work],
+  const child = spawn("/bin/bash", ["-c", swap, "gonka-update", String(process.pid), bundle, staged, work, log],
     { detached: true, stdio: "ignore" });
   await started(child);
   child.unref();
