@@ -1,0 +1,130 @@
+# Builds the macOS app (Apple silicon + Intel) on GitHub's Mac runners and
+# proves it works end to end before anything ships: the zips are intact and
+# ad-hoc signed, the wallet engine derives the same address as the official
+# CLI, install.sh installs and opens the app, and the in-app updater swaps
+# the installed bundle and reopens it.
+#
+# Triggered by scripts/release.js pushing a v<version> tag (or by hand from
+# the Actions tab). release.js downloads the "mac-build" artifact.
+name: Build macOS
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No install scripts: the app needs no native modules (ssh2 falls back
+      # to pure JS) and electron-builder downloads Electron itself.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build ad-hoc signed zips for arm64 and x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.build.npmRebuild=false; fs.writeFileSync('package.json', JSON.stringify(p, null, 2))"
+          npx electron-builder --mac --publish never
+
+      - name: Both apps unpack, verify their signature, and have the right CPU type
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p ci
+          for pair in arm64:arm64 x64:x86_64; do
+            arch=${pair%%:*}; cpu=${pair##*:}
+            rm -rf "ci/$arch"
+            ditto -x -k "dist/Gonka-Host-Setup-$VERSION-mac-$arch.zip" "ci/$arch"
+            codesign --verify --deep --strict "ci/$arch/Gonka Host Setup.app"
+            archs=$(lipo -archs "ci/$arch/Gonka Host Setup.app/Contents/MacOS/Gonka Host Setup")
+            echo "$arch: $archs"
+            [ "$archs" = "$cpu" ]
+          done
+
+      - name: Wallet engine inside the packaged app matches the official CLI
+        run: |
+          set -e
+          cat > ci/wallet-check.js <<'EOF'
+          const W = require(process.argv[2] + "/Contents/Resources/app.asar/src/services/wallet.js");
+          const words = Array(23).fill("abandon").concat("art").join(" ");   // public BIP-39 test phrase
+          const got = W.addressOf(W.pubOf(W.privFromMnemonic(words)));
+          const want = "gonka13wm6a6sea08j7auq63wy42l8fsrwd9jks89lt4";          // from inferenced keys add --recover
+          console.log("derived", got);
+          if (got !== want) { console.error("MISMATCH, expected " + want); process.exit(1); }
+          EOF
+          APP="$PWD/ci/arm64/Gonka Host Setup.app"
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Gonka Host Setup" ci/wallet-check.js "$APP"
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            APP="$PWD/ci/x64/Gonka Host Setup.app"
+            ELECTRON_RUN_AS_NODE=1 arch -x86_64 "$APP/Contents/MacOS/Gonka Host Setup" ci/wallet-check.js "$APP"
+          else
+            echo "Rosetta not available on this runner; Intel build checked structurally only."
+          fi
+
+      - name: install.sh installs from a local mirror and opens the app
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p ci/mirror
+          cp "dist/Gonka-Host-Setup-$VERSION-mac-arm64.zip" ci/mirror/app-arm64.zip
+          SHA=$(shasum -a 256 ci/mirror/app-arm64.zip | awk '{print $1}')
+          printf '{"app":{"mac":{"latest":"%s","arm64":{"url":"http://127.0.0.1:8765/app-arm64.zip","sha256":"%s"}}}}' "$VERSION" "$SHA" > ci/mirror/manifest.json
+          (cd ci/mirror && python3 -m http.server 8765 >/dev/null 2>&1 &)
+          sleep 2
+          sed 's#https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json#http://127.0.0.1:8765/manifest.json#' scripts/install.sh > ci/install-test.sh
+          cat ci/install-test.sh | bash 2>&1 | tee ci/install.log
+          test -d "/Applications/Gonka Host Setup.app"
+          sleep 25
+          pgrep -f "Gonka Host Setup.app/Contents/MacOS/" >/dev/null
+          screencapture -x ci/screenshot-installed.png || true
+
+      - name: In-app updater replaces the installed app and reopens it
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          SHA=$(shasum -a 256 ci/mirror/app-arm64.zip | awk '{print $1}')
+          APP="/Applications/Gonka Host Setup.app"
+          pkill -f "Gonka Host Setup.app/Contents/MacOS/" || true
+          sleep 3
+          touch "$APP/Contents/Resources/ci-old-marker"
+          cat > ci/update-check.js <<'EOF'
+          const U = require(process.argv[2] + "/Contents/Resources/app.asar/src/updater.js");
+          const u = { latest: process.argv[3], installer: "http://127.0.0.1:8765/app-arm64.zip", sha256: process.argv[4] };
+          console.log("bundle", U.macBundlePath(), "can self-update:", U.canSelfUpdate(u, "darwin"));
+          U.startMacUpdate(u, require("os").tmpdir(), () => {}).then(
+            () => { console.log("handed off to the swap"); process.exit(0); },
+            (e) => { console.error("FAILED:", e.message); process.exit(1); });
+          EOF
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Gonka Host Setup" ci/update-check.js "$APP" "$VERSION" "$SHA"
+          sleep 20
+          test ! -e "$APP/Contents/Resources/ci-old-marker"   # the old bundle was replaced
+          test ! -e "$APP.update" && test ! -e "$APP.old"     # nothing left behind
+          pgrep -f "Gonka Host Setup.app/Contents/MacOS/" >/dev/null   # and it reopened
+          echo "self-update swap OK"
+          screencapture -x ci/screenshot-after-update.png || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-checks
+          path: |
+            ci/*.png
+            ci/*.log
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: dist/Gonka-Host-Setup-*-mac-*.zip
+          if-no-files-found: error
+          retention-days: 14

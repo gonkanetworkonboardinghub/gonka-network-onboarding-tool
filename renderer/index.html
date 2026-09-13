@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>Gonka Host Setup</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <nav id="rail">
+      <div class="brand">
+        <div class="title">Gonka Host Setup</div>
+        <div class="sub" id="t-sub">from zero to earning node</div>
+      </div>
+      <div id="rail-steps"></div>
+      <div class="footer">
+        <select id="lang-pick" style="margin-bottom:8px; max-width:170px"></select>
+        <select id="theme-pick" style="margin-bottom:10px; max-width:170px">
+          <option value="grey">Dark — grey</option>
+          <option value="blue">Dark — blue</option>
+          <option value="light">Light</option>
+        </select>
+        <div><span id="t-needhelp">Need help?</span> <a href="#" id="link-discord">Gonka Discord</a> ·
+        <a href="#" id="link-faq">FAQ</a></div>
+        <div id="app-version" class="version-line"></div>
+      </div>
+    </nav>
+
+    <div id="epochbar"><div id="epoch-fill"></div><span id="epoch-text"></span></div>
+    <main id="stage" aria-live="polite"></main>
+
+    <section id="console">
+      <div class="bar" id="console-bar">
+        <span class="dot" id="console-dot"></span>
+        <span id="console-title">Activity log</span>
+        <span class="spacer"></span>
+        <span id="console-toggle">show ▲</span>
+      </div>
+      <pre id="console-out"></pre>
+      <form id="console-cmd" autocomplete="off">
+        <span id="console-prompt">not connected</span>
+        <input id="console-input" type="text" spellcheck="false"
+               placeholder="type a command to run on your server, e.g. docker ps" disabled>
+      </form>
+    </section>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+const call = (channel) => (args) => ipcRenderer.invoke(channel, args);
+
+contextBridge.exposeInMainWorld("gonka", {
+  onLog: (cb) => ipcRenderer.on("wizard:log", (_e, payload) => cb(payload)),
+  onUpdateProgress: (cb) => ipcRenderer.on("update:progress", (_e, payload) => cb(payload)),
+  allowClose: () => ipcRenderer.send("app:allowClose"),
+
+  knowledge: call("app:knowledge"),
+  platform: call("app:platform"),
+  updateState: call("app:updateState"),
+  installUpdate: call("app:installUpdate"),
+  openExternal: call("app:openExternal"),
+  pickFile: call("app:pickFile"),
+
+  connect: call("conn:connect"),
+  disconnect: call("conn:disconnect"),
+
+  scan: call("scan:run"),
+  fixPlan: call("fix:plan"),
+  fixRun: call("fix:run"),
+
+  ensureCli: call("keys:ensureCli"),
+  keyCreate: call("keys:create"),
+  keyImport: call("keys:import"),
+  keyShow: call("keys:show"),
+  grant: call("keys:grant"),
+  manualRegister: call("keys:manualRegister"),
+  deposit: call("keys:deposit"),
+  sequence: call("keys:sequence"),
+  sshKeygen: call("keys:sshKeygen"),
+  sshKeyInfo: call("keys:sshKeyInfo"),
+  keyNames: call("keys:names"),
+  resetKeyring: call("keys:resetKeyring"),
+
+  genEnv: call("config:generateEnv"),
+  rankConfigs: call("config:rankNodeConfigs"),
+  modelsIn: call("config:modelsIn"),
+
+  clone: call("deploy:clone"),
+  listNodeConfigs: call("deploy:listNodeConfigs"),
+  readRepoFile: call("deploy:readRepoFile"),
+  hardenPorts: call("deploy:hardenPorts"),
+  writeConfigs: call("deploy:writeConfigs"),
+  serverKeyName: call("deploy:serverKeyName"),
+  archPreflight: call("deploy:archPreflight"),
+  pull: call("deploy:pull"),
+  startCore: call("deploy:startCore"),
+  warmKeyExists: call("deploy:warmKeyExists"),
+  createWarmKey: call("deploy:createWarmKey"),
+  getConsensusKey: call("deploy:getConsensusKey"),
+  registerHost: call("deploy:register"),
+  launchAll: call("deploy:launchAll"),
+  downloadWeights: call("deploy:downloadWeights"),
+  containers: call("deploy:containers"),
+  nodeSync: call("deploy:nodeSync"),
+  mlnode: call("deploy:mlnode"),
+
+  seed: call("net:seed"),
+  models: call("net:models"),
+  participant: call("net:participant"),
+  balance: call("net:balance"),
+  epochParticipants: call("net:epochParticipants"),
+  recommendCollateral: call("net:recommendCollateral"),
+  collateralOf: call("net:collateralOf"),
+  repoGpuConfigs: call("net:repoGpuConfigs"),
+  probe: call("net:probe"),
+  nextPoc: call("net:nextPoc"),
+  modelActivity: call("net:modelActivity"),
+  releaseArch: call("net:releaseArch"),
+  chainHeight: call("net:chainHeight"),
+  termRun: call("term:run"),
+  termCwd: call("term:cwd"),
+  myEpochWeight: call("net:myEpochWeight")
+});
