@@ -1,5 +1,5 @@
 #!/bin/bash
-# Gonka Host Setup - one-line installer for macOS.
+# The Gonka Network Onboarding Tool - one-line installer for macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/install.sh | bash
 #
@@ -7,7 +7,7 @@
 #   1. reads manifest.json from this repository to learn the newest Mac version
 #   2. downloads that version for this Mac's chip (Apple silicon or Intel)
 #   3. checks the file's SHA-256 against the one published in manifest.json
-#   4. puts Gonka Host Setup in Applications and opens it
+#   4. puts The Gonka Network Onboarding Tool in Applications and opens it
 # Nothing else is downloaded, changed or collected, and no password is asked.
 #
 # Everything lives inside main(), called on the last line: when this arrives
@@ -16,7 +16,7 @@
 set -u
 
 MANIFEST_URL="https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json"
-APP_NAME="Gonka Host Setup"
+APP_NAME="The Gonka Network Onboarding Tool"
 
 say()  { printf '  %s\n' "$*"; }
 good() { printf '  \033[32m%s\033[0m\n' "$*"; }
@@ -35,7 +35,7 @@ json_get() {
 
 main() {
   printf '\n'
-  say "Gonka Host Setup installer"
+  say "$APP_NAME installer"
 
   [ "$(uname -s)" = "Darwin" ] || fail "This installer is for macOS. On Windows, use the PowerShell command from the download page."
 
@@ -82,7 +82,7 @@ main() {
   # (and osascript would wait on it), so after a few seconds force it. The
   # server keeps running either way, and the app resumes where it was.
   if /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1; then
-    say "Closing the running copy of Gonka Host Setup..."
+    say "Closing the running copy of $APP_NAME..."
     /usr/bin/osascript -e "tell application \"$APP_NAME\" to quit" </dev/null >/dev/null 2>&1 &
     local i
     for i in $(seq 1 10); do /usr/bin/pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 0.5; done
@@ -96,8 +96,8 @@ main() {
   # Came straight from GitHub over HTTPS and matches the published checksum.
   /usr/bin/xattr -dr com.apple.quarantine "$dest/$APP_NAME.app" 2>/dev/null || true
 
-  /usr/bin/open "$dest/$APP_NAME.app" </dev/null || fail "Installed, but couldn't open it. Open Gonka Host Setup from $dest."
-  good "Done! Gonka Host Setup is opening now. You can close this window."
+  /usr/bin/open "$dest/$APP_NAME.app" </dev/null || fail "Installed, but couldn't open it. Open $APP_NAME from $dest."
+  good "Done! $APP_NAME is opening now. You can close this window."
   say "Next time, open it from Applications or Launchpad. It keeps itself up to date."
   printf '\n'
 }

@@ -244,6 +244,8 @@ const overridable = {
     // Community-run explorer/dashboard (same site as the faucet) — usually the
     // fastest to update; participants list is the page people check for "am I in".
     communityDashboard: "https://gonka.gg/network/participants",
+    // The publisher's site, The Gonka Network Onboarding Hub (GNOH).
+    website: "https://thegonkanetworkonboardinghub.com",
     quickstart: "https://gonka.ai/docs/host/quickstart/",
     keyManagement: "https://gonka.ai/host/key-management/",
     multiModelPoc: "https://gonka.ai/docs/host/multi_model_poc/",

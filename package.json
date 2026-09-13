@@ -1,8 +1,8 @@
 {
   "name": "gonka-setup-wizard",
-  "productName": "Gonka Host Setup",
+  "productName": "The Gonka Network Onboarding Tool",
   "version": "1.0.3",
-  "description": "Guided desktop setup wizard for becoming a Gonka network host",
+  "description": "The Gonka Network Onboarding Tool (GNOT): guided tools for taking part in the Gonka network",
   "main": "main.js",
   "author": "The Gonka Network Onboarding Hub",
   "license": "MIT",
@@ -27,7 +27,7 @@
   },
   "build": {
     "appId": "ai.gonka.setupwizard",
-    "productName": "Gonka Host Setup",
+    "productName": "The Gonka Network Onboarding Tool",
     "files": [
       "main.js",
       "preload.js",
@@ -49,7 +49,7 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "icon": "build/icon.png",
-      "artifactName": "Gonka-Host-Setup-${version}-mac-${arch}.${ext}"
+      "artifactName": "Gonka-Network-Onboarding-Tool-${version}-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -67,6 +67,9 @@
         "deb"
       ],
       "category": "Utility"
+    },
+    "nsis": {
+      "artifactName": "Gonka-Network-Onboarding-Tool-Setup-${version}.${ext}"
     }
   },
   "gonkaMinSupported": "1.0.2",

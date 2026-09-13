@@ -39,12 +39,12 @@ const tag = `v${version}`;
 
 // The builds, each with the hash the manifest promises for it.
 const builds = [
-  { file: `Gonka-Host-Setup-Setup-${version}.exe`, sha: app.sha256 },
-  { file: "Gonka-Host-Setup.exe", sha: app.sha256 }
+  { file: `Gonka-Network-Onboarding-Tool-Setup-${version}.exe`, sha: app.sha256 },
+  { file: "Gonka-Network-Onboarding-Tool.exe", sha: app.sha256 }
 ];
 const mac = app.mac && app.mac.latest === version ? app.mac : null;
 if (mac) {
-  for (const arch of ["arm64", "x64"]) builds.push({ file: `Gonka-Host-Setup-${version}-mac-${arch}.zip`, sha: mac[arch].sha256 });
+  for (const arch of ["arm64", "x64"]) builds.push({ file: `Gonka-Network-Onboarding-Tool-${version}-mac-${arch}.zip`, sha: mac[arch].sha256 });
 }
 for (const b of builds) {
   const p = path.join(web, b.file);
@@ -69,7 +69,7 @@ if (exists) {
   gh(["release", "upload", tag, ...paths, "--repo", REPO, "--clobber"]);
 } else {
   console.log(`\nCreating release ${tag} and uploading ${paths.length} files…`);
-  gh(["release", "create", tag, ...paths, "--repo", REPO, "--title", `Gonka Host Setup ${version}`, "--notes", app.notes || `Gonka Host Setup ${version}`]);
+  gh(["release", "create", tag, ...paths, "--repo", REPO, "--title", `The Gonka Network Onboarding Tool ${version}`, "--notes", app.notes || `The Gonka Network Onboarding Tool ${version}`]);
 }
 const assets = JSON.parse(gh(["api", `repos/${REPO}/releases/tags/${tag}`, "--jq", "[.assets[] | {name, digest, state}]"]));
 for (const b of builds) {

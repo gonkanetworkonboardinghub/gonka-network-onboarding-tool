@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("gonka", {
   onLog: (cb) => ipcRenderer.on("wizard:log", (_e, payload) => cb(payload)),
   onUpdateProgress: (cb) => ipcRenderer.on("update:progress", (_e, payload) => cb(payload)),
   allowClose: () => ipcRenderer.send("app:allowClose"),
+  setCloseGuard: (on) => ipcRenderer.send("app:closeGuard", !!on),
 
   knowledge: call("app:knowledge"),
   platform: call("app:platform"),

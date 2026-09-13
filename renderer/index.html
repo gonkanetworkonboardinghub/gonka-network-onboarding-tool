@@ -4,13 +4,17 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
-  <title>Gonka Host Setup</title>
+  <title>The Gonka Network Onboarding Tool</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="on-home">
+  <!-- Home: the tool picker. Rendered by renderHome() in app.js. -->
+  <section id="home"></section>
+
   <div id="app">
     <nav id="rail">
       <div class="brand">
+        <a href="#" id="link-home" class="rail-home">← All tools</a>
         <div class="title">Gonka Host Setup</div>
         <div class="sub" id="t-sub">from zero to earning node</div>
       </div>
@@ -23,7 +27,7 @@
           <option value="light">Light</option>
         </select>
         <div><span id="t-needhelp">Need help?</span> <a href="#" id="link-discord">Gonka Discord</a> ·
-        <a href="#" id="link-faq">FAQ</a></div>
+        <a href="#" id="link-faq">FAQ</a> · <a href="#" id="link-hub">Onboarding Hub</a></div>
         <div id="app-version" class="version-line"></div>
       </div>
     </nav>

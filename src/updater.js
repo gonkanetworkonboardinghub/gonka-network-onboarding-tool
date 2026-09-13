@@ -99,7 +99,7 @@ function canSelfUpdate(u, platform = process.platform) {
  * it, and relaunches the new version.
  */
 async function startWindowsUpdate(u, tmpDir, onProgress) {
-  const dest = path.join(tmpDir, `Gonka-Host-Setup-${u.latest}.exe`);
+  const dest = path.join(tmpDir, `Gonka-Network-Onboarding-Tool-${u.latest}.exe`);
   await downloadVerified([u.installer, u.url], u.sha256, dest, onProgress);
   const child = spawn(dest, ["--updated"], { detached: true, stdio: "ignore", env: relaunchEnv() });
   await started(child);

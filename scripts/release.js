@@ -2,7 +2,6 @@
  * release.js — cut a new version, build it for Windows and macOS, stage the upload.
  *
  *   node scripts/release.js 1.1.0 --notes="What changed" --mac
- *   node scripts/release.js 1.1.0 --force          → every older copy is blocked
  *   node scripts/release.js 1.1.0 --mac=path/to/zips  (Mac builds made elsewhere)
  *   (no --mac: Windows only; Mac users stay on their current release)
  *
@@ -24,8 +23,8 @@
  * Both rely on manifest.json carrying the right URLs and hashes, which is
  * exactly what this script writes.
  *
- * Use --force only when running the old version would actually cost someone
- * money — that is the whole justification for locking people out.
+ * Every release is required: minSupported is always the new version, so
+ * every older copy is blocked until it updates (see src/update.js).
  */
 const fs = require("fs");
 const path = require("path");
@@ -35,7 +34,7 @@ const { execFileSync } = require("child_process");
 const root = path.join(__dirname, "..");
 const RELEASE_BASE = process.env.GONKA_RELEASE_BASE || "https://github.com/gonkanetworkonboardinghub/gonka-host-setup";
 const LIVE_MANIFEST = "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json";
-const MAC_WORKFLOW = "build-mac.yml";
+const MAC_WORKFLOW = "build.yml";
 // The GitHub CLI: on PATH, or where it was unpacked for this machine's user.
 const GH = (() => {
   const local = path.join(process.env.LOCALAPPDATA || "", "Programs", "gh", "bin", "gh.exe");
@@ -43,12 +42,11 @@ const GH = (() => {
 })();
 
 const version = process.argv[2];
-const force = process.argv.includes("--force");
 const notes = (process.argv.find((a) => a.startsWith("--notes=")) || "").replace("--notes=", "");
 const macArg = process.argv.find((a) => a === "--mac" || a.startsWith("--mac="));
 
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error('Usage: node scripts/release.js <x.y.z> [--force] [--notes="..."] [--mac | --mac=<dir>]');
+  console.error('Usage: node scripts/release.js <x.y.z> [--notes="..."] [--mac | --mac=<dir>]');
   process.exit(1);
 }
 
@@ -159,7 +157,7 @@ async function buildMacOnGitHub() {
   // install.ps1 download — it never changes once published, so it always
   // matches the manifest's checksum. The constant one is served by GitHub at
   // /releases/latest/download/<name>, so the website's direct link never changes.
-  const constName = "Gonka-Host-Setup.exe";
+  const constName = "Gonka-Network-Onboarding-Tool.exe";
   const fileName = exe.replace(/\s+/g, "-");   // GitHub turns spaces into dots
   const tag = `v${version}`;
   const download = (name) => `${RELEASE_BASE}/releases/download/${tag}/${name}`;
@@ -167,7 +165,7 @@ async function buildMacOnGitHub() {
   const manifest = {
     app: {
       latest: version,
-      minSupported: force ? version : (pkg.gonkaMinSupported || previous.version),
+      minSupported: version,   // every update is required
       url: `${RELEASE_BASE}/releases/latest/download/${constName}`,
       installer: download(fileName),
       sha256,
@@ -177,12 +175,9 @@ async function buildMacOnGitHub() {
 
   const macZips = [];
   if (macDir) {
-    const prior = await publishedMacBlock();
-    const mac = { latest: version, notes: notes || "" };
-    if (force) mac.minSupported = version;
-    else if (prior && prior.minSupported) mac.minSupported = prior.minSupported;
+    const mac = { latest: version, minSupported: version, notes: notes || "" };
     for (const arch of ["arm64", "x64"]) {
-      const name = `Gonka-Host-Setup-${version}-mac-${arch}.zip`;
+      const name = `Gonka-Network-Onboarding-Tool-${version}-mac-${arch}.zip`;
       const file = path.join(macDir, name);
       if (!fs.existsSync(file)) {
         restore();
@@ -206,7 +201,7 @@ async function buildMacOnGitHub() {
   // Clear out the previous release's builds so the folder only ever holds
   // what needs uploading now.
   for (const f of fs.readdirSync(web)) {
-    if (/^Gonka-Host-Setup-(Setup-.*\.exe|.*-mac-.*\.zip)$/.test(f)) fs.rmSync(path.join(web, f));
+    if (/^(Gonka-Host-Setup|Gonka-Network-Onboarding-Tool)(-Setup-.*\.exe|-.*-mac-.*\.zip|\.exe)$/.test(f)) fs.rmSync(path.join(web, f));
   }
   fs.copyFileSync(exePath, path.join(web, fileName));
   fs.copyFileSync(exePath, path.join(web, constName));
@@ -227,8 +222,6 @@ async function buildMacOnGitHub() {
   console.log("  2. GitHub → Code tab → upload manifest.json, install.ps1 and install.sh");
   console.log("     (always all three; an unchanged file is simply skipped by GitHub).");
   console.log("  Step 2 goes live the moment it's committed, so do it after step 1.");
-  console.log("\n" + (force
-    ? "minSupported = this version: every older copy is blocked until it updates."
-    : `minSupported stays ${manifest.app.minSupported}: older copies get a dismissible notice.`));
+  console.log("\nRequired update: every older copy is blocked until it updates to " + version + ".");
   console.log("────────────────────────────────────────────────────────");
 })();

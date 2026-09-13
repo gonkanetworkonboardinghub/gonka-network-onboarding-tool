@@ -1,6 +1,12 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
 const path = require("path");
 
+// Keep user data where every earlier version kept it. The app was called
+// "Gonka Host Setup" until 1.1.0 and Electron names this folder after the app,
+// so the rename would otherwise strand wallets, the SSH key, saved progress,
+// language and theme. Must run before anything touches userData.
+app.setPath("userData", path.join(app.getPath("appData"), "Gonka Host Setup"));
+
 const K = require("./src/knowledge");
 const { LocalDriver, SshDriver, localMachine, shq } = require("./src/executor");
 const scan = require("./src/services/scan");
@@ -31,7 +37,7 @@ function createWindow() {
     minWidth: 920,
     minHeight: 640,
     backgroundColor: "#0e131c",
-    title: "Gonka Host Setup",
+    title: "The Gonka Network Onboarding Tool",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -46,8 +52,10 @@ function createWindow() {
   });
 
   // Guard against accidentally closing mid-setup and losing an SSH session /
-  // progress. Skipped once the renderer signals setup is finished.
+  // progress. The renderer turns it off on the home screen (unless a server
+  // is still connected) and once a setup is finished.
   ipcMain.on("app:allowClose", () => { confirmClose = false; });
+  ipcMain.on("app:closeGuard", (_e, on) => { confirmClose = !!on; });
   win.on("close", (e) => {
     if (!confirmClose || win.isDestroyed()) return;
     const choice = dialog.showMessageBoxSync(win, {

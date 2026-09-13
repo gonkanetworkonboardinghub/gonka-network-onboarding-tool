@@ -1,4 +1,4 @@
-# Gonka Host Setup - one-line installer for Windows.
+# The Gonka Network Onboarding Tool - one-line installer for Windows.
 #
 #   irm https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/install.ps1 | iex
 #
@@ -33,7 +33,7 @@
   }
 
   Write-Host ''
-  Say 'Gonka Host Setup installer' 'Cyan'
+  Say 'The Gonka Network Onboarding Tool installer' 'Cyan'
 
   try {
     $m = (Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing -ErrorAction Stop).app
@@ -46,7 +46,7 @@
     return
   }
 
-  $dest = Join-Path $env:TEMP "Gonka-Host-Setup-$($m.latest).exe"
+  $dest = Join-Path $env:TEMP "Gonka-Network-Onboarding-Tool-$($m.latest).exe"
   $verified = $false
   Say "Downloading version $($m.latest)..."
   foreach ($url in @($m.installer, $m.url) | Where-Object { $_ }) {
@@ -79,7 +79,7 @@
   Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
 
   if ($p.ExitCode -eq 0) {
-    Say 'Done! Gonka Host Setup is opening now. You can close this window.' 'Green'
+    Say 'Done! The Gonka Network Onboarding Tool is opening now. You can close this window.' 'Green'
     Say 'Next time, open it from the Start menu. It keeps itself up to date.'
   } else {
     Say "The installer stopped with code $($p.ExitCode). Run the command again, or ask for help in Discord." 'Red'

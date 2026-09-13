@@ -1,0 +1,264 @@
+# Builds and proves each release before anything ships.
+#
+#   mac      Apple silicon + Intel zips (ad-hoc signed): they unpack and
+#            verify, the wallet engine derives the same address as the
+#            official CLI, install.sh installs and opens the app (also over an
+#            open copy), and the in-app updater swaps the bundle and reopens it.
+#   windows  A clean machine with the published 1.0.2 ("Gonka Host Setup")
+#            installed and open is updated exactly as the in-app updater does
+#            it: the app must come back as The Gonka Network Onboarding Tool
+#            with shortcuts renamed and user data (wallets, progress) intact.
+#            Then install.ps1 is run the way people run it.
+#
+# Triggered by scripts/release.js pushing a v<version> tag (or by hand from
+# the Actions tab). release.js downloads the "mac-build" artifact; the Windows
+# installer it ships is built locally.
+name: Build and test
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  APP: The Gonka Network Onboarding Tool
+  FILE: Gonka-Network-Onboarding-Tool
+
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No install scripts: the app needs no native modules (ssh2 falls back
+      # to pure JS) and electron-builder downloads Electron itself.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build ad-hoc signed zips for arm64 and x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.build.npmRebuild=false; fs.writeFileSync('package.json', JSON.stringify(p, null, 2))"
+          npx electron-builder --mac --publish never
+
+      - name: Both apps unpack, verify their signature, and have the right CPU type
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p ci
+          for pair in arm64:arm64 x64:x86_64; do
+            arch=${pair%%:*}; cpu=${pair##*:}
+            rm -rf "ci/$arch"
+            ditto -x -k "dist/$FILE-$VERSION-mac-$arch.zip" "ci/$arch"
+            codesign --verify --deep --strict "ci/$arch/$APP.app"
+            archs=$(lipo -archs "ci/$arch/$APP.app/Contents/MacOS/$APP")
+            echo "$arch: $archs"
+            [ "$archs" = "$cpu" ]
+          done
+
+      - name: Wallet engine inside the packaged app matches the official CLI
+        run: |
+          set -e
+          cat > ci/wallet-check.js <<'EOF'
+          const W = require(process.argv[2] + "/Contents/Resources/app.asar/src/services/wallet.js");
+          const words = Array(23).fill("abandon").concat("art").join(" ");   // public BIP-39 test phrase
+          const got = W.addressOf(W.pubOf(W.privFromMnemonic(words)));
+          const want = "gonka13wm6a6sea08j7auq63wy42l8fsrwd9jks89lt4";          // from inferenced keys add --recover
+          console.log("derived", got);
+          if (got !== want) { console.error("MISMATCH, expected " + want); process.exit(1); }
+          EOF
+          APPDIR="$PWD/ci/arm64/$APP.app"
+          ELECTRON_RUN_AS_NODE=1 "$APPDIR/Contents/MacOS/$APP" ci/wallet-check.js "$APPDIR"
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            APPDIR="$PWD/ci/x64/$APP.app"
+            ELECTRON_RUN_AS_NODE=1 arch -x86_64 "$APPDIR/Contents/MacOS/$APP" ci/wallet-check.js "$APPDIR"
+          else
+            echo "Rosetta not available on this runner; Intel build checked structurally only."
+          fi
+
+      - name: install.sh installs from a local mirror and opens the app
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p ci/mirror
+          cp "dist/$FILE-$VERSION-mac-arm64.zip" ci/mirror/app-arm64.zip
+          SHA=$(shasum -a 256 ci/mirror/app-arm64.zip | awk '{print $1}')
+          printf '{"app":{"mac":{"latest":"%s","arm64":{"url":"http://127.0.0.1:8765/app-arm64.zip","sha256":"%s"}}}}' "$VERSION" "$SHA" > ci/mirror/manifest.json
+          (cd ci/mirror && python3 -m http.server 8765 >/dev/null 2>&1 &)
+          sleep 2
+          sed 's#https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json#http://127.0.0.1:8765/manifest.json#' scripts/install.sh > ci/install-test.sh
+          cat ci/install-test.sh | bash 2>&1 | tee ci/install.log
+          test -d "/Applications/$APP.app"
+          sleep 25
+          pgrep -f "$APP.app/Contents/MacOS/" > ci/first.pid
+          screencapture -x ci/screenshot-installed.png || true
+
+      - name: Running install.sh again replaces an open app and reopens it
+        run: |
+          set -e
+          FIRST=$(cat ci/first.pid)
+          cat ci/install-test.sh | bash 2>&1 | tee ci/reinstall.log
+          sleep 25
+          NOW=$(pgrep -f "$APP.app/Contents/MacOS/" || true)
+          echo "before: $FIRST  after: $NOW"
+          # (explicit ifs: bash's set -e ignores a failing `! command`)
+          if [ -z "$NOW" ] || [ "$NOW" = "$FIRST" ]; then echo "the app did not reopen as a new process"; exit 1; fi
+          if kill -0 "$FIRST" 2>/dev/null; then echo "the old copy is still running"; exit 1; fi
+          screencapture -x ci/screenshot-reinstalled.png || true
+
+      - name: In-app updater replaces the installed app and reopens it
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          SHA=$(shasum -a 256 ci/mirror/app-arm64.zip | awk '{print $1}')
+          APPDIR="/Applications/$APP.app"
+          pkill -9 -f "$APP.app/Contents/MacOS/" || true   # plain SIGTERM meets the close prompt
+          sleep 3
+          if pgrep -f "$APP.app/Contents/MacOS/" >/dev/null; then echo "couldn't stop the app before the test"; exit 1; fi
+          touch "$APPDIR/Contents/Resources/ci-old-marker"
+          cat > ci/update-check.js <<'EOF'
+          const U = require(process.argv[2] + "/Contents/Resources/app.asar/src/updater.js");
+          const u = { latest: process.argv[3], installer: "http://127.0.0.1:8765/app-arm64.zip", sha256: process.argv[4] };
+          console.log("bundle", U.macBundlePath(), "can self-update:", U.canSelfUpdate(u, "darwin"));
+          U.startMacUpdate(u, require("os").tmpdir(), () => {}).then(
+            () => { console.log("handed off to the swap"); process.exit(0); },
+            (e) => { console.error("FAILED:", e.message); process.exit(1); });
+          EOF
+          ELECTRON_RUN_AS_NODE=1 "$APPDIR/Contents/MacOS/$APP" ci/update-check.js "$APPDIR" "$VERSION" "$SHA"
+          sleep 20
+          echo "--- swap log ---"
+          cat "$(node -p "require('os').tmpdir()")/gonka-update.log" | tee ci/update-swap.log || echo "(no swap log)"
+          fail=0
+          if [ -e "$APPDIR/Contents/Resources/ci-old-marker" ]; then echo "FAIL: the old bundle is still in place"; fail=1; fi
+          if [ -e "$APPDIR.update" ] || [ -e "$APPDIR.old" ]; then echo "FAIL: leftovers next to the app"; fail=1; fi
+          if ! pgrep -fl "$APP.app/Contents/MacOS/"; then
+            echo "FAIL: the app did not reopen (or quit right after)"; fail=1
+            ls -la ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i gonka || echo "(no crash reports)"
+          fi
+          screencapture -x ci/screenshot-after-update.png || true
+          if [ "$fail" = 0 ]; then echo "self-update swap OK"; fi
+          exit $fail
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-checks
+          path: |
+            ci/*.png
+            ci/*.log
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: dist/Gonka-Network-Onboarding-Tool-*-mac-*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build the Windows installer
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.build.npmRebuild=false; fs.writeFileSync('package.json', JSON.stringify(p, null, 2))"
+          npx electron-builder --win --publish never
+
+      - name: Updating an open 1.0.2 install renames the app, keeps user data, and reopens it
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node -p "require('./package.json').version"
+          $new = (Resolve-Path "dist/$env:FILE-Setup-$version.exe").Path
+          $dir = "$env:LOCALAPPDATA\Programs\gonka-setup-wizard"
+          $menu = [Environment]::GetFolderPath('Programs')
+          $desk = [Environment]::GetFolderPath('Desktop')
+          $data = "$env:APPDATA\Gonka Host Setup"
+          New-Item -ItemType Directory -Force ci | Out-Null
+
+          # What people have today: the published 1.0.2, installed the normal way.
+          $old = "$env:RUNNER_TEMP\old-setup.exe"
+          Invoke-WebRequest "https://github.com/gonkanetworkonboardinghub/gonka-host-setup/releases/download/v1.0.2/Gonka-Host-Setup-Setup-1.0.2.exe" -OutFile $old
+          Start-Process $old -ArgumentList '/S' -Wait
+          if (-not (Test-Path "$dir\Gonka Host Setup.exe")) { throw "1.0.2 did not install" }
+          "before: " + ((Get-ChildItem $menu, $desk -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
+          # Stand-in for a user's saved wallet.
+          New-Item -ItemType Directory -Force "$data\keyring\keyring-file" | Out-Null
+          Set-Content "$data\keyring\keyring-file\ci-marker.info" "keep me"
+
+          # The old app is open when the update runs, as with a real in-app update.
+          Start-Process "$dir\Gonka Host Setup.exe"
+          Start-Sleep 12
+          $p = Start-Process $new -ArgumentList '--updated' -PassThru
+          if (-not $p.WaitForExit(300000)) { throw "installer did not finish" }
+          Start-Sleep 20
+          "after: " + ((Get-ChildItem $menu, $desk -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
+
+          $fail = @()
+          if (-not (Test-Path "$dir\$env:APP.exe")) { $fail += "the new app isn't installed" }
+          if (Test-Path "$dir\Gonka Host Setup.exe") { $fail += "the old exe is still there" }
+          if (-not (Test-Path "$menu\$env:APP.lnk")) { $fail += "no Start menu shortcut under the new name" }
+          if (Test-Path "$menu\Gonka Host Setup.lnk") { $fail += "the old Start menu shortcut is still there" }
+          if (Test-Path "$desk\Gonka Host Setup.lnk") { $fail += "the old desktop shortcut is still there" }
+          if (Test-Path "$menu\$env:APP.lnk") {
+            $target = (New-Object -ComObject WScript.Shell).CreateShortcut("$menu\$env:APP.lnk").TargetPath
+            "Start menu shortcut -> $target"
+            if ($target -ne "$dir\$env:APP.exe") { $fail += "the Start menu shortcut points somewhere else" }
+          }
+          if ((Get-Content "$data\keyring\keyring-file\ci-marker.info" -ErrorAction SilentlyContinue) -ne "keep me") { $fail += "user data was lost" }
+          $uninstall = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | ForEach-Object { $_.GetValue('DisplayName') } | Where-Object { $_ -match 'Gonka' }
+          "installed apps list: $($uninstall -join ' | ')"
+          if (-not ($uninstall -match 'Onboarding Tool')) { $fail += "the installed-apps list doesn't show the new name" }
+          if ($uninstall -match 'Gonka Host Setup') { $fail += "the installed-apps list still shows the old name" }
+          if (-not (Get-Process -Name $env:APP -ErrorAction SilentlyContinue)) { $fail += "the app did not reopen under the new name" }
+          if (Get-Process -Name "Gonka Host Setup" -ErrorAction SilentlyContinue) { $fail += "the old app is still running" }
+          if (Test-Path "$env:APPDATA\$env:APP\Local Storage") { $fail += "the app started a new data folder instead of using the existing one" }
+          if ($fail) { $fail | ForEach-Object { "FAIL: $_" }; exit 1 }
+          "update from 1.0.2 OK"
+
+      - name: install.ps1, run the way people run it, installs and opens the app
+        run: |
+          $version = node -p "require('./package.json').version"
+          New-Item -ItemType Directory -Force ci\mirror | Out-Null
+          Copy-Item "dist/$env:FILE-Setup-$version.exe" ci\mirror\setup.exe
+          $sha = (Get-FileHash ci\mirror\setup.exe -Algorithm SHA256).Hash.ToLower()
+          "{`"app`":{`"latest`":`"$version`",`"minSupported`":`"$version`",`"installer`":`"http://127.0.0.1:8766/setup.exe`",`"sha256`":`"$sha`"}}" | Set-Content ci\mirror\manifest.json -Encoding ascii -NoNewline
+          (Get-Content scripts\install.ps1 -Raw).Replace('https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json', 'http://127.0.0.1:8766/manifest.json') | Set-Content ci\mirror\install.ps1 -Encoding ascii -NoNewline
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8766' -WorkingDirectory ci\mirror -PassThru -WindowStyle Hidden
+          Start-Sleep 3
+          Get-Process -Name $env:APP -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep 3
+          powershell.exe -NoProfile -ExecutionPolicy Restricted -Command "irm http://127.0.0.1:8766/install.ps1 | iex" *>&1 | Tee-Object ci\install-ps1.log
+          Start-Sleep 20
+          Stop-Process $server -ErrorAction SilentlyContinue
+          $log = Get-Content ci\install-ps1.log -Raw
+          $fail = @()
+          if ($log -notmatch 'Download verified') { $fail += "the download wasn't verified" }
+          if ($log -notmatch 'Done!') { $fail += "install.ps1 didn't finish" }
+          if (-not (Get-Process -Name $env:APP -ErrorAction SilentlyContinue)) { $fail += "the app didn't open" }
+          if ($fail) { $fail | ForEach-Object { "FAIL: $_" }; exit 1 }
+          "install.ps1 OK"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-checks
+          path: ci/*.log
+          retention-days: 14

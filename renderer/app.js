@@ -217,6 +217,18 @@ function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
+/**
+ * The step a saved session resumes at: the furthest point ever reached. Older
+ * sessions saved only the last-rendered step (which the resume walk-back
+ * itself demoted), so also reconstruct from the completed-steps list:
+ * everything marked done means the user got at least one step past the
+ * highest of them.
+ */
+function resumePoint(prev) {
+  if (!prev) return 0;
+  const doneMax = (prev.done || []).length ? Math.max(...prev.done) + 1 : 0;
+  return Math.min(STEPS.length - 1, Math.max(prev.step || 0, prev.furthest || 0, doneMax));
+}
 
 function stage(html) { $("#stage").innerHTML = html; }
 
@@ -306,14 +318,7 @@ RENDER.welcome = () => {
   // Offer to pick up an interrupted setup. The SSH session and any passphrase
   // can't be restored, so this restores the answers and sends them to Connect.
   const prev = loadSession();
-  // Where to resume: the furthest point ever reached. Older sessions saved
-  // only the last-rendered step (which the resume walk-back itself demoted),
-  // so also reconstruct from the completed-steps list: everything marked done
-  // means the user got at least one step past the highest of them.
-  const doneMax = prev && (prev.done || []).length ? Math.max(...prev.done) + 1 : 0;
-  const resumeTarget = prev
-    ? Math.min(STEPS.length - 1, Math.max(prev.step || 0, prev.furthest || 0, doneMax))
-    : 0;
+  const resumeTarget = resumePoint(prev);
   if (prev && resumeTarget > 1 && !S.connected) {
     S.furthest = Math.max(S.furthest || 0, resumeTarget);
     const when = new Date(prev.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -2027,6 +2032,7 @@ RENDER.collateral = () => {
 /* --- 12 Done ---------------------------------------------------------- */
 RENDER.done = () => {
   window.gonka.allowClose && window.gonka.allowClose();  // setup finished — no close-confirm needed
+  S.setupFinished = true;
   stage(`
     ${header("Complete", "Your node is live", `
       Registration is done, permissions are granted, and your services are running.`)}
@@ -2067,6 +2073,7 @@ function applyChrome() {
   document.documentElement.dir = window.I18N.lang() === "ar" ? "rtl" : "ltr";
   $("#t-sub").textContent = t("from zero to earning node");
   $("#t-needhelp").textContent = t("Need help?");
+  $("#link-home").textContent = t("← All tools");
   if (!S.consoleBusy) $("#console-title").textContent = t("Activity log");
   renderVersionLine();
 }
@@ -2099,6 +2106,104 @@ function translateShortStrings() {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Home — The Gonka Network Onboarding Tool's tool picker. Gonka Host  */
+/* Setup is the wizard above, unchanged; the other tools come later.   */
+/* ------------------------------------------------------------------ */
+const APP_NAME = "The Gonka Network Onboarding Tool";
+
+const languageOptions = () => window.I18N.langs.map((l) =>
+  `<option value="${l.id}" ${l.id === window.I18N.lang() ? "selected" : ""}>${l.label}</option>`).join("");
+
+function setLanguage(id) {
+  window.I18N.set(id);
+  $("#lang-pick").value = id;
+  applyChrome();
+  renderRail();
+  RENDER[STEPS[S.step].id]();   // re-render the current step in the new language, state intact
+  if (document.body.classList.contains("on-home")) renderHome();
+}
+
+function setTheme(value) {
+  THEME.set(value);
+  $("#theme-pick").value = value;
+  const h = $("#home-theme");
+  if (h) h.value = value;
+}
+
+function renderHome() {
+  const el = $("#home");
+  if (!el) return;
+  // A setup underway in this session, or one saved by an earlier run (the
+  // same "worth resuming" threshold the Welcome step uses).
+  const saved = resumePoint(loadSession());
+  const stepIdx = S.step > 0 ? S.step : (saved > 1 ? saved : 0);
+  const progress = stepIdx ? t(STEPS[stepIdx].label) : "";
+  el.innerHTML = `
+    <div class="home-wrap">
+      <header class="home-brand">
+        <div class="title">${APP_NAME}</div>
+        <div class="sub">GNOT · ${esc(t("by The Gonka Network Onboarding Hub"))}</div>
+      </header>
+      <h1>${esc(t("What would you like to do?"))}</h1>
+      <div class="tool-grid">
+        <button class="tool-card" id="tool-host">
+          <span class="tool-top">
+            <span class="led on"></span><span class="tool-name">Gonka Host Setup</span>
+            ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : ""}
+          </span>
+          <span class="tool-desc">${esc(t("Take a GPU server from bare metal to a registered, earning Gonka node, step by step."))}</span>
+          <span class="tool-go">${esc(progress ? t("Continue →") : t("Open →"))}</span>
+        </button>
+        <div class="tool-card soon" aria-disabled="true">
+          <span class="tool-top">
+            <span class="led"></span><span class="tool-name">Gonka Vote</span>
+            <span class="tool-badge">${esc(t("Coming soon"))}</span>
+          </span>
+          <span class="tool-desc">${esc(t("Vote on live Gonka proposals with your node, no command lines."))}</span>
+        </div>
+        <div class="tool-card more">
+          <span class="tool-top"><span class="tool-name">${esc(t("More tools coming"))}</span></span>
+          <span class="tool-desc">${esc(t("New ways to take part in the Gonka network are on the way."))}</span>
+        </div>
+      </div>
+      <footer class="home-foot">
+        <div>
+          <div class="pickers">
+            <select id="home-lang">${languageOptions()}</select>
+            <select id="home-theme">${$("#theme-pick").innerHTML}</select>
+          </div>
+          <div style="margin-top:10px">${esc(t("Need help?"))} <a href="#" data-doc="discord">Gonka Discord</a> ·
+            <a href="#" data-doc="faq">FAQ</a> · <a href="#" data-doc="website">Onboarding Hub</a></div>
+        </div>
+        <div class="version-line" id="home-version"></div>
+      </footer>
+    </div>`;
+  $("#tool-host").onclick = () => showHostSetup();
+  $("#home-lang").onchange = (e) => setLanguage(e.target.value);
+  const ht = $("#home-theme");
+  ht.value = THEME.get();
+  ht.onchange = () => setTheme(ht.value);
+  el.querySelectorAll("a[data-doc]").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs[a.dataset.doc] }); };
+  });
+  renderVersionLine();
+}
+
+function showHome() {
+  document.body.classList.add("on-home");
+  document.title = APP_NAME;
+  renderHome();
+  // Nothing to lose by closing from here, unless a server is still connected.
+  window.gonka.setCloseGuard(!!S.connected && !S.setupFinished);
+}
+
+function showHostSetup() {
+  document.body.classList.remove("on-home");
+  document.title = `Gonka Host Setup — ${APP_NAME}`;
+  window.gonka.setCloseGuard(!S.setupFinished);
+}
+
 (async function boot() {
   window.gonka.onLog(({ line, stream }) => logLine(line, stream));
   $("#console-bar").onclick = () => toggleConsole();
@@ -2110,28 +2215,24 @@ function translateShortStrings() {
   S.platform = (await api("platform")).platform;
   $("#link-discord").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.discord }); };
   $("#link-faq").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.faq }); };
+  $("#link-hub").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.website }); };
+  $("#link-home").onclick = (e) => { e.preventDefault(); showHome(); };
 
   // Theme: applied to <html> so the CSS variable blocks switch wholesale.
   // Chosen once, remembered forever — the setup can span days across restarts.
   const tp = $("#theme-pick");
   tp.value = THEME.get();
-  tp.onchange = () => THEME.set(tp.value);
+  tp.onchange = () => setTheme(tp.value);
 
   const lp = $("#lang-pick");
-  lp.innerHTML = window.I18N.langs.map((l) =>
-    `<option value="${l.id}" ${l.id === window.I18N.lang() ? "selected" : ""}>${l.label}</option>`).join("");
-  lp.onchange = () => {
-    window.I18N.set(lp.value);
-    applyChrome();
-    renderRail();
-    RENDER[STEPS[S.step].id]();   // re-render the current step in the new language, state intact
-  };
+  lp.innerHTML = languageOptions();
+  lp.onchange = () => setLanguage(lp.value);
   new MutationObserver(() => translateShortStrings()).observe($("#stage"), { childList: true, subtree: true });
 
   applyChrome();
   renderRail();
   go(0);
-  showPendingUpdateBar();
+  showHome();
 
   // Epoch countdown bar: tick locally every second, re-sync with the chain
   // every 2 minutes (also catches the rollover into a new epoch).
@@ -2216,16 +2317,13 @@ function initTerminal() {
 
 /* ------------------------------------------------------------------ */
 /* Update gate                                                         */
-/* A too-old copy is blocked outright, because the versions we have    */
-/* forced have all been ones where continuing costs real money (a      */
-/* stale CLI that can't register, gas set too low, a missing GPU       */
-/* check). Anything softer than that is a dismissible note.            */
+/* Every update is required: an outdated copy can't be used until it   */
+/* updates. Gonka changes often, and a stale setup tool fails in ways  */
+/* that cost people rented GPU time.                                   */
 /* ------------------------------------------------------------------ */
 // Installed copies on Windows and macOS download, verify and install updates
 // themselves (updater.js): no browser, so no SmartScreen/Gatekeeper prompt
 // and no hunting for the file. Anything else, or a failed attempt, gets the link.
-let pendingUpdateBar = null;   // optional-update note, shown once the first step has rendered
-
 async function checkForUpdate() {
   let u = null;
   try { u = await api("updateState"); } catch (_) { return false; }
@@ -2238,9 +2336,9 @@ async function checkForUpdate() {
       <div style="height:100vh; display:flex; align-items:center; justify-content:center; padding:40px">
         <div style="max-width:560px">
           <div class="step-eyebrow">${t("Update required")}</div>
-          <h1 style="font-size:26px; margin:0 0 10px">${t("A newer version of Gonka Host Setup is needed")}</h1>
-          <p class="lede">${t("You have version {have}; version {need} or newer is required. Older versions have bugs that can cost you money on a running node, so they're switched off rather than left to fail quietly.",
-            { have: esc(u.current), need: esc(u.minSupported || u.latest) })}</p>
+          <h1 style="font-size:26px; margin:0 0 10px">${t("A new version is ready")}</h1>
+          <p class="lede">${t("You have version {have}, and version {need} is out. Every update is required, so everyone runs the version that works with the Gonka network today.",
+            { have: esc(u.current), need: esc(u.latest) })}</p>
           ${u.notes ? `<div class="card"><h4>${t("What changed")}</h4><p class="small">${esc(u.notes)}</p></div>` : ""}
           <div class="btn-row">
             ${auto ? `<button class="primary" id="u-auto">${t("Update now")}</button>`
@@ -2260,34 +2358,7 @@ async function checkForUpdate() {
     $("#u-quit").onclick = () => { window.gonka.allowClose && window.gonka.allowClose(); window.close(); };
     return true;                                  // stop the wizard from booting
   }
-
-  if (u.state === "optional") {
-    // Non-blocking: a bar the user can dismiss and keep working. Held until
-    // boot has drawn the first step — stage() replaces #stage wholesale.
-    const bar = document.createElement("div");
-    bar.className = "card resume-bar";
-    bar.innerHTML = `
-      <p class="small" style="margin:0">${t("Version {v} is available (you have {have}).", { v: esc(u.latest), have: esc(u.current) })}
-        ${u.notes ? esc(u.notes) : ""}
-        <span id="u-opt-status"></span>
-        ${auto ? `<a href="#" id="u-auto-opt">${t("Update now")}</a>`
-          : u.url ? `<a href="#" id="u-get-opt">${t("Download")}</a>` : ""}
-        · <a href="#" id="u-dismiss">${t("dismiss")}</a></p>`;
-    const g = bar.querySelector("#u-get-opt");
-    if (g) g.onclick = (e) => { e.preventDefault(); api("openExternal", { url: u.url }); };
-    const a = bar.querySelector("#u-auto-opt");
-    if (a) a.onclick = (e) => { e.preventDefault(); runUpdate(u, a, bar.querySelector("#u-opt-status")); };
-    const d = bar.querySelector("#u-dismiss");
-    if (d) d.onclick = (e) => { e.preventDefault(); bar.remove(); };
-    pendingUpdateBar = bar;
-  }
   return false;
-}
-
-function showPendingUpdateBar() {
-  const stageEl = $("#stage");
-  if (pendingUpdateBar && stageEl) stageEl.insertBefore(pendingUpdateBar, stageEl.firstChild);
-  pendingUpdateBar = null;
 }
 
 async function runUpdate(u, trigger, status) {
@@ -2296,7 +2367,6 @@ async function runUpdate(u, trigger, status) {
   trigger.disabled = true;
   trigger.style.pointerEvents = "none";
   runUpdate.status = status;
-  runUpdate.active = true;
   if (!runUpdate.listening) {
     runUpdate.listening = true;
     window.gonka.onUpdateProgress(({ got, total }) => {
@@ -2313,7 +2383,6 @@ async function runUpdate(u, trigger, status) {
     runUpdate.done = true;
     status.textContent = t("Installing version {v} — the app will close and reopen by itself in a few seconds.", { v: u.latest });
   } catch (err) {
-    runUpdate.active = false;
     delete trigger.dataset.busy;
     trigger.disabled = false;
     trigger.style.pointerEvents = "";
@@ -2336,32 +2405,24 @@ function fmtReleaseDate(iso) {
 }
 
 function renderVersionLine() {
-  const el = $("#app-version");
   const u = S.update;
-  if (!el || !u || !u.current || runUpdate.active) return;   // don't wipe a download in progress
+  if (!u || !u.current) return;
+  // No "update available" state: an outdated copy never gets past the update gate.
   let led = "", status, tip;
-  if (u.state === "optional" || u.state === "required") {
-    led = "update";
-    status = `<a href="#" class="v-update">${esc(t("Update available"))}</a>`;
-    tip = t("Version {v} is available (you have {have}).", { v: u.latest, have: u.current });
-  } else if (u.checked) {
+  if (u.checked) {
     led = "ok";
     status = esc(t("Up to date"));
-    tip = t("This is the newest version of Gonka Host Setup.");
+    tip = t("This is the newest version of The Gonka Network Onboarding Tool.");
   } else {
     status = esc(t("Couldn't check for updates"));
     tip = t("The update check needs an internet connection. It runs again next time the app opens.");
   }
-  el.title = tip;
-  el.innerHTML = `
+  const html = `
     <div class="v-row"><span class="led ${led}"></span><span><span class="v-ver">v${esc(u.current)}</span> · <span class="v-status">${status}</span></span></div>
     ${u.released ? `<div class="v-date">${esc(t("Updated {date}", { date: fmtReleaseDate(u.released) }))}</div>` : ""}`;
-  const link = el.querySelector(".v-update");
-  if (link) {
-    link.onclick = (e) => {
-      e.preventDefault();
-      if (u.autoUpdate) runUpdate(u, link, el.querySelector(".v-status"));
-      else if (u.url) api("openExternal", { url: u.url });
-    };
+  // The rail footer (inside Gonka Host Setup) and the home screen.
+  for (const el of document.querySelectorAll("#app-version, #home-version")) {
+    el.title = tip;
+    el.innerHTML = html;
   }
 }

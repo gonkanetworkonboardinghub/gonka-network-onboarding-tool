@@ -19,11 +19,12 @@
  * Macs read the `mac` block, which has its own latest/minSupported so a
  * Windows-only release never nags Mac users about a version they can't get.
  *
- * Two levels on purpose. A hard block for every release trains people to
- * dread opening the app; raise `minSupported` only when running the old
- * version would actually cost someone money — which, on this project, has
- * been the common case (a stale CLI, gas set too low, a missing GPU check).
- * Otherwise leave it and they get a dismissible "update available" note.
+ * EVERY update is required: a copy older than `latest` can't be used until it
+ * updates (about a minute, progress kept). Gonka changes often, and an
+ * outdated setup tool fails in ways that cost people rented GPU time, so the
+ * publisher wants nobody on an old version. `minSupported` is still honoured
+ * (and release.js sets it to each new version) because copies up to 1.0.2
+ * only block on it.
  *
  * FAILS OPEN. If the manifest can't be fetched — site down, hotel wifi, DNS —
  * the app runs normally. Blocking on a network hiccup would strand someone
@@ -62,7 +63,7 @@ function forPlatform(app, platform, arch) {
  * @param {string} current  this build's version (app.getVersion())
  * @param {object} manifest the `app` section, or null/undefined when unknown
  * @param {{platform?:string, arch?:string}} [where] defaults to Windows
- * @returns {{state:"ok"|"optional"|"required", ...}}
+ * @returns {{state:"ok"|"required", ...}}
  */
 function evaluate(current, manifest, where = {}) {
   if (!manifest) return { state: "ok", current, checked: false };
@@ -79,11 +80,9 @@ function evaluate(current, manifest, where = {}) {
     notes: info.notes || "",
     state: "ok"
   };
-  if (info.minSupported && cmpVer(current, info.minSupported) < 0) {
+  if (cmpVer(current, info.latest) < 0 || (info.minSupported && cmpVer(current, info.minSupported) < 0)) {
     out.state = "required";
-    out.minSupported = info.minSupported;
-  } else if (cmpVer(current, info.latest) < 0) {
-    out.state = "optional";
+    out.minSupported = info.latest;
   }
   return out;
 }
