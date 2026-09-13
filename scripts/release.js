@@ -36,6 +36,11 @@ const root = path.join(__dirname, "..");
 const RELEASE_BASE = process.env.GONKA_RELEASE_BASE || "https://github.com/gonkanetworkonboardinghub/gonka-host-setup";
 const LIVE_MANIFEST = "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json";
 const MAC_WORKFLOW = "build-mac.yml";
+// The GitHub CLI: on PATH, or where it was unpacked for this machine's user.
+const GH = (() => {
+  const local = path.join(process.env.LOCALAPPDATA || "", "Programs", "gh", "bin", "gh.exe");
+  return fs.existsSync(local) ? local : "gh";
+})();
 
 const version = process.argv[2];
 const force = process.argv.includes("--force");
@@ -67,7 +72,7 @@ async function publishedMacBlock() {
 
 /** Commit, tag, push; wait for the Mac runner; download its zips. Returns their folder. */
 async function buildMacOnGitHub() {
-  try { sh("gh", ["auth", "status"]); } catch (_) {
+  try { sh(GH, ["auth", "status"]); } catch (_) {
     throw new Error("--mac needs the GitHub CLI, logged in (gh auth login).");
   }
   if (!fs.existsSync(path.join(root, ".git"))) throw new Error("--mac needs this folder to be the git repo that GitHub builds from.");
@@ -83,20 +88,22 @@ async function buildMacOnGitHub() {
   let runId = null;
   for (let i = 0; i < 40 && !runId; i++) {
     await sleep(6000);
-    const runs = JSON.parse(sh("gh", ["run", "list", "--workflow", MAC_WORKFLOW, "--limit", "10", "--json", "databaseId,headSha,createdAt"]));
+    const runs = JSON.parse(sh(GH, ["run", "list", "--workflow", MAC_WORKFLOW, "--limit", "10", "--json", "databaseId,headSha,createdAt"]));
     const mine = runs.filter((r) => r.headSha === commit).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (mine) runId = mine.databaseId;
   }
   if (!runId) throw new Error("The Mac build never started on GitHub. Check the Actions tab of the source repo.");
   console.log(`Mac build running (run ${runId}) — usually 6–10 minutes…`);
-  try {
-    execFileSync("gh", ["run", "watch", String(runId), "--exit-status", "--interval", "20"], { cwd: root, stdio: "inherit" });
-  } catch (_) {
-    throw new Error(`The Mac build failed. See: gh run view ${runId} --log-failed`);
-  }
+  // Asynchronously, so the Windows build keeps running in the meantime.
+  const code = await new Promise((resolve) => {
+    require("child_process").spawn(GH, ["run", "watch", String(runId), "--exit-status", "--interval", "30"], { cwd: root, stdio: "ignore" })
+      .on("exit", resolve).on("error", () => resolve(1));
+  });
+  if (code !== 0) throw new Error(`The Mac build failed. See: gh run view ${runId} --log-failed`);
+  console.log("Mac build finished and passed its checks.");
   const dir = path.join(root, "dist", `mac-${version}`);
   fs.rmSync(dir, { recursive: true, force: true });
-  sh("gh", ["run", "download", String(runId), "-n", "mac-build", "-D", dir]);
+  sh(GH, ["run", "download", String(runId), "-n", "mac-build", "-D", dir]);
   return dir;
 }
 
