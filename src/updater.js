@@ -67,6 +67,10 @@ async function downloadVerified(urls, sha256, dest, onProgress) {
 }
 
 const started = (child) => new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+// The environment for whatever relaunches the app. ELECTRON_RUN_AS_NODE must
+// not leak through: macOS's `open` passes the caller's environment on, and an
+// app started with it runs as bare Node and exits instead of opening a window.
+const relaunchEnv = () => { const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; return env; };
 const run = (file, args) => new Promise((resolve, reject) => {
   execFile(file, args, (err, _out, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve()));
 });
@@ -97,7 +101,7 @@ function canSelfUpdate(u, platform = process.platform) {
 async function startWindowsUpdate(u, tmpDir, onProgress) {
   const dest = path.join(tmpDir, `Gonka-Host-Setup-${u.latest}.exe`);
   await downloadVerified([u.installer, u.url], u.sha256, dest, onProgress);
-  const child = spawn(dest, ["--updated"], { detached: true, stdio: "ignore" });
+  const child = spawn(dest, ["--updated"], { detached: true, stdio: "ignore", env: relaunchEnv() });
   await started(child);
   child.unref();
 }
@@ -143,7 +147,7 @@ async function startMacUpdate(u, tmpDir, onProgress) {
     'echo "starting the executable directly"; nohup "$app/Contents/MacOS/$(basename "$app" .app)" >/dev/null 2>&1 &'
   ].join("\n");
   const child = spawn("/bin/bash", ["-c", swap, "gonka-update", String(process.pid), bundle, staged, work, log],
-    { detached: true, stdio: "ignore" });
+    { detached: true, stdio: "ignore", env: relaunchEnv() });
   await started(child);
   child.unref();
 }
