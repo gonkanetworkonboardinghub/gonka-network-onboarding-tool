@@ -5,6 +5,10 @@ A free app for Windows and macOS from [The Gonka Network Onboarding Hub](https:/
 - **Gonka Host Setup** takes a GPU server from bare metal to a registered, earning Gonka node, step by step.
 - **Gonka Vote** is coming soon: vote on live Gonka proposals with your node, no command lines.
 
+## Source code
+
+The full source code of the app is public for review at [gonkanetworkonboardinghub/gonka-network-onboarding-tool](https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool), including the build and test workflow that produces these releases.
+
 ## Install
 
 **Windows:** press the Windows key, type **PowerShell**, press Enter, then paste this and press Enter:

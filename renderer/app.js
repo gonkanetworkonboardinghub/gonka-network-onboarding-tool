@@ -546,7 +546,7 @@ RENDER.connect = () => {
       Enter the SSH details your provider gave you when the server started. The connection stays inside this app.`)}
     <div class="card">
       <label class="field" style="max-width:640px"><span class="lbl">${esc(t("Or paste the SSH command your provider shows — the fields below fill in automatically"))}</span>
-        <input type="text" id="f-sshcmd" class="mono" placeholder="ssh -i key sesterce@204.52.25.3"></label>
+        <input type="text" id="f-sshcmd" class="mono" placeholder="ssh -i key root@203.0.113.10"></label>
       <hr class="sep">
       <label class="field"><span class="lbl">Server address (IP or hostname)</span>
         <input type="text" id="f-host" class="mono" value="${esc(s.host)}" placeholder="e.g. 203.0.113.42"></label>
