@@ -2,7 +2,7 @@
 
 A free app for Windows and macOS from [The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com) that makes taking part in the Gonka network easy.
 
-- **Gonka Host Setup** takes a GPU server from bare metal to a registered, earning Gonka node, step by step.
+- **Gonka Host Setup** takes a GPU server from bare metal to a registered Gonka node, step by step.
 - **Gonka Vote** is coming soon: vote on live Gonka proposals with your node, no command lines.
 
 ## Source code
