@@ -1,8 +1,8 @@
-# Screenshots for the website's Download page, taken on fresh GitHub machines
-# (nothing personal on screen) while doing exactly what a new user does:
-# find the terminal, paste the install command, run it, see the app open.
-# Installs the PUBLISHED release from the public repo. Run by hand.
-name: Website screenshots
+# Screenshots of the app for the website and announcements, taken on a fresh
+# GitHub Windows machine (nothing personal on screen). Installs the PUBLISHED
+# release with the real one-line command, then captures the home screen and
+# Gonka Host Setup's first step with live network data. Run by hand.
+name: App screenshots
 
 on:
   workflow_dispatch:
@@ -27,126 +27,57 @@ jobs:
           New-Item -ItemType Directory -Force shots | Out-Null
           $helpers = @'
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool r); public struct RECT { public int Left, Top, Right, Bottom; } }'
-          function Shot($name) {
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-            $g = [System.Drawing.Graphics]::FromImage($bmp)
-            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-            $bmp.Save("shots\$name.png"); $g.Dispose(); $bmp.Dispose()
-            "shot $name ($($b.Width)x$($b.Height))"
+          Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); public struct RECT { public int Left, Top, Right, Bottom; } }'
+          function AppWindow {
+            Get-Process -Name $env:APP -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
           }
-          function Rect($proc) {
-            $p = Get-Process -Name $proc -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-            if (-not $p) { return "no window for $proc" }
+          # Saves just the app window (inside Windows 11's invisible 8px borders).
+          function ShotApp($name) {
+            $p = AppWindow
+            if (-not $p) { "no app window"; return }
+            [W]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+            Start-Sleep 1
             $r = New-Object W+RECT; [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
-            "$proc window: left=$($r.Left) top=$($r.Top) right=$($r.Right) bottom=$($r.Bottom)"
+            $x = $r.Left + 8; $y = $r.Top + 1; $w = ($r.Right - 8) - $x; $h = ($r.Bottom - 8) - $y
+            $bmp = New-Object System.Drawing.Bitmap $w, $h
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($x, $y, 0, 0, $bmp.Size)
+            $bmp.Save("shots\$name.png"); $g.Dispose(); $bmp.Dispose()
+            "shot $name ${w}x${h} at $x,$y"
           }
-          $wsh = New-Object -ComObject WScript.Shell
+          function ClickInApp($dx, $dy) {
+            $p = AppWindow
+            $r = New-Object W+RECT; [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
+            [W]::SetCursorPos($r.Left + 8 + $dx, $r.Top + 1 + $dy) | Out-Null
+            Start-Sleep -Milliseconds 300
+            [W]::mouse_event(2, 0, 0, 0, 0); [W]::mouse_event(4, 0, 0, 0, 0)
+            [W]::SetCursorPos(5, 5) | Out-Null
+          }
           '@
           Set-Content -Path shots\helpers.ps1 -Value $helpers
 
-      - name: 1. Search the Start menu for PowerShell
+      - name: Install with the one-line command, like a new user
         run: |
+          powershell.exe -NoProfile -Command "irm https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/install.ps1 | iex"
           . .\shots\helpers.ps1
-          (New-Object -ComObject Shell.Application).MinimizeAll()
-          Start-Sleep 3
-          $wsh.SendKeys('^{ESC}')
-          Start-Sleep 3
-          $wsh.SendKeys('powershell')
-          Start-Sleep 5
-          Shot "win-1-start-search"
-
-      - name: 2. Open it and paste the command
-        run: |
-          . .\shots\helpers.ps1
-          $wsh.SendKeys('~')
-          Start-Sleep 6
-          $p = Get-Process powershell | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object StartTime | Select-Object -Last 1
-          if ($p) {
-            [W]::MoveWindow($p.MainWindowHandle, 160, 120, 1100, 620, $true) | Out-Null
-            [W]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
-          } else { "no PowerShell window opened from the Start menu" }
-          Start-Sleep 1
-          $wsh.SendKeys('cd \~')
-          Start-Sleep 1
-          $wsh.SendKeys('cls~')
-          Start-Sleep 2
-          Set-Clipboard -Value 'irm https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/install.ps1 | iex'
-          $wsh.SendKeys('^v')
-          Start-Sleep 3
-          Rect powershell
-          Shot "win-2-pasted"
-
-      - name: 3. Press Enter and let it install
-        run: |
-          . .\shots\helpers.ps1
-          $wsh.SendKeys('~')
-          $deadline = (Get-Date).AddMinutes(8)
-          while ((Get-Date) -lt $deadline -and -not (Get-Process -Name $env:APP -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })) { Start-Sleep 3 }
+          $deadline = (Get-Date).AddMinutes(5)
+          while ((Get-Date) -lt $deadline -and -not (AppWindow)) { Start-Sleep 3 }
           Start-Sleep 15
-          Rect $env:APP
-          Shot "win-4-app-home"
-          $app = Get-Process -Name $env:APP -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-          if ($app) { [W]::ShowWindow($app.MainWindowHandle, 6) | Out-Null }
-          Start-Sleep 3
-          Rect powershell
-          Shot "win-3-done"
+
+      - name: Home screen
+        run: |
+          . .\shots\helpers.ps1
+          ShotApp "app-1-home"
+
+      - name: Gonka Host Setup, first step with live network data
+        run: |
+          . .\shots\helpers.ps1
+          ClickInApp 245 330
+          Start-Sleep 20
+          ShotApp "app-2-host-setup"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: windows-shots
-          path: shots/*.png
-
-  mac:
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - name: Write the scripted steps
-        run: |
-          mkdir -p shots
-          cat > shots/prompt.txt <<'EOF'
-          PROMPT='%~ %% '; clear
-          EOF
-          printf '%s' 'curl -fsSL https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/install.sh | bash' > shots/command.txt
-
-      - name: 1. Spotlight search for Terminal
-        run: |
-          osascript -e 'tell application "System Events" to keystroke space using command down' || echo "keystroke blocked"
-          sleep 2
-          osascript -e 'tell application "System Events" to keystroke "Terminal"' || true
-          sleep 4
-          screencapture -x shots/mac-1-spotlight.png
-
-      - name: 2. Open Terminal and paste the command
-        run: |
-          osascript -e 'tell application "System Events" to key code 36' || true
-          sleep 6
-          osascript -e 'tell application "Terminal" to activate' -e 'tell application "Terminal" to set bounds of front window to {260, 160, 1360, 760}' || true
-          sleep 1
-          sed -e 's/^ *//' shots/prompt.txt | tr -d '\n' | pbcopy
-          osascript -e 'tell application "System Events" to keystroke "v" using command down' -e 'delay 0.5' -e 'tell application "System Events" to key code 36' || true
-          sleep 2
-          pbcopy < shots/command.txt
-          osascript -e 'tell application "System Events" to keystroke "v" using command down' || true
-          sleep 3
-          screencapture -x shots/mac-2-pasted.png
-
-      - name: 3. Press Enter and let it install
-        run: |
-          osascript -e 'tell application "System Events" to key code 36' || true
-          for i in $(seq 1 160); do pgrep -f "$APP.app/Contents/MacOS/" >/dev/null && break; sleep 3; done
-          sleep 15
-          screencapture -x shots/mac-4-app-home.png
-          osascript -e 'tell application "System Events" to keystroke "m" using command down' || true
-          sleep 3
-          osascript -e 'tell application "Terminal" to activate' || true
-          sleep 2
-          screencapture -x shots/mac-3-done.png
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mac-shots
+          name: app-shots
           path: shots/*.png
