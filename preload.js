@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld("gonka", {
   recommendCollateral: call("net:recommendCollateral"),
   collateralOf: call("net:collateralOf"),
   repoGpuConfigs: call("net:repoGpuConfigs"),
+  earnings: call("net:earnings"),
+  gnkPrice: call("net:gnkPrice"),
   probe: call("net:probe"),
   nextPoc: call("net:nextPoc"),
   modelActivity: call("net:modelActivity"),

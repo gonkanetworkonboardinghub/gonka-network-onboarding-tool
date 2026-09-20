@@ -15,6 +15,7 @@ const keys = require("./src/services/keys");
 const configgen = require("./src/services/configgen");
 const deploy = require("./src/services/deploy");
 const netdata = require("./src/services/netdata");
+const earnings = require("./src/services/earnings");
 const updates = require("./src/update");
 const updater = require("./src/updater");
 
@@ -258,6 +259,8 @@ ipcMain.handle("net:epochParticipants", wrap(async ({ seed }) => netdata.epochPa
 ipcMain.handle("net:recommendCollateral", wrap(async ({ seed, myWeight }) => netdata.recommendCollateral(seed, myWeight)));
 ipcMain.handle("net:collateralOf", wrap(async ({ seed, address }) => netdata.collateralOf(seed, address)));
 ipcMain.handle("net:repoGpuConfigs", wrap(async () => netdata.repoGpuConfigs()));
+ipcMain.handle("net:earnings", wrap(async ({ seed, force }) => earnings.estimate(seed, { force })));
+ipcMain.handle("net:gnkPrice", wrap(async () => earnings.gnkPrice()));
 ipcMain.handle("net:probe", wrap(async ({ url }) => netdata.probeUrl(url)));
 ipcMain.handle("net:nextPoc", wrap(async ({ seed }) => netdata.nextPoc(seed)));
 ipcMain.handle("net:modelActivity", wrap(async ({ seed }) => netdata.modelActivity(seed)));

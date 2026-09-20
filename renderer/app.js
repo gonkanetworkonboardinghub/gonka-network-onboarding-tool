@@ -2145,7 +2145,7 @@ const SOON_TOOLS = [
       "Follow what it earns, epoch by epoch, and which wallet the coins land in.",
       "Change what can be changed, like collateral, and shut the node down cleanly when you are done."
     ],
-    foot: "It will use the server details Gonka Host Setup already saved, so there is nothing new to set up."
+    foot: "Point it at any node you run, whether Gonka Host Setup built it or you set it up yourself."
   },
   {
     id: "vote",
@@ -2155,7 +2155,7 @@ const SOON_TOOLS = [
     points: [
       "Read every live proposal in plain language, with what it would actually change.",
       "See how past proposals ended and how the network voted.",
-      "Cast your vote from the app, with the key the setup already made."
+      "Cast your vote from the app, with the key you already have, this app's or your own."
     ],
     foot: "Today voting means the command line. This turns it into a few clicks."
   }
@@ -2186,6 +2186,178 @@ function openSoon(id) {
   $("#sheet-close").focus();
 }
 
+/* ---- What a rig mines --------------------------------------------------
+   A strip on the home screen, and a panel with every deployable rig, what it
+   earned over the last epoch and what it can cost to rent before it stops
+   paying for itself. All of it measured from the chain (src/services/
+   earnings.js); the numbers change on their own as the network does. */
+let EARN = null;
+
+const shortModel = (m) => String(m).split("/").pop();
+const fmtGnk = (n) => Math.round(n).toLocaleString(window.I18N.lang());
+const fmtUsd = (n, dp = 2) =>
+  "$" + Number(n).toLocaleString(window.I18N.lang(), { minimumFractionDigits: dp, maximumFractionDigits: dp });
+
+async function loadEarnings(force) {
+  if (EARN && !force) return EARN;
+  if (!S.seed) S.seed = await api("seed");
+  EARN = await api("earnings", { seed: S.seed, force: !!force });
+  return EARN;
+}
+
+/** Headline rig for the strip: the most common class on the network today. */
+function headlineConfig(d) {
+  const common = (d.classes || []).slice().sort((a, b) => b.gpus - a.gpus)[0];
+  return (common && d.configs.find((c) => c.gpuClass === common.id)) || d.configs[0] || null;
+}
+
+function renderEarnStrip() {
+  const el = $("#earn-strip");
+  if (!el) return;
+  loadEarnings().then((d) => {
+    const strip = $("#earn-strip");
+    if (!strip) return;
+    strip.innerHTML =
+      `<span class="led on"></span><span class="earn-text">${esc(
+        d.price.usd ? t("GNK is {price} right now", { price: fmtUsd(d.price.usd, 4) }) : t("What the network pays for a day of mining")
+      )}</span><span class="earn-go">${esc(t("Mine it or buy it? →"))}</span>`;
+    strip.hidden = false;
+    strip.onclick = () => openEarnings();
+  }).catch(() => { /* offline or the chain is unreachable: no strip, no noise */ });
+}
+
+function openEarnings() {
+  if ($("#sheet")) return;
+  const el = document.createElement("div");
+  el.id = "sheet";
+  el.innerHTML = `<div class="sheet-box wide" role="dialog" aria-modal="true" aria-label="${esc(t("Mine it or buy it?"))}">
+      <div class="sheet-top"><span class="tool-name">${esc(t("Mine it or buy it?"))}</span></div>
+      <div class="earn-now" id="earn-now"></div>
+      <p class="sheet-lead">${esc(t("What each rig mined over the last epoch, measured from the chain, against what that much GNK costs to buy."))}</p>
+      <div id="earn-body" class="earn-body">${esc(t("Reading the chain…"))}</div>
+      <div class="btn-row"><button class="primary" id="sheet-close">${esc(t("Close"))}</button></div>
+    </div>`;
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  // The price ticks on its own while the panel is open, so what you read is current.
+  const ticker = setInterval(() => refreshPrice(), 60000);
+  function close() { clearInterval(ticker); el.remove(); document.removeEventListener("keydown", onKey); }
+  el.onclick = (e) => { if (e.target === el) close(); };
+  document.body.appendChild(el);
+  $("#sheet-close").onclick = close;
+  document.addEventListener("keydown", onKey);
+  $("#sheet-close").focus();
+
+  loadEarnings()
+    .then((d) => { renderEarnBody(d); refreshPrice(d.price); })
+    .catch((e) => { const b = $("#earn-body"); if (b) b.textContent = t("Could not read the network right now.") + " " + (e.message || ""); });
+}
+
+/** The live price line at the top of the panel. Re-reads the sources on a timer. */
+async function refreshPrice(known) {
+  const row = $("#earn-now");
+  if (!row) return;
+  let price = known;
+  if (!price) {
+    try { price = await api("gnkPrice"); } catch (_) { return; }
+  }
+  if (!$("#earn-now") || !price || !price.usd) return;
+  const time = new Date().toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit" });
+  $("#earn-now").innerHTML =
+    `<span class="earn-now-price">${esc(fmtUsd(price.usd, 4))}</span>` +
+    `<span class="earn-now-label">${esc(t("GNK right now, from {n} sources · {time}", { n: price.sources.length, time }))}</span>`;
+}
+
+function renderEarnBody(d) {
+  const body = $("#earn-body");
+  if (!body) return;
+  const rows = d.configs.map((c, i) => `
+    <tr>
+      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}</td>
+      <td>${esc(shortModel(c.model))}</td>
+      <td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
+      <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
+      <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"}</td>
+    </tr>`).join("");
+
+  body.innerHTML = `
+    <table class="earn-table">
+      <thead><tr>
+        <th>${esc(t("Rig"))}</th><th>${esc(t("Model"))}</th>
+        <th class="num">${esc(t("GNK a day"))}</th><th class="num">${esc(t("Worth"))}</th>
+        <th class="num">${esc(t("Rent below"))}</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="earn-calc">
+      <div class="earn-calc-title">${esc(t("What would it cost you?"))}</div>
+      <div class="earn-calc-row">
+        <select id="earn-pick">${d.configs.map((c, i) =>
+          `<option value="${i}">${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}</option>`).join("")}</select>
+        <input id="earn-cost" type="number" min="0" step="0.01" placeholder="${esc(t("what you pay"))}" />
+        <select id="earn-unit">
+          <option value="24">${esc(t("per hour"))}</option>
+          <option value="1">${esc(t("per day"))}</option>
+          <option value="0.0333333">${esc(t("per month"))}</option>
+        </select>
+      </div>
+      <div id="earn-out" class="earn-out"></div>
+    </div>
+
+    <ul class="earn-notes">
+      <li>${esc(t("A rough estimate, not a promise: this is what the network paid last epoch, shared out over the GPUs that earned it."))}</li>
+      <li>${esc(t("Mining is not paid out at once: each epoch's reward is released in {epochs} slices, one per epoch, so it arrives over about {days} days.", { epochs: d.vesting.epochs, days: Math.round(d.vesting.days) }))}</li>
+      <li>${esc(t("A new node earns less at first, while it proves itself to the network."))}</li>
+      <li>${esc(t("Every GPU that joins lowers what each one earns, because the amount minted per epoch does not grow with them."))}</li>
+      <li>${esc(t("Mined GNK is only money once sold, and the price moves."))}</li>
+      <li>${esc(t("Native GNK is on no exchange. The traded form is WGNK on Ethereum, contract {addr}. Anything calling itself GNK on Solana is fake.", { addr: d.contract }))}</li>
+    </ul>
+    <div class="earn-src">
+      ${esc(t("Epoch {epoch}: {gnk} GNK shared between {hosts} hosts over {hours} hours.", {
+        epoch: d.epoch.index, gnk: fmtGnk(d.epoch.mintedGnk), hosts: d.epoch.participants, hours: d.epoch.hours.toFixed(1)
+      }))}
+      ${d.price.usd ? esc(t("GNK price {price}, the middle of {n} sources: {list}.", {
+        price: fmtUsd(d.price.usd, 4), n: d.price.sources.length, list: d.price.sources.map((s) => s.name).join(", ")
+      })) : ""}
+    </div>`;
+
+  const pick = $("#earn-pick"), cost = $("#earn-cost"), unit = $("#earn-unit"), out = $("#earn-out");
+  const recalc = () => {
+    const c = d.configs[Number(pick.value)];
+    const paid = Number(cost.value);
+    if (!c || !isFinite(paid) || paid <= 0) { out.innerHTML = ""; return; }
+    const perDayCost = paid * Number(unit.value);
+    const earnUsd = c.usdPerDay;
+    const lines = [t("It mines {gnk} GNK a day{usd}.", {
+      gnk: fmtGnk(c.gnkPerDay), usd: earnUsd == null ? "" : ", " + t("worth {usd}", { usd: fmtUsd(earnUsd) })
+    })];
+    lines.push(t("You pay {usd} a day.", { usd: fmtUsd(perDayCost) }));
+    if (earnUsd != null) {
+      const diff = earnUsd - perDayCost;
+      lines.push(`<b>${esc(diff >= 0
+        ? t("Ahead by {usd} a day, {month} over 30 days.", { usd: fmtUsd(diff), month: fmtUsd(diff * 30) })
+        : t("Behind by {usd} a day, {month} over 30 days.", { usd: fmtUsd(-diff), month: fmtUsd(-diff * 30) }))}</b>`);
+      // The whole question in one number: what mining a coin costs you, next
+      // to what a coin costs on the market.
+      lines.push(t("That is {price} per GNK, against {market} to buy it right now.", {
+        price: fmtUsd(perDayCost / c.gnkPerDay, 4), market: fmtUsd(d.price.usd, 4)
+      }));
+      // Rent is due now; the coins trickle out over the vesting period, so the
+      // first month pays a fraction of what it earns.
+      if (d.vesting.epochs > 0) {
+        const epochsIn30 = 30 * 24 / d.epoch.hours;
+        const share = Math.min(1, (epochsIn30 + 1) / (2 * d.vesting.epochs));
+        lines.push(t("In the first 30 days you would actually receive about {pct}% of that, because of the slow release; the rest keeps arriving after you stop.",
+          { pct: (share * 100).toFixed(0) }));
+      }
+    }
+    out.innerHTML = lines.map((l) => `<div>${l.startsWith("<b>") ? l : esc(l)}</div>`).join("");
+  };
+  pick.onchange = recalc;
+  unit.onchange = recalc;
+  cost.oninput = recalc;
+}
+
 function renderHome() {
   const el = $("#home");
   if (!el) return;
@@ -2200,13 +2372,14 @@ function renderHome() {
         <div class="title">${APP_NAME}</div>
         <div class="sub">GNOT · ${esc(t("by The Gonka Network Onboarding Hub"))}</div>
       </header>
+      <button class="earn-strip" id="earn-strip" hidden></button>
       <h1>${esc(t("What would you like to do?"))}</h1>
       <div class="tool-grid">
         <button class="tool-card" id="tool-host">
           <span class="tool-top">
             <span class="led on"></span><span class="tool-name">Gonka Host Setup</span>
-            ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : ""}
           </span>
+          ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : ""}
           <span class="tool-desc">${esc(t("Take a GPU server from bare metal to a registered, earning Gonka node, step by step."))}</span>
           <span class="tool-go">${esc(progress ? t("Continue →") : t("Open →"))}</span>
         </button>
@@ -2214,8 +2387,8 @@ function renderHome() {
         <button class="tool-card soon" data-soon="${tool.id}">
           <span class="tool-top">
             <span class="led"></span><span class="tool-name">${esc(tool.name)}</span>
-            <span class="tool-badge">${esc(t("Coming soon"))}</span>
           </span>
+          <span class="tool-badge">${esc(t("Coming soon"))}</span>
           <span class="tool-desc">${esc(t(tool.desc))}</span>
           <span class="tool-go">${esc(t("See what's coming →"))}</span>
         </button>`).join("")}
@@ -2234,6 +2407,7 @@ function renderHome() {
     </div>`;
   $("#tool-host").onclick = () => showHostSetup();
   el.querySelectorAll("[data-soon]").forEach((b) => { b.onclick = () => openSoon(b.dataset.soon); });
+  renderEarnStrip();
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
   const ht = $("#home-theme");
   ht.value = THEME.get();

@@ -1,0 +1,62 @@
+# The numbers behind "mine it or buy it", refreshed for the website.
+#
+# The app reads them live from the chain; a web page cannot, so this runs the
+# same code on a schedule and publishes the result as a plain JSON file on the
+# `data` branch, which the site fetches:
+#   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
+#
+# It lives on its own branch so hourly snapshots never clutter main's history.
+name: Earnings snapshot
+
+on:
+  schedule:
+    - cron: "17 * * * *"      # hourly, off the hour so it is not in the rush
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: earnings-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Read the chain
+        run: node scripts/earnings-snapshot.js "$RUNNER_TEMP/earnings.json"
+
+      - name: Sanity-check the file
+        run: |
+          node -e '
+            const d = require(process.env.RUNNER_TEMP + "/earnings.json");
+            if (!d.configs.length) throw new Error("no configurations");
+            if (!(d.epoch.mintedGnk > 0)) throw new Error("nothing minted?");
+            if (d.price.usd !== null && !(d.price.usd > 0)) throw new Error("bad price");
+            for (const c of d.configs) if (!(c.gnkPerDay > 0)) throw new Error("bad row: " + c.model);
+            console.log("ok: " + d.configs.length + " configurations, epoch " + d.epoch.index);
+          '
+
+      - name: Publish it on the data branch
+        run: |
+          git config user.name "Gonka Network Onboarding Hub"
+          git config user.email "noreply@thegonkanetworkonboardinghub.com"
+          git fetch origin data --depth=1 || true
+          if git rev-parse --verify origin/data >/dev/null 2>&1; then
+            git checkout -B data origin/data
+          else
+            git checkout --orphan data
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          cp "$RUNNER_TEMP/earnings.json" earnings.json
+          git add earnings.json
+          git commit -m "Earnings snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing changed"; exit 0; }
+          git push origin data
