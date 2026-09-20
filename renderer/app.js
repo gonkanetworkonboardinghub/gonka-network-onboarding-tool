@@ -2131,6 +2131,61 @@ function setTheme(value) {
   if (h) h.value = value;
 }
 
+/* Tools that are announced but not built yet. Their cards are clickable: the
+   panel says what the tool will do, so "coming soon" explains itself instead
+   of being a dead end. */
+const SOON_TOOLS = [
+  {
+    id: "monitor",
+    name: "Gonka Host Monitor",
+    desc: "Check on a node you already run: how it's doing, what it earns and where that goes. Change settings like collateral, or shut it down cleanly.",
+    lead: "A window into a node you already run.",
+    points: [
+      "See at a glance whether the node is registered, in this epoch's group, and passing validation.",
+      "Follow what it earns, epoch by epoch, and which wallet the coins land in.",
+      "Change what can be changed, like collateral, and shut the node down cleanly when you are done."
+    ],
+    foot: "It will use the server details Gonka Host Setup already saved, so there is nothing new to set up."
+  },
+  {
+    id: "vote",
+    name: "Gonka Vote",
+    desc: "Vote with your node, read what each proposal says and see how past ones ended, no command lines.",
+    lead: "Your node gives you a say in how the network changes.",
+    points: [
+      "Read every live proposal in plain language, with what it would actually change.",
+      "See how past proposals ended and how the network voted.",
+      "Cast your vote from the app, with the key the setup already made."
+    ],
+    foot: "Today voting means the command line. This turns it into a few clicks."
+  }
+];
+
+function openSoon(id) {
+  const tool = SOON_TOOLS.find((x) => x.id === id);
+  if (!tool || $("#sheet")) return;
+  const el = document.createElement("div");
+  el.id = "sheet";
+  el.innerHTML = `
+    <div class="sheet-box" role="dialog" aria-modal="true" aria-label="${esc(tool.name)}">
+      <div class="sheet-top">
+        <span class="tool-name">${esc(tool.name)}</span>
+        <span class="tool-badge">${esc(t("Coming soon"))}</span>
+      </div>
+      <p class="sheet-lead">${esc(t(tool.lead))}</p>
+      <ul>${tool.points.map((p) => `<li>${esc(t(p))}</li>`).join("")}</ul>
+      <p class="sheet-foot">${esc(t(tool.foot))}</p>
+      <div class="btn-row"><button class="primary" id="sheet-close">${esc(t("Close"))}</button></div>
+    </div>`;
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  function close() { el.remove(); document.removeEventListener("keydown", onKey); }
+  el.onclick = (e) => { if (e.target === el) close(); };
+  document.body.appendChild(el);
+  $("#sheet-close").onclick = close;
+  document.addEventListener("keydown", onKey);
+  $("#sheet-close").focus();
+}
+
 function renderHome() {
   const el = $("#home");
   if (!el) return;
@@ -2155,17 +2210,15 @@ function renderHome() {
           <span class="tool-desc">${esc(t("Take a GPU server from bare metal to a registered, earning Gonka node, step by step."))}</span>
           <span class="tool-go">${esc(progress ? t("Continue →") : t("Open →"))}</span>
         </button>
-        <div class="tool-card soon" aria-disabled="true">
+        ${SOON_TOOLS.map((tool) => `
+        <button class="tool-card soon" data-soon="${tool.id}">
           <span class="tool-top">
-            <span class="led"></span><span class="tool-name">Gonka Vote</span>
+            <span class="led"></span><span class="tool-name">${esc(tool.name)}</span>
             <span class="tool-badge">${esc(t("Coming soon"))}</span>
           </span>
-          <span class="tool-desc">${esc(t("Vote on live Gonka proposals with your node, no command lines."))}</span>
-        </div>
-        <div class="tool-card more">
-          <span class="tool-top"><span class="tool-name">${esc(t("More tools coming"))}</span></span>
-          <span class="tool-desc">${esc(t("New ways to take part in the Gonka network are on the way."))}</span>
-        </div>
+          <span class="tool-desc">${esc(t(tool.desc))}</span>
+          <span class="tool-go">${esc(t("See what's coming →"))}</span>
+        </button>`).join("")}
       </div>
       <footer class="home-foot">
         <div>
@@ -2180,6 +2233,7 @@ function renderHome() {
       </footer>
     </div>`;
   $("#tool-host").onclick = () => showHostSetup();
+  el.querySelectorAll("[data-soon]").forEach((b) => { b.onclick = () => openSoon(b.dataset.soon); });
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
   const ht = $("#home-theme");
   ht.value = THEME.get();

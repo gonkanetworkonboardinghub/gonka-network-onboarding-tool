@@ -22,6 +22,7 @@ GNOT opens on a home screen of tools:
   step: connect over SSH, health check and fixes, wallet, network and SSL,
   model and GPU configuration, model weights, launch and registration,
   collateral, and verification.
+- **Gonka Host Monitor** is coming soon.
 - **Gonka Vote** is coming soon.
 
 ## Verifying what the app does
