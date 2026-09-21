@@ -1,11 +1,16 @@
-# The numbers behind "mine it or buy it", refreshed for the website.
+# The public numbers the website shows, refreshed hourly and published as plain
+# JSON on the `data` branch:
 #
-# The app reads them live from the chain; a web page cannot, so this runs the
-# same code on a schedule and publishes the result as a plain JSON file on the
-# `data` branch, which the site fetches:
+#   earnings.json   - "Mine it or buy it?": what each rig mined last epoch
+#   onboarded.json  - nodes and GPUs set up with GNOT, per epoch, with the
+#                     transactions that prove each one
+#
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
+#   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
 #
-# It lives on its own branch so hourly snapshots never clutter main's history.
+# The app reads the chain itself; a web page cannot, so this runs the same code
+# on a schedule. It lives on its own branch so hourly snapshots never clutter
+# main's history.
 name: Earnings snapshot
 
 on:
@@ -23,7 +28,7 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -31,10 +36,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install dependencies
+        run: npm ci --omit=dev --ignore-scripts
+
       - name: Read the chain
         run: node scripts/earnings-snapshot.js "$RUNNER_TEMP/earnings.json"
 
-      - name: Sanity-check the file
+      - name: Sanity-check the earnings file
         run: |
           node -e '
             const d = require(process.env.RUNNER_TEMP + "/earnings.json");
@@ -45,11 +53,16 @@ jobs:
             console.log("ok: " + d.configs.length + " configurations, epoch " + d.epoch.index);
           '
 
-      - name: Publish it on the data branch
+      - name: Count the nodes set up with GNOT
+        run: |
+          git fetch origin data --depth=1 || true
+          git show origin/data:onboarded.json > "$RUNNER_TEMP/onboarded-prev.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/onboarded-prev.json"
+          node scripts/onboarded-snapshot.js "$RUNNER_TEMP/onboarded-prev.json" "$RUNNER_TEMP/earnings.json" "$RUNNER_TEMP/onboarded.json"
+
+      - name: Publish them on the data branch
         run: |
           git config user.name "Gonka Network Onboarding Hub"
           git config user.email "noreply@thegonkanetworkonboardinghub.com"
-          git fetch origin data --depth=1 || true
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
             git checkout -B data origin/data
           else
@@ -57,6 +70,7 @@ jobs:
             git rm -rf . >/dev/null 2>&1 || true
           fi
           cp "$RUNNER_TEMP/earnings.json" earnings.json
-          git add earnings.json
-          git commit -m "Earnings snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing changed"; exit 0; }
+          cp "$RUNNER_TEMP/onboarded.json" onboarded.json
+          git add earnings.json onboarded.json
+          git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing changed"; exit 0; }
           git push origin data

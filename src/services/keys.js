@@ -150,6 +150,15 @@ async function showKey(name, passphrase) {
 const seedBase = (seedApiUrl) => String(seedApiUrl).replace(/\/+$/, "");
 
 /**
+ * The public note every transaction GNOT signs carries. It lets anyone count the
+ * nodes set up with GNOT straight from the chain, epoch by epoch, with the
+ * transaction as proof, and without the app reporting anything anywhere. It says
+ * nothing about the person; the Welcome step tells them before anything is signed.
+ * scripts/onboarded-snapshot.js looks for the word GNOT, so keep it in.
+ */
+const GNOT_MEMO = `Set up with GNOT v${app.getVersion()}`;
+
+/**
  * Grant the node's ML-operational (warm) key its permissions plus a fee
  * allowance — what `inferenced tx inference grant-ml-ops-permissions` sends,
  * signed LOCALLY with the cold key.
@@ -207,7 +216,7 @@ async function grantMlOps({ keyName, passphrase, warmAddress, seedApiUrl, grante
   // faucet claim gives, leaving new hosts stuck. 1.2 still clears with ~20%
   // headroom and fits inside one claim.
   const r = await wallet.signAndBroadcast({
-    seed, priv: key.priv, messages, gasAdjustment: 1.2, gasPrice: k.gasPriceNgonka, onData
+    seed, priv: key.priv, messages, gasAdjustment: 1.2, gasPrice: k.gasPriceNgonka, memo: GNOT_MEMO, onData
   });
   return { ok: true, output: `txhash: ${r.txhash}\nTransaction confirmed successfully! Block height: ${r.height}` };
 }
@@ -225,7 +234,7 @@ async function manualRegister({ keyName, passphrase, publicUrl, consensusKey, se
   // the full fee. The caller confirms the participant record on-chain.
   const r = await wallet.signAndBroadcast({
     seed: seedBase(seedApiUrl), chainId, priv: key.priv, messages: [msg],
-    gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, onData, requireInclusion: false
+    gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo: GNOT_MEMO, onData, requireInclusion: false
   });
   return { ok: true, txhash: r.txhash, output: `txhash: ${r.txhash}` + (r.pending ? "\n(broadcast; not in a block yet)" : `\nconfirmed in block ${r.height}`) };
 }
@@ -242,7 +251,7 @@ async function depositCollateral({ keyName, passphrase, amountNgonka, seedApiUrl
   // collateral record on-chain.
   const r = await wallet.signAndBroadcast({
     seed: seedBase(seedApiUrl), chainId, priv: key.priv, messages: [msg],
-    gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, onData, requireInclusion: false
+    gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo: GNOT_MEMO, onData, requireInclusion: false
   });
   return { ok: true, txhash: r.txhash, output: `txhash: ${r.txhash}\ncode: 0` };
 }

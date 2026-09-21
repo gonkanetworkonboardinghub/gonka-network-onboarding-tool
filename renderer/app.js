@@ -309,6 +309,7 @@ RENDER.welcome = () => {
         <li>${t("Your recovery phrase is shown once and never saved by this app.")}</li>
         <li>${t("Nothing gets installed on your server without showing you the exact commands first.")}</li>
       </ul>
+      <p class="small" style="margin-top:10px">${t("One thing it does add: the transactions your wallet signs here carry a public note, <b>Set up with GNOT</b>, so anyone can count the nodes this app has helped bring into the network. The note says nothing about you.")}</p>
     </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>

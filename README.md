@@ -48,8 +48,16 @@ The short version:
   appears in the Activity log.
 - **No accounts, analytics or tracking.** The app talks to Gonka network nodes,
   GitHub (the update manifest, releases, and Gonka's official repository for
-  supported configurations), GitHub Container Registry (to check node images)
-  and your own server.
+  supported configurations), GitHub Container Registry (to check node images),
+  four public GNK price sources for "Mine it or buy it?" (GeckoTerminal,
+  DEX Screener, CoinGecko, CoinPaprika) and your own server.
+- **One public note on the chain.** The transactions your wallet signs in the
+  app (the permission grant, and the registration or collateral deposit when
+  the app sends them) carry the memo `Set up with GNOT v<version>`
+  (`GNOT_MEMO` in `src/services/keys.js`). It says nothing about you. It exists
+  so anyone can count the nodes GNOT has helped bring into the network, straight
+  from the chain: `scripts/onboarded-snapshot.js` finds those transactions and
+  publishes the count per epoch, with every transaction hash as proof.
 - **Updates and installs are verified.** The app and both install scripts
   check each download's SHA-256 against `manifest.json` before running it.
 
