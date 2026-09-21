@@ -20,6 +20,7 @@
  * node ramps up over its first epochs, and the GNK price moves. The UI says so.
  */
 const netdata = require("./netdata");
+const K = require("../knowledge");
 
 const GPU_CLASSES = [
   [/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"]
@@ -28,6 +29,8 @@ const GPU_CLASSES = [
 const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
 /** A class+model pair needs at least this many GPUs behind it to be quoted on its own. */
 const MIN_SAMPLE_GPUS = 8;
+/** A rig the network runs but no config covers needs at least this many GPUs behind it to be listed at all. */
+const MIN_OBSERVED_GPUS = 4;
 const CACHE_MS = 10 * 60 * 1000;
 
 let cache = null;
@@ -110,11 +113,17 @@ async function chainFacts(seed) {
   const memberWeight = new Map((egd.validation_weights || []).map((m) => [m.member_address, Number(m.weight)]));
   const active = (await api("/v1/epochs/current/participants")).active_participants;
 
-  const byClass = new Map();        // "H100"        -> { gpus, weight }
-  const byClassModel = new Map();   // "H100|model"  -> { gpus, weight }
-  const bump = (map, key, gpus, weight) => {
-    const cur = map.get(key) || { gpus: 0, weight: 0 };
-    cur.gpus += gpus; cur.weight += weight; map.set(key, cur);
+  // Per node, not pooled: a few stragglers (a node that joined mid-epoch, or
+  // spent part of it failing validation) drag a pooled average well below what
+  // a healthy node of the same kind earns, so the median is the honest answer
+  // to "what would mine get".
+  const byClass = new Map();        // "H100"        -> { gpus, perGpu: [] }
+  const byClassModel = new Map();   // "H100|model"  -> { gpus, perGpu: [] }
+  const bump = (map, key, gpus, weight, nodeGpus) => {
+    const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [] };
+    cur.gpus += gpus;
+    if (gpus > 0) { cur.perGpu.push(weight / gpus); cur.nodeGpus.push(nodeGpus || gpus); }
+    map.set(key, cur);
   };
 
   for (const p of active.participants || []) {
@@ -146,10 +155,10 @@ async function chainFacts(seed) {
         if (!cls) continue;
         const count = Number(h.count) || 0;
         const part = share * (count / gpus);
-        bump(byClass, cls, count, part);
+        bump(byClass, cls, count, part, gpus);
         for (const model of models) {
           if (!model) continue;
-          bump(byClassModel, cls + "|" + model, count / models.length, part / models.length);
+          bump(byClassModel, cls + "|" + model, count / models.length, part / models.length, gpus);
         }
       }
     }
@@ -177,18 +186,26 @@ async function chainFacts(seed) {
 async function estimate(seed, { force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
-  const [facts, price, rows] = await Promise.all([
+  const [facts, price, repoRows] = await Promise.all([
     chainFacts(seed),
     gnkPrice(),
     netdata.repoGpuConfigs().catch(() => [])
   ]);
+  const repoKeys = new Set(repoRows.map((r) => r.model + "|" + r.gpuClass));
+  const rows = repoRows.concat(
+    (K.get().curatedConfigs || []).filter((c) => !repoKeys.has(c.model + "|" + c.gpuClass)));
   const perDay = facts.epochHours ? 24 / facts.epochHours : 0;
 
+  const median = (a) => {
+    const v = [...a].sort((x, y) => x - y);
+    if (!v.length) return 0;
+    return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+  };
   const weightPerGpu = (gpuClass, model) => {
     const pair = facts.byClassModel.get(gpuClass + "|" + model);
-    if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: pair.weight / pair.gpus, gpus: pair.gpus, basis: "model" };
+    if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), gpus: pair.gpus, basis: "model" };
     const cls = facts.byClass.get(gpuClass);
-    if (cls && cls.gpus > 0) return { w: cls.weight / cls.gpus, gpus: cls.gpus, basis: "class" };
+    if (cls && cls.gpus > 0) return { w: median(cls.perGpu), gpus: cls.gpus, basis: "class" };
     return null;
   };
 
@@ -215,14 +232,38 @@ async function estimate(seed, { force = false } = {}) {
       // What the whole rig may cost per hour before it stops paying for itself.
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
       basis: per.basis,          // "model" = GPUs of this class running this model; "class" = all of this class
-      sampleGpus: Math.round(per.gpus)
+      sampleGpus: Math.round(per.gpus),
+      deployable: true
+    });
+  }
+
+  // Models the network pays for that no published configuration covers — GLM
+  // is one today. People do run them, with a node-config they wrote themselves,
+  // so leaving them out of the table looks like the app is hiding something.
+  // They are listed exactly as the network shows them, marked not deployable.
+  for (const [key, v] of facts.byClassModel) {
+    const [gpuClass, model] = key.split("|");
+    if (!running.has(model) || v.gpus < MIN_OBSERVED_GPUS) continue;
+    if (configs.some((c) => c.model === model && c.gpuClass === gpuClass)) continue;
+    const gpuCount = Math.round(median(v.nodeGpus)) || 1;
+    const w = median(v.perGpu);
+    const gnkPerDay = w * gpuCount * facts.gnkPerWeight * perDay;
+    configs.push({
+      model, gpuClass, gpuCount,
+      weight: Math.round(w * gpuCount),
+      gnkPerDay,
+      usdPerDay: price.usd ? gnkPerDay * price.usd : null,
+      breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
+      basis: "model",
+      sampleGpus: Math.round(v.gpus),
+      deployable: false
     });
   }
   configs.sort((a, b) => b.gnkPerDay - a.gnkPerDay);
 
   const classes = [...facts.byClass.entries()].map(([id, v]) => ({
-    id, gpus: v.gpus,
-    gnkPerGpuPerDay: (v.weight / v.gpus) * facts.gnkPerWeight * perDay
+    id, gpus: v.gpus, nodes: v.perGpu.length,
+    gnkPerGpuPerDay: median(v.perGpu) * facts.gnkPerWeight * perDay
   })).sort((a, b) => b.gnkPerGpuPerDay - a.gnkPerGpuPerDay);
 
   const data = {

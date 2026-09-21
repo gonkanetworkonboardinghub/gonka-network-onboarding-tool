@@ -2270,13 +2270,15 @@ async function refreshPrice(known) {
 function renderEarnBody(d) {
   const body = $("#earn-body");
   if (!body) return;
-  const rows = d.configs.map((c, i) => `
-    <tr>
-      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}</td>
+  const rows = d.configs.map((c) => `
+    <tr${c.deployable === false ? ' class="own-config"' : ""} title="${esc(t("Measured on {n} GPUs", { n: c.sampleGpus }))}">
+      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}</td>
       <td>${esc(shortModel(c.model))}</td>
       <td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
       <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
-      <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"}</td>
+      <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"
+        // Rigs differ in size, so the per-GPU rate is what makes rows comparable.
+        + `<span class="per-gpu">${esc(fmtUsd(c.breakEvenPerHour / c.gpuCount))}${esc(t("/h per GPU"))}</span>`}</td>
     </tr>`).join("");
 
   body.innerHTML = `
@@ -2288,6 +2290,12 @@ function renderEarnBody(d) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${d.configs.some((c) => c.deployable === false) ? `<div class="earn-scope">${esc(
+      t("† The network runs this and pays for it, but no ready-made configuration has been published, so this app cannot set it up for you — you would have to write your own node-config."))}</div>` : ""}
+    <div class="earn-scope">${esc(d.withoutData.length
+      ? t("Only rigs this app can set up, for models the network is paying for today. Left out: {list}.",
+          { list: d.withoutData.map(shortModel).join(", ") })
+      : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
 
     <div class="earn-calc">
       <div class="earn-calc-title">${esc(t("What would it cost you?"))}</div>
@@ -2306,6 +2314,7 @@ function renderEarnBody(d) {
 
     <ul class="earn-notes">
       <li>${esc(t("A rough estimate, not a promise: this is what the network paid last epoch, shared out over the GPUs that earned it."))}</li>
+      <li>${esc(t("Each number is the typical node of that kind this epoch, not the best or the worst."))}</li>
       <li>${esc(t("Mining is not paid out at once: each epoch's reward is released in {epochs} slices, one per epoch, so it arrives over about {days} days.", { epochs: d.vesting.epochs, days: Math.round(d.vesting.days) }))}</li>
       <li>${esc(t("A new node earns less at first, while it proves itself to the network."))}</li>
       <li>${esc(t("Every GPU that joins lowers what each one earns, because the amount minted per epoch does not grow with them."))}</li>
