@@ -2191,17 +2191,21 @@ function openSoon(id) {
    earned over the last epoch and what it can cost to rent before it stops
    paying for itself. All of it measured from the chain (src/services/
    earnings.js); the numbers change on their own as the network does. */
-let EARN = null;
+let EARN = null, EARN_AT = 0;
 
 const shortModel = (m) => String(m).split("/").pop();
 const fmtGnk = (n) => Math.round(n).toLocaleString(window.I18N.lang());
 const fmtUsd = (n, dp = 2) =>
   "$" + Number(n).toLocaleString(window.I18N.lang(), { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const fmtPrice = (n) => (Number(n) >= 0.01 ? fmtUsd(n, 2) : fmtUsd(n, 4));
 
 async function loadEarnings(force) {
-  if (EARN && !force) return EARN;
+  // The main process caches for ten minutes; the renderer used to keep the
+  // first answer for the whole session, so a window left open went stale.
+  if (EARN && !force && Date.now() - EARN_AT < 10 * 60 * 1000) return EARN;
   if (!S.seed) S.seed = await api("seed");
   EARN = await api("earnings", { seed: S.seed, force: !!force });
+  EARN_AT = Date.now();
   return EARN;
 }
 
@@ -2219,7 +2223,7 @@ function renderEarnStrip() {
     if (!strip) return;
     strip.innerHTML =
       `<span class="led on"></span><span class="earn-text">${esc(
-        d.price.usd ? t("GNK is {price} right now", { price: fmtUsd(d.price.usd, 4) }) : t("What the network pays for a day of mining")
+        d.price.usd ? t("GNK is {price} right now", { price: fmtPrice(d.price.usd) }) : t("What the network pays for a day of mining")
       )}</span><span class="earn-go">${esc(t("Mine it or buy it? →"))}</span>`;
     strip.hidden = false;
     strip.onclick = () => openEarnings();
@@ -2263,7 +2267,7 @@ async function refreshPrice(known) {
   if (!$("#earn-now") || !price || !price.usd) return;
   const time = new Date().toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit" });
   $("#earn-now").innerHTML =
-    `<span class="earn-now-price">${esc(fmtUsd(price.usd, 4))}</span>` +
+    `<span class="earn-now-price">${esc(fmtPrice(price.usd))}</span>` +
     `<span class="earn-now-label">${esc(t("GNK right now, from {n} sources · {time}", { n: price.sources.length, time }))}</span>`;
 }
 
@@ -2326,7 +2330,7 @@ function renderEarnBody(d) {
         epoch: d.epoch.index, gnk: fmtGnk(d.epoch.mintedGnk), hosts: d.epoch.participants, hours: d.epoch.hours.toFixed(1)
       }))}
       ${d.price.usd ? esc(t("GNK price {price}, the middle of {n} sources: {list}.", {
-        price: fmtUsd(d.price.usd, 4), n: d.price.sources.length, list: d.price.sources.map((s) => s.name).join(", ")
+        price: fmtPrice(d.price.usd), n: d.price.sources.length, list: d.price.sources.map((s) => s.name).join(", ")
       })) : ""}
     </div>`;
 
@@ -2349,7 +2353,7 @@ function renderEarnBody(d) {
       // The whole question in one number: what mining a coin costs you, next
       // to what a coin costs on the market.
       lines.push(t("That is {price} per GNK, against {market} to buy it right now.", {
-        price: fmtUsd(perDayCost / c.gnkPerDay, 4), market: fmtUsd(d.price.usd, 4)
+        price: fmtPrice(perDayCost / c.gnkPerDay), market: fmtPrice(d.price.usd)
       }));
       // Rent is due now; the coins trickle out over the vesting period, so the
       // first month pays a fraction of what it earns.
