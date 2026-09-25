@@ -148,11 +148,10 @@ async function renderChooser() {
       <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts how much the Gonka network is used through it: how many answers and how many tokens, once a day, with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
       <p class="lead">${esc(t("Pick a service to reach the Gonka network through. Each one gives you your own account; this app never touches your money. All of them start free, so you can try before you pay."))}</p>
       <div class="svc-grid">${list.map((s) => `
-        <div class="svc-card${s.recommended ? " recommended" : ""}" data-svc="${esc(s.id)}"${longDown(s.id) ? " hidden" : ""}>
+        <div class="svc-card" data-svc="${esc(s.id)}"${longDown(s.id) ? " hidden" : ""}>
           <div class="svc-head">
             <span class="svc-name">${esc(s.name)}</span>
-            ${connected.has(s.id) ? `<span class="tool-badge live">${esc(t("Connected"))}</span>`
-              : s.recommended ? `<span class="tool-badge live">${esc(t("Recommended"))}</span>` : ""}
+            ${connected.has(s.id) ? `<span class="tool-badge live">${esc(t("Connected"))}</span>` : ""}
           </div>
           <div class="svc-by">${esc(byText(s))}</div>
           <div class="svc-live" data-live="${esc(s.id)}"><span class="dot"></span>${esc(t("Checking…"))}</div>

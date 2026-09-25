@@ -259,7 +259,7 @@ const overridable = {
   useServicesChecked: "2026-09-21",
   useServices: [
     {
-      id: "proxy", name: "Gonka Proxy", byName: "Gonka Labs", byKind: "official", recommended: true,
+      id: "proxy", name: "Gonka Proxy", byName: "Gonka Labs", byKind: "official",
       base: "https://api.proxy.gonka.gg/v1", signup: "https://proxy.gonka.gg/register", dashboard: "https://proxy.gonka.gg/login",
       keyStartsWith: "sk-",
       signUp: ["email"], free: { tokens: 1000000 }, pay: ["gnk", "wgnk", "crypto"],
