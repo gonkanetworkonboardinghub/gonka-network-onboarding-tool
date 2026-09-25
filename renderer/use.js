@@ -604,6 +604,13 @@ async function runWithTools(c, reply, id) {
     if (!r.toolCalls.length) {
       reply.content = cleanAnswer(r.content);
       reply.reasoning = r.reasoning;
+      // Some models put the whole reply inside <think>, or in the reasoning
+      // field, leaving nothing to show but a fold. Then that IS the answer.
+      const parts = splitThinking(reply.content);
+      if (!parts.answer.trim()) {
+        const said = parts.thinking.trim() || String(reply.reasoning || "").trim();
+        if (said) { reply.content = said; reply.reasoning = ""; }
+      }
       return;
     }
 
@@ -739,6 +746,10 @@ async function send() {
       const r = await api("useChat", { id, model: c.model, messages: [noFolderNote(c)].concat(history) });
       reply.content = r.content;
       reply.reasoning = r.reasoning;
+      if (!splitThinking(reply.content).answer.trim() && reply.reasoning) {
+        reply.content = reply.reasoning;     // the same quirk, on a streamed answer
+        reply.reasoning = "";
+      }
       reply.usage = r.usage;
       reply.responseId = r.responseId;
     }
