@@ -240,12 +240,92 @@ const overridable = {
   // Overridable via the remote manifest if the URL/amount ever changes.
   faucet: { url: "https://gonka.gg/faucet", amount: "0.01 GNK / 24h" },
 
+  // "Use Gonka": services that give ordinary people access to Gonka's models.
+  // Every field is a fixed value, not free text, so the app writes identical
+  // things identically ("Email and password" is always exactly that). Each
+  // service is independent; Gonka's own docs vouch for none. Checked on their
+  // own sites on useServicesChecked; the manifest can replace this whole list
+  // without a release, and the hourly job (scripts/services-snapshot.js) takes
+  // down any that stop answering.
+  //   signUp: "email" (email and password), "email-only" (no password),
+  //           "secret-code" (no email at all), plus "google" / "github" / "discord"
+  //   free:   { tokens } | { usd } | { tokensPerWeek } | { tokensPerMonth }
+  //   pay:    "gnk" "wgnk" "usdt" "usdc" "crypto" "card"
+  //   price:  USD per million tokens for MiniMax-M2.7: { flat } | { in, out } | { from } | null (not stated)
+  // Where the daily Use Gonka total goes (src/services/usage.js). Empty means
+  // nothing is ever sent; the published manifest can set it without a release.
+  usageEndpoint: "https://thegonkanetworkonboardinghub.com/api/gnot-usage",
+
+  useServicesChecked: "2026-09-21",
+  useServices: [
+    {
+      id: "proxy", name: "Gonka Proxy", byName: "Gonka Labs", byKind: "official", recommended: true,
+      base: "https://api.proxy.gonka.gg/v1", signup: "https://proxy.gonka.gg/register", dashboard: "https://proxy.gonka.gg/login",
+      keyStartsWith: "sk-",
+      signUp: ["email"], free: { tokens: 1000000 }, pay: ["gnk", "wgnk", "crypto"],
+      price: { flat: 0.0016 },
+      extras: "Workspaces: an assistant that writes documents, slides, spreadsheets and code",
+      extrasUrl: "https://proxy.gonka.gg/workspaces",
+      priceIsNetwork: true
+    },
+    {
+      id: "joingonka", name: "JoinGonka Gateway", byName: "JoinGonka", byKind: "community",
+      base: "https://gate.joingonka.ai/v1", signup: "https://gate.joingonka.ai/register", dashboard: "https://gate.joingonka.ai/login",
+      keyStartsWith: "jg-",
+      signUp: ["email", "google", "github", "discord"], free: { tokens: 3000000 }, pay: ["gnk", "usdt"],
+      payNote: "No fee on GNK, 5% on USDT",
+      price: { in: 0.0065, out: 0.02 },
+      extras: "Can search the web and read PDFs"
+    },
+    {
+      id: "gonkagate", name: "GonkaGate", byName: "GonkaGate", byKind: "community",
+      base: "https://api.gonkagate.com/v1", signup: "https://gonkagate.com/en/register", dashboard: "https://gonkagate.com/en/login",
+      signUp: ["email", "google", "github"], free: { usd: 10 }, pay: ["card"],
+      price: { flat: 0.00019 }, priceNote: "Network price plus a 10% fee"
+    },
+    {
+      id: "gonkarouter", name: "GonkaRouter", byName: "GonkaRouter", byKind: "community",
+      base: "https://api.gonkarouter.io/v1", signup: "https://gonkarouter.io/dashboard", dashboard: "https://gonkarouter.io/dashboard",
+      signUp: ["email-only"], free: { usd: 20 }, pay: ["usdt"],
+      price: { from: 0.0016 }
+    },
+    {
+      id: "gonkabroker", name: "Gonka Broker", byName: "Gonka Broker", byKind: "community",
+      base: "https://proxy.gonkabroker.com/v1", signup: "https://app.gonkabroker.com/signup", dashboard: "https://app.gonkabroker.com/",
+      signUp: ["email", "google"], free: { tokensPerMonth: 1000000 }, pay: ["card"],
+      price: { flat: 0.25 },
+      extras: "Also works with Claude Code and other Anthropic tools"
+    },
+    {
+      id: "mingles", name: "Mingles Router", byName: "Mingles AI", byKind: "community",
+      base: "https://router.mingles.ai/v1", signup: "https://router.mingles.ai/app", dashboard: "https://router.mingles.ai/app",
+      signUp: ["email", "google"], free: { tokensPerWeek: 3900000 }, pay: ["card", "usdt", "usdc"],
+      price: { in: 0.18, out: 0.72 }, priceNote: "Or monthly plans from $9"
+    },
+    {
+      id: "gonka24", name: "Gonka24", byName: "Gonka24", byKind: "community",
+      base: "https://api.gonka24.com/v1", signup: "https://gonka24.com/login", dashboard: "https://gonka24.com/login",
+      signUp: ["email", "google"], free: { usd: 10 }, pay: [],
+      price: null
+    },
+    {
+      id: "dahl", name: "Dahl Inference", byName: "Dahl", byKind: "community",
+      base: "https://inference.dahl.global/v1", signup: "https://inference.dahl.global/account", dashboard: "https://inference.dahl.global/account",
+      signUp: ["secret-code"], free: { tokens: 100000000 }, pay: [],
+      price: null
+    }
+  ],
+
+
   docs: {
     // Community-run explorer/dashboard (same site as the faucet) — usually the
     // fastest to update; participants list is the page people check for "am I in".
     communityDashboard: "https://gonka.gg/network/participants",
     // The publisher's site, The Gonka Network Onboarding Hub (GNOH).
     website: "https://thegonkanetworkonboardinghub.com",
+    // This app's own code, public so anyone can read what it does — and check
+    // that the build they installed came from it (see the repository's README).
+    sourceCode: "https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool",
     quickstart: "https://gonka.ai/docs/host/quickstart/",
     keyManagement: "https://gonka.ai/host/key-management/",
     multiModelPoc: "https://gonka.ai/docs/host/multi_model_poc/",

@@ -375,6 +375,14 @@ RENDER.welcome = () => {
       let act = {};
       try { act = await api("modelActivity", { seed }); } catch (_) {}
       const hostsOf = (id) => (act[id] ? act[id].hosts : null);
+      // Governance approval is not payment. A model can sit approved for weeks
+      // while the network pays nobody to serve it (Kimi-K2.6 did), and renting
+      // hardware for one of those earns nothing. The epoch's own model list is
+      // the truth, so any such model drops out here by itself — no app update,
+      // and it comes back the moment the network pays for it again.
+      let paying = null;
+      try { paying = await api("payingModels", { seed }); } catch (_) {}
+      const paysFor = (id) => !paying || paying.includes(id);
       const approvedIds = new Set(models.map((m) => m.id));
 
       // Merge two sources of ready-made configs: files that exist in the
@@ -393,7 +401,7 @@ RENDER.welcome = () => {
         const m = new RegExp(`${r.gpuClass}-(.+)\\.json$`, "i").exec(r.file);
         return m ? m[1] : "";
       };
-      const ready = [
+      const readyAll = [
         ...rows.filter((r) => approvedIds.has(r.model)).map((r) => ({ ...r, src: "repository" })),
         ...curated
       // Null-safe: a config file whose GPU class the app doesn't recognise yet
@@ -403,11 +411,15 @@ RENDER.welcome = () => {
       ].sort((a, b) => String(a.model || "").localeCompare(String(b.model || ""))
                     || String(a.gpuClass || "").localeCompare(String(b.gpuClass || ""))
                     || String(variantOf(a)).localeCompare(String(variantOf(b))));
+      // Everything below only ever shows models the network pays for; the rest
+      // are named once, at the bottom, so nobody rents hardware for them.
+      const unpaid = models.filter((m) => !paysFor(m.id)).map((m) => m.id);
+      const ready = readyAll.filter((r) => paysFor(r.model));
       S.readyRows = ready;   // reused by the renting checklist on the server step
 
       const classes = [...new Set(ready.map((r) => r.gpuClass).filter(Boolean))];
       const readyIds = new Set(ready.map((r) => r.model));
-      const notReady = models.filter((m) => !readyIds.has(m.id));
+      const notReady = models.filter((m) => !readyIds.has(m.id) && paysFor(m.id));
 
       card.innerHTML = `
         <h3>What's supported right now</h3>
@@ -445,8 +457,13 @@ RENDER.welcome = () => {
           </table>
           <p class="hint">${t("These models are live and earning on the network, but no tested reference configuration has been published for them yet — in the repository or the official docs. If you know vLLM and want to try building your own <code>node-config.json</code>, you can paste one in the Model & GPUs step later — otherwise, stick with the models listed above as ready.")}
             ${t("As soon as a reference configuration for such a model appears in the repository, it moves to the ready table automatically.")}</p>` : ""}
+        ${unpaid.length ? `
+          <p class="hint" style="margin-top:16px">${t("Approved by governance, but the network is paying nobody to run them this epoch:")}
+            ${unpaid.map((id) => `<code>${esc(id)}</code>`).join(", ")}.
+            ${t("Hardware rented for these earns nothing right now, so they are left out of the tables above. They come back on their own if the network starts paying for them again.")}</p>` : ""}
+
         ${(() => {
-          const inactive = Object.keys(act).length ? models.filter((m) => !hostsOf(m.id)) : [];
+          const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
           return inactive.length ? `<div class="warn-banner">⚠ ${inactive.map((m) => `<code>${esc(m.id)}</code>`).join(", ")} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : "";
         })()}
 
@@ -2219,6 +2236,12 @@ function headlineConfig(d) {
 function renderEarnStrip() {
   const el = $("#earn-strip");
   if (!el) return;
+  // Say what it is while the chain is being read, instead of sitting there as
+  // an empty grey bar for a second or two.
+  el.innerHTML = `<span class="led"></span><span class="earn-text">${esc(t("Reading the chain…"))}</span>` +
+    `<span class="earn-go">${esc(t("Mine it or buy it? →"))}</span>`;
+  el.hidden = false;
+  el.onclick = () => openEarnings();
   loadEarnings().then((d) => {
     const strip = $("#earn-strip");
     if (!strip) return;
@@ -2228,7 +2251,10 @@ function renderEarnStrip() {
       )}</span><span class="earn-go">${esc(t("Mine it or buy it? →"))}</span>`;
     strip.hidden = false;
     strip.onclick = () => openEarnings();
-  }).catch(() => { /* offline or the chain is unreachable: no strip, no noise */ });
+  }).catch(() => {
+    const strip = $("#earn-strip");
+    if (strip) strip.hidden = true;   // offline or the chain is unreachable: no strip, no noise
+  });
 }
 
 function openEarnings() {
@@ -2287,6 +2313,7 @@ function renderEarnBody(d) {
     </tr>`).join("");
 
   body.innerHTML = `
+    <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
     <table class="earn-table">
       <thead><tr>
         <th>${esc(t("Rig"))}</th><th>${esc(t("Model"))}</th>
@@ -2303,7 +2330,8 @@ function renderEarnBody(d) {
       : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
 
     <div class="earn-calc">
-      <div class="earn-calc-title">${esc(t("What would it cost you?"))}</div>
+      <div class="earn-calc-title">${esc(t("Will it pay for itself?"))}</div>
+      <div class="earn-calc-lead">${esc(t("Pick a rig, type what you pay for it, and see whether what it mines covers the cost."))}</div>
       <div class="earn-calc-row">
         <select id="earn-pick">${d.configs.map((c, i) =>
           `<option value="${i}">${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}</option>`).join("")}</select>
@@ -2334,6 +2362,12 @@ function renderEarnBody(d) {
         price: fmtPrice(d.price.usd), n: d.price.sources.length, list: d.price.sources.map((s) => s.name).join(", ")
       })) : ""}
     </div>`;
+
+  $("#earn-jump").onclick = (e) => {
+    e.preventDefault();
+    $(".earn-calc").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#earn-cost").focus({ preventScroll: true });
+  };
 
   const pick = $("#earn-pick"), cost = $("#earn-cost"), unit = $("#earn-unit"), out = $("#earn-out");
   const recalc = () => {
@@ -2407,6 +2441,16 @@ function renderHome() {
           <span class="tool-go">${esc(t("See what's coming →"))}</span>
         </button>`).join("")}
       </div>
+      <!-- Under the node tools, one wide card for people who came to use the AI. -->
+      <button class="tool-card tool-wide" id="tool-use">
+        <span class="tool-wide-text">
+          <span class="tool-top">
+            <span class="led on"></span><span class="tool-name">Use Gonka</span>
+          </span>
+          <span class="tool-desc">${esc(t("Use the AI models running on the Gonka network, through your own account with a service that connects to it."))}</span>
+        </span>
+        <span class="tool-go">${esc(t("Open →"))}</span>
+      </button>
       <footer class="home-foot">
         <div>
           <div class="pickers">
@@ -2414,12 +2458,14 @@ function renderHome() {
             <select id="home-theme">${$("#theme-pick").innerHTML}</select>
           </div>
           <div style="margin-top:10px">${esc(t("Need help?"))} <a href="#" data-doc="discord">Gonka Discord</a> ·
-            <a href="#" data-doc="faq">FAQ</a> · <a href="#" data-doc="website">Onboarding Hub</a></div>
+            <a href="#" data-doc="faq">FAQ</a> · <a href="#" data-doc="website">Onboarding Hub</a> ·
+            <a href="#" data-doc="sourceCode">${esc(t("Source code"))}</a></div>
         </div>
         <div class="version-line" id="home-version"></div>
       </footer>
     </div>`;
   $("#tool-host").onclick = () => showHostSetup();
+  $("#tool-use").onclick = () => showUse();
   el.querySelectorAll("[data-soon]").forEach((b) => { b.onclick = () => openSoon(b.dataset.soon); });
   renderEarnStrip();
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
@@ -2458,6 +2504,7 @@ function showHostSetup() {
   $("#link-discord").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.discord }); };
   $("#link-faq").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.faq }); };
   $("#link-hub").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.website }); };
+  $("#link-source").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.sourceCode }); };
   $("#link-home").onclick = (e) => { e.preventDefault(); showHome(); };
 
   // Theme: applied to <html> so the CSS variable blocks switch wholesale.

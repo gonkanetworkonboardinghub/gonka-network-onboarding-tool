@@ -49,7 +49,10 @@
   $dest = Join-Path $env:TEMP "Gonka-Network-Onboarding-Tool-$($m.latest).exe"
   $verified = $false
   Say "Downloading version $($m.latest)..."
-  foreach ($url in @($m.installer, $m.url) | Where-Object { $_ }) {
+  # The constant-name file first, on purpose: the in-app updater takes the
+  # versioned one, so the two download counts separate new installs from
+  # updates. Both are the same bytes, and the SHA-256 below proves it.
+  foreach ($url in @($m.url, $m.installer) | Where-Object { $_ }) {
     Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
     try {
       Get-Installer $url $dest

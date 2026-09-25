@@ -150,7 +150,7 @@ async function showKey(name, passphrase) {
 const seedBase = (seedApiUrl) => String(seedApiUrl).replace(/\/+$/, "");
 
 /**
- * The public note every transaction GNOT signs carries. It lets anyone count the
+ * The public note every transaction Host Setup signs carries. It lets anyone count the
  * nodes set up with GNOT straight from the chain, epoch by epoch, with the
  * transaction as proof, and without the app reporting anything anywhere. It says
  * nothing about the person; the Welcome step tells them before anything is signed.
@@ -256,6 +256,30 @@ async function depositCollateral({ keyName, passphrase, amountNgonka, seedApiUrl
   return { ok: true, txhash: r.txhash, output: `txhash: ${r.txhash}\ncode: 0` };
 }
 
+/**
+ * Send GNK from a wallet saved here to an address the person pastes (for "Use
+ * Gonka": topping up their own broker account). Signed LOCALLY with the key.
+ * A plain transfer with no note on it; it only happens when they press Send.
+ */
+async function sendGnk({ keyName, passphrase, to, amountNgonka, seedApiUrl }, onData) {
+  const dest = String(to || "").trim();
+  let decoded = null;
+  try { decoded = require("@scure/base").bech32.decode(dest); } catch (_) {}
+  if (!decoded || decoded.prefix !== wallet.PREFIX) {
+    throw new Error("That isn't a Gonka address. It should start with gonka1 — copy it again from your broker's Deposit page.");
+  }
+  const amount = String(amountNgonka).replace(/[^\d]/g, "");
+  if (!amount || amount === "0") throw new Error("Enter how much GNK to send.");
+  const key = unlock(keyName, passphrase);
+  if (dest === key.address) throw new Error("That's this same wallet. Paste your broker account's deposit address instead.");
+  const msg = wallet.Msg.send(key.address, dest, [{ denom: wallet.DENOM, amount }]);
+  const r = await wallet.signAndBroadcast({
+    seed: seedBase(seedApiUrl), priv: key.priv, messages: [msg],
+    gasAdjustment: 1.5, gasPrice: K.get().gasPriceNgonka, onData
+  });
+  return { ok: true, txhash: r.txhash, height: r.height || null };
+}
+
 /** Account sequence (null when the account can't be read or doesn't exist yet). */
 async function accountSequence(address, seedApiUrl) {
   try {
@@ -309,5 +333,5 @@ function sshKeygen() {
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
   grantMlOps, manualRegister, depositCollateral, accountSequence,
-  keyringDir, sshKeygen, sshKeyInfo, keyringKeyNames, resetKeyring
+  keyringDir, sshKeygen, sshKeyInfo, keyringKeyNames, resetKeyring, sendGnk
 };

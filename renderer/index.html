@@ -10,6 +10,8 @@
 <body class="on-home">
   <!-- Home: the tool picker. Rendered by renderHome() in app.js. -->
   <section id="home"></section>
+  <!-- Use Gonka: chat through your own broker account. Rendered by use.js. -->
+  <section id="use"></section>
 
   <div id="app">
     <nav id="rail">
@@ -27,7 +29,8 @@
           <option value="light">Light</option>
         </select>
         <div><span id="t-needhelp">Need help?</span> <a href="#" id="link-discord">Gonka Discord</a> ·
-        <a href="#" id="link-faq">FAQ</a> · <a href="#" id="link-hub">Onboarding Hub</a></div>
+        <a href="#" id="link-faq">FAQ</a> · <a href="#" id="link-hub">Onboarding Hub</a> ·
+        <a href="#" id="link-source">Source code</a></div>
         <div id="app-version" class="version-line"></div>
       </div>
     </nav>
@@ -52,5 +55,6 @@
   </div>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
+  <script src="use.js"></script>
 </body>
 </html>

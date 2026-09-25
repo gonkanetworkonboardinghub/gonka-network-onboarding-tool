@@ -12,7 +12,15 @@
  *      app and every install command starts using the new version.
  * Every build's SHA-256 is checked against the manifest before upload and
  * against GitHub's own digest after, so a wrong or truncated file never goes
- * live. Needs the GitHub CLI, logged in with write access to the public repo.
+ * live. Each build must also carry GitHub's signature saying it was built by
+ * the source repo's workflow from a real commit (build provenance); anyone can
+ * check the same thing on a download with:
+ *
+ *   gh attestation verify <file> --repo gonkanetworkonboardinghub/gonka-network-onboarding-tool
+ *
+ * A build made on this machine has no such signature, so publishing it needs
+ * --allow-unverified, and then nobody can prove where it came from.
+ * Needs the GitHub CLI, logged in with write access to the public repo.
  */
 const fs = require("fs");
 const path = require("path");
@@ -22,7 +30,9 @@ const { execFileSync } = require("child_process");
 const root = path.join(__dirname, "..");
 const web = path.join(root, "website");
 const REPO = process.env.GONKA_PUBLIC_REPO || "gonkanetworkonboardinghub/gonka-host-setup";
+const SOURCE_REPO = process.env.GONKA_SOURCE_REPO || "gonkanetworkonboardinghub/gonka-network-onboarding-tool";
 const confirm = process.argv.includes("--confirm");
+const allowUnverified = process.argv.includes("--allow-unverified");
 const GH = (() => {
   const local = path.join(process.env.LOCALAPPDATA || "", "Programs", "gh", "bin", "gh.exe");
   return fs.existsSync(local) ? local : "gh";
@@ -51,11 +61,33 @@ for (const b of builds) {
   if (!fs.existsSync(p)) die(`Missing website/${b.file}.`);
   if (sha256Of(p) !== b.sha) die(`website/${b.file} doesn't match the SHA-256 in manifest.json.`);
 }
+// GitHub's signature on each build: it says which repo, workflow and commit
+// made this exact file. The two Windows files are the same bytes, so one check
+// covers both.
+const verified = {};
+for (const b of builds) {
+  if (verified[b.sha] !== undefined) continue;
+  try {
+    gh(["attestation", "verify", path.join(web, b.file), "--repo", SOURCE_REPO]);
+    verified[b.sha] = true;
+  } catch (e) {
+    verified[b.sha] = false;
+    const why = (e.stderr || e.stdout || "").toString().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200);
+    if (!allowUnverified) {
+      die(`${b.file} has no valid GitHub build signature, so nobody could check where it came from.\n` +
+        `  ${why}\n` +
+        "  Builds made with `node scripts/release.js <version> --mac` are built and signed on GitHub.\n" +
+        "  To publish this one anyway: add --allow-unverified.");
+    }
+  }
+}
+
 const repoFiles = ["install.ps1", "install.sh", "README.md", "manifest.json"];   // manifest last
 for (const f of repoFiles) if (!fs.existsSync(path.join(web, f))) die(`Missing website/${f}.`);
 
 console.log(`Release ${tag} → github.com/${REPO}`);
-for (const b of builds) console.log(`  release file  ${b.file}  (${(fs.statSync(path.join(web, b.file)).size / 1e6).toFixed(1)} MB, sha256 ok)`);
+for (const b of builds) console.log(`  release file  ${b.file}  (${(fs.statSync(path.join(web, b.file)).size / 1e6).toFixed(1)} MB, sha256 ok, ` +
+  (verified[b.sha] ? "built and signed by GitHub" : "NOT SIGNED — built outside GitHub") + ")");
 for (const f of repoFiles) console.log(`  repo file     ${f}`);
 console.log(`  Windows: latest ${app.latest}, minSupported ${app.minSupported}` + (mac ? ` | Mac: latest ${mac.latest}${mac.minSupported ? ", minSupported " + mac.minSupported : ""}` : " | Mac: unchanged"));
 if (!confirm) { console.log("\nDry run. Re-run with --confirm to publish."); process.exit(0); }

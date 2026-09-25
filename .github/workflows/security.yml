@@ -1,0 +1,50 @@
+# Known holes in what the app ships, checked every week and on every change.
+#
+# The app is Electron, which is Chrome plus Node, so a Chrome hole is our hole.
+# Holes are found constantly and fixed in the newest three Electron versions
+# only, so being a year behind is the same as shipping known holes. Two checks:
+#
+#   1. the Electron we build with is supported and current
+#      (scripts/check-electron.js, against Electron's own release list);
+#   2. no package we ship, or build with, has a known serious hole
+#      (npm audit).
+#
+# A failure here emails the repository owner. Nothing is published from this
+# workflow; it only looks.
+name: Known holes
+
+on:
+  schedule:
+    - cron: "41 6 * * 1"      # Monday mornings
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: The Electron we ship still gets security fixes
+        run: node scripts/check-electron.js
+
+      # What ends up inside the app people run.
+      - name: Nothing known-bad in what the app ships
+        run: npm audit --omit=dev --audit-level=high
+
+      # Build tools never reach anyone's computer, so only the worst matter.
+      - name: Nothing known-bad in the build tools
+        run: npm audit --audit-level=critical

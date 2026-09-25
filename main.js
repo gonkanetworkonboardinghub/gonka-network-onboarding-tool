@@ -7,6 +7,19 @@ const path = require("path");
 // language and theme. Must run before anything touches userData.
 app.setPath("userData", path.join(app.getPath("appData"), "Gonka Host Setup"));
 
+// One copy at a time. Two of them share the same folder and fight over the same
+// files — wallets, saved progress, the keyring the API keys are encrypted with.
+// The second copy can even encrypt a key that nothing will read again, which is
+// exactly what happened during testing. Opening the app again just brings the
+// window it already has to the front.
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on("second-instance", () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 const K = require("./src/knowledge");
 const { LocalDriver, SshDriver, localMachine, shq } = require("./src/executor");
 const scan = require("./src/services/scan");
@@ -16,6 +29,9 @@ const configgen = require("./src/services/configgen");
 const deploy = require("./src/services/deploy");
 const netdata = require("./src/services/netdata");
 const earnings = require("./src/services/earnings");
+const broker = require("./src/services/broker");
+const workspace = require("./src/services/workspace");
+const usage = require("./src/services/usage");
 const updates = require("./src/update");
 const updater = require("./src/updater");
 
@@ -189,6 +205,49 @@ ipcMain.handle("keys:manualRegister", wrap(async (a) => keys.manualRegister(a, o
 ipcMain.handle("keys:deposit", wrap(async (a) => keys.depositCollateral(a, onData)));
 ipcMain.handle("keys:sequence", wrap(async ({ address, seedApiUrl }) => keys.accountSequence(address, seedApiUrl)));
 ipcMain.handle("keys:sshKeygen", wrap(async () => keys.sshKeygen()));
+ipcMain.handle("keys:sendGnk", wrap(async (a) => keys.sendGnk(a, onData)));
+
+/* ------------------------------------------------------------------ */
+/* IPC: Use Gonka (chat through the person's own broker account)       */
+/* ------------------------------------------------------------------ */
+ipcMain.handle("use:config", wrap(async () => broker.getConfig()));
+ipcMain.handle("use:setConfig", wrap(async (a) => broker.setConfig(a)));
+ipcMain.handle("use:switchTo", wrap(async ({ serviceId }) => broker.switchTo(serviceId)));
+ipcMain.handle("use:toolCheck", wrap(async (a) => broker.toolCheck(a || {})));
+ipcMain.handle("use:usage", wrap(async () => usage.mine()));
+
+/* ---- Workspace: the assistant working in one folder on this computer ---- */
+// The folder is the permission. Picking it is a deliberate act with a normal
+// system dialog, and nothing outside it can be read or written.
+ipcMain.handle("ws:pick", wrap(async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: "Choose the folder the assistant may work in",
+    properties: ["openDirectory", "createDirectory"]
+  });
+  if (r.canceled || !r.filePaths[0]) return { folder: workspace.getFolder() };
+  return { folder: workspace.setFolder(r.filePaths[0]) };
+}));
+ipcMain.handle("ws:folder", wrap(async () => ({ folder: workspace.getFolder(), tools: workspace.TOOLS })));
+ipcMain.handle("ws:set", wrap(async ({ folder }) => ({ folder: workspace.setFolder(folder) })));
+ipcMain.handle("ws:clear", wrap(async () => ({ folder: workspace.setFolder(null) })));
+ipcMain.handle("ws:describe", wrap(async ({ name, args }) => workspace.describe(name, args)));
+ipcMain.handle("ws:run", wrap(async ({ name, args }) => workspace.run(name, args)));
+ipcMain.handle("use:chatOnce", wrap(async (a) => broker.chatOnce(a || {})));
+ipcMain.handle("use:testKey", wrap(async (a) => broker.testKey(a)));
+ipcMain.handle("use:models", wrap(async () => broker.models()));
+ipcMain.handle("use:probe", wrap(async () => broker.probeAll()));
+ipcMain.handle("use:status", wrap(async () => broker.statusHistory()));
+ipcMain.handle("use:balance", wrap(async () => broker.balance()));
+ipcMain.handle("use:costOf", wrap(async ({ responseId }) => broker.costOf(responseId)));
+ipcMain.handle("use:chat", wrap(async ({ id, model, messages }) =>
+  broker.chat({ id, model, messages }, (ev) => {
+    if (win && !win.isDestroyed()) win.webContents.send("use:delta", { id, ...ev });
+  })));
+ipcMain.handle("use:stop", wrap(async ({ id }) => broker.stop(id)));
+ipcMain.handle("use:chats", wrap(async () => broker.listChats()));
+ipcMain.handle("use:chatLoad", wrap(async ({ id }) => broker.loadChat(id)));
+ipcMain.handle("use:chatSave", wrap(async ({ chat }) => broker.saveChat(chat)));
+ipcMain.handle("use:chatDelete", wrap(async ({ id }) => broker.deleteChat(id)));
 ipcMain.handle("keys:sshKeyInfo", wrap(async () => keys.sshKeyInfo()));
 ipcMain.handle("keys:names", wrap(async () => keys.keyringKeyNames()));
 ipcMain.handle("keys:resetKeyring", wrap(async () => keys.resetKeyring()));
@@ -264,6 +323,7 @@ ipcMain.handle("net:gnkPrice", wrap(async () => earnings.gnkPrice()));
 ipcMain.handle("net:probe", wrap(async ({ url }) => netdata.probeUrl(url)));
 ipcMain.handle("net:nextPoc", wrap(async ({ seed }) => netdata.nextPoc(seed)));
 ipcMain.handle("net:modelActivity", wrap(async ({ seed }) => netdata.modelActivity(seed)));
+ipcMain.handle("net:payingModels", wrap(async ({ seed }) => netdata.payingModels(seed)));
 ipcMain.handle("net:releaseArch", wrap(async ({ arch }) => netdata.releaseArchStatus(arch || "amd64")));
 ipcMain.handle("net:chainHeight", wrap(async ({ seed }) => netdata.chainHeight(seed)));
 ipcMain.handle("net:myEpochWeight", wrap(async ({ seed, address }) => netdata.myEpochWeight(seed, address)));

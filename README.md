@@ -60,6 +60,23 @@ The short version:
   publishes the count per epoch, with every transaction hash as proof.
 - **Updates and installs are verified.** The app and both install scripts
   check each download's SHA-256 against `manifest.json` before running it.
+- **Every published build is signed by GitHub as coming from this source.**
+  The builds are made by this repository's own workflow
+  (`.github/workflows/build.yml`), and GitHub attaches a signed record of the
+  repository, workflow and commit each file came from. Anyone can check a file
+  they downloaded, without trusting us:
+
+  ```bash
+  gh attestation verify Gonka-Network-Onboarding-Tool.exe --repo gonkanetworkonboardinghub/gonka-network-onboarding-tool
+  ```
+
+  `scripts/publish.js` runs the same check before it publishes anything, so a
+  build made on somebody's laptop cannot reach a release.
+- **Known holes are checked every week.** `.github/workflows/security.yml`
+  fails if the Electron version the app ships stopped getting security fixes or
+  is behind on patches (`scripts/check-electron.js`), or if any package the app
+  ships has a known serious hole. `scripts/release.js` runs the Electron check
+  too, so a release can't quietly go out on an unsupported version.
 
 ## Build and run it yourself
 
@@ -77,15 +94,16 @@ what the code does.
 
 ## How releases are made
 
-- `scripts/release.js` sets the version, builds the Windows installer, and
-  pushes a version tag. The tag triggers `.github/workflows/build.yml` in this
-  repository, which builds the Mac app on GitHub's machines and tests both
-  platforms: the wallet against the official tool, the install scripts, the
-  in-app updater, and updating from an older version. Its logs are public in
-  the Actions tab.
-- `scripts/publish.js` uploads the builds to the releases repository and
-  updates `manifest.json` with each file's SHA-256, last, so a release only
-  goes live once every file is in place and verified.
+- `scripts/release.js` sets the version and pushes a version tag. The tag
+  triggers `.github/workflows/build.yml` in this repository, which builds both
+  platforms on GitHub's machines and tests them: the wallet against the
+  official tool, the install scripts, the in-app updater, and updating from an
+  older version. Its logs are public in the Actions tab. GitHub signs each
+  file it built, and release.js downloads those exact files — so what people
+  install is what the public workflow made, not a copy from a laptop.
+- `scripts/publish.js` checks every build's GitHub signature and SHA-256,
+  uploads them to the releases repository, and updates `manifest.json` last, so
+  a release only goes live once every file is in place and verified.
 
 ## Project layout
 

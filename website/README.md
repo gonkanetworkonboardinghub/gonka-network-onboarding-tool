@@ -1,6 +1,6 @@
 # The Gonka Network Onboarding Tool (GNOT)
 
-A free app for Windows and macOS from [The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com) that makes taking part in the Gonka network easy.
+An app for Windows and macOS from [The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com) that makes taking part in the Gonka network easy. It costs nothing to use, and it never asks for your money or holds any.
 
 - **Gonka Host Setup** takes a GPU server from bare metal to a registered Gonka node, step by step.
 - **Gonka Host Monitor** is coming soon: check on a node you already run, what it earns and where that goes.
@@ -9,6 +9,18 @@ A free app for Windows and macOS from [The Gonka Network Onboarding Hub](https:/
 ## Source code
 
 The full source code of the app is public for review at [gonkanetworkonboardinghub/gonka-network-onboarding-tool](https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool), including the build and test workflow that produces these releases.
+
+## Checking a build came from that source
+
+Every file in these releases is built by GitHub's own runners from that public source, and GitHub signs each one with the repository, workflow and commit it came from. You don't have to take our word for any of it: with the [GitHub CLI](https://cli.github.com) installed, run
+
+```bash
+gh attestation verify Gonka-Network-Onboarding-Tool.exe --repo gonkanetworkonboardinghub/gonka-network-onboarding-tool
+```
+
+on any file you downloaded, putting in the name of the file you have (on a Mac that's the `.zip`). It prints the commit the file was built from, and fails if the file was changed by anyone, anywhere, after the build. The same check runs before anything is published here, so an installer built on somebody's laptop cannot end up in a release.
+
+Two other things anyone can check: [`manifest.json`](manifest.json) publishes the SHA-256 of every build, and each release's files are built and tested by [the workflow in the open](https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/actions).
 
 ## Install
 

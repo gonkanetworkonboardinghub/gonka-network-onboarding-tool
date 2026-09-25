@@ -5,11 +5,16 @@
  *   node scripts/release.js 1.1.0 --mac=path/to/zips  (Mac builds made elsewhere)
  *   (no --mac: Windows only; Mac users stay on their current release)
  *
- * Windows builds here. macOS can only be built on a Mac, so `--mac` commits
- * the source, pushes a v<version> tag to the private source repo, lets its
- * GitHub Actions Mac runner build (see .github/workflows/build-mac.yml),
- * waits for it and downloads the two zips (Apple silicon + Intel). Needs the
- * GitHub CLI (`gh`), logged in.
+ * With `--mac`, everything is built on GitHub: the source is committed and a
+ * v<version> tag pushed, .github/workflows/build.yml builds and tests both
+ * platforms, and this downloads the Mac zips and the Windows installer it
+ * made. GitHub also signs each of those files as built from that commit, so
+ * anyone can check a download came from the public source:
+ *
+ *   gh attestation verify <file> --repo gonkanetworkonboardinghub/gonka-network-onboarding-tool
+ *
+ * Without `--mac` the Windows installer is built on this machine instead, and
+ * carries no such signature. Needs the GitHub CLI (`gh`), logged in.
  *
  * The apps are not code-signed: a trusted signature must carry a verified
  * legal name, and the publisher chose not to put one on it. People never
@@ -50,6 +55,16 @@ if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
   process.exit(1);
 }
 
+// Never cut a release on an Electron that no longer gets security fixes.
+if (!process.argv.includes("--allow-old-electron")) {
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, "check-electron.js")], { cwd: root, stdio: "inherit" });
+  } catch (_) {
+    console.error("\nStopping: the release would ship known holes. Add --allow-old-electron to do it anyway.");
+    process.exit(1);
+  }
+}
+
 const sha256Of = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const today = () => {
   const d = new Date();
@@ -68,8 +83,8 @@ async function publishedMacBlock() {
   return null;
 }
 
-/** Commit, tag, push; wait for the Mac runner; download its zips. Returns their folder. */
-async function buildMacOnGitHub() {
+/** Commit, tag, push; wait for the build; download what it made and signed. */
+async function buildOnGitHub() {
   try { sh(GH, ["auth", "status"]); } catch (_) {
     throw new Error("--mac needs the GitHub CLI, logged in (gh auth login).");
   }
@@ -90,19 +105,22 @@ async function buildMacOnGitHub() {
     const mine = runs.filter((r) => r.headSha === commit).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (mine) runId = mine.databaseId;
   }
-  if (!runId) throw new Error("The Mac build never started on GitHub. Check the Actions tab of the source repo.");
-  console.log(`Mac build running (run ${runId}) — usually 6–10 minutes…`);
-  // Asynchronously, so the Windows build keeps running in the meantime.
+  if (!runId) throw new Error("The build never started on GitHub. Check the Actions tab of the source repo.");
+  console.log(`Build running (run ${runId}) — usually 15–25 minutes for both platforms…`);
   const code = await new Promise((resolve) => {
     require("child_process").spawn(GH, ["run", "watch", String(runId), "--exit-status", "--interval", "30"], { cwd: root, stdio: "ignore" })
       .on("exit", resolve).on("error", () => resolve(1));
   });
-  if (code !== 0) throw new Error(`The Mac build failed. See: gh run view ${runId} --log-failed`);
-  console.log("Mac build finished and passed its checks.");
-  const dir = path.join(root, "dist", `mac-${version}`);
-  fs.rmSync(dir, { recursive: true, force: true });
-  sh(GH, ["run", "download", String(runId), "-n", "mac-build", "-D", dir]);
-  return dir;
+  if (code !== 0) throw new Error(`The GitHub build failed. See: gh run view ${runId} --log-failed`);
+  console.log("Both platforms built and passed their checks on GitHub.");
+  const out = {};
+  for (const [key, artifact] of [["macDir", "mac-build"], ["winDir", "windows-build"]]) {
+    const dir = path.join(root, "dist", `${artifact}-${version}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    sh(GH, ["run", "download", String(runId), "-n", artifact, "-D", dir]);
+    out[key] = dir;
+  }
+  return out;
 }
 
 (async () => {
@@ -120,34 +138,36 @@ async function buildMacOnGitHub() {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
   console.log(`version ${previous.version} -> ${version} (released ${pkg.gonkaReleased})`);
 
-  // Start the Mac build first: it runs on GitHub while Windows builds here.
-  let macDir = null, macError = null;
-  const macJob = macArg === "--mac"
-    ? buildMacOnGitHub().then((d) => { macDir = d; }, (e) => { macError = e; })
-    : Promise.resolve(macArg ? (macDir = path.resolve(macArg.slice("--mac=".length))) : null);
-
-  const { build, Platform } = require("electron-builder");
-  try {
-    // A copy: electron-builder may annotate the config it's given, and pkg is
-    // written back to package.json below.
-    const config = JSON.parse(JSON.stringify(pkg.build || {}));
-    await build({ targets: Platform.WINDOWS.createTarget(), config, publish: "never", projectDir: root });
-  } catch (e) {
-    restore();
-    console.error("\nWINDOWS BUILD FAILED — version restored to " + previous.version + ".\n" + (e && e.message ? e.message : e));
-    process.exit(1);
+  // With --mac, GitHub builds both platforms and signs what it built. Without
+  // it, Windows is built here and the Mac zips come from wherever --mac=<dir>
+  // points (or the last release's Mac files stay live).
+  let macDir = null, winDir = null;
+  if (macArg === "--mac") {
+    try { ({ macDir, winDir } = await buildOnGitHub()); }
+    catch (e) {
+      restore();
+      console.error("\nTHE GITHUB BUILD FAILED — version restored to " + previous.version + ". Nothing was staged.\n" + e.message);
+      process.exit(1);
+    }
+  } else {
+    if (macArg) macDir = path.resolve(macArg.slice("--mac=".length));
+    const { build, Platform } = require("electron-builder");
+    try {
+      // A copy: electron-builder may annotate the config it's given, and pkg is
+      // written back to package.json below.
+      const config = JSON.parse(JSON.stringify(pkg.build || {}));
+      await build({ targets: Platform.WINDOWS.createTarget(), config, publish: "never", projectDir: root });
+    } catch (e) {
+      restore();
+      console.error("\nWINDOWS BUILD FAILED — version restored to " + previous.version + ".\n" + (e && e.message ? e.message : e));
+      process.exit(1);
+    }
   }
-  await macJob;
-  if (macError) {
-    restore();
-    console.error("\nMAC BUILD FAILED — version restored to " + previous.version + ". Nothing was staged.\n" + macError.message);
-    process.exit(1);
-  }
 
-  const dist = path.join(root, "dist");
+  const dist = winDir || path.join(root, "dist");
   const exe = fs.readdirSync(dist).find((f) => f.endsWith(`${version}.exe`) && !f.includes("__uninstaller"));
   if (!exe) {
-    console.error("Built installer not found in dist/ — did the build fail?");
+    console.error(`Built installer not found in ${path.relative(root, dist) || "dist"}/ — did the build fail?`);
     process.exit(1);
   }
   const exePath = path.join(dist, exe);
@@ -212,6 +232,7 @@ async function buildMacOnGitHub() {
 
   console.log("\n────────────────────────────────────────────────────────");
   console.log(`release ${version}   Windows ${(fs.statSync(exePath).size / 1e6).toFixed(1)} MB   sha256 ${sha256}`);
+  console.log(winDir ? "              built and signed by GitHub from this commit" : "              built on this machine (no GitHub signature)");
   for (const z of macZips) console.log(`              ${path.basename(z)}   ${(fs.statSync(z).size / 1e6).toFixed(1)} MB`);
   if (!macDir) console.log("              (Windows only — Mac users keep " + ((manifest.app.mac && manifest.app.mac.latest) || "no Mac release") + ")");
   console.log("\nSTAGED FOR UPLOAD in website/ — in this order:");

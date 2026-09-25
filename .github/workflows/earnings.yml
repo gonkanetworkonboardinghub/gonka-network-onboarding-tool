@@ -4,6 +4,10 @@
 #   earnings.json   - "Mine it or buy it?": what each rig mined last epoch
 #   onboarded.json  - nodes and GPUs set up with GNOT, per epoch, with the
 #                     transactions that prove each one
+#   services.json   - which "Use Gonka" services are answering, and since when
+#                     any has been silent (the app drops one after three days)
+#   stats.json      - downloads of the app, split into new installs and
+#                     updates, straight from GitHub's public counters
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -59,6 +63,16 @@ jobs:
           git show origin/data:onboarded.json > "$RUNNER_TEMP/onboarded-prev.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/onboarded-prev.json"
           node scripts/onboarded-snapshot.js "$RUNNER_TEMP/onboarded-prev.json" "$RUNNER_TEMP/earnings.json" "$RUNNER_TEMP/onboarded.json"
 
+      - name: Check the Use Gonka services
+        run: |
+          git show origin/data:services.json > "$RUNNER_TEMP/services-prev.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/services-prev.json"
+          node scripts/services-snapshot.js "$RUNNER_TEMP/services-prev.json" "$RUNNER_TEMP/services.json"
+
+      - name: Count downloads, installs and updates
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/stats-snapshot.js "$RUNNER_TEMP/stats.json"
+
       - name: Publish them on the data branch
         run: |
           git config user.name "Gonka Network Onboarding Hub"
@@ -71,6 +85,8 @@ jobs:
           fi
           cp "$RUNNER_TEMP/earnings.json" earnings.json
           cp "$RUNNER_TEMP/onboarded.json" onboarded.json
-          git add earnings.json onboarded.json
+          cp "$RUNNER_TEMP/services.json" services.json
+          cp "$RUNNER_TEMP/stats.json" stats.json
+          git add earnings.json onboarded.json services.json stats.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing changed"; exit 0; }
           git push origin data

@@ -11,14 +11,27 @@
 #            Then install.ps1 is run the way people run it.
 #
 # Triggered by scripts/release.js pushing a v<version> tag (or by hand from
-# the Actions tab). release.js downloads the "mac-build" artifact; the Windows
-# installer it ships is built locally.
+# the Actions tab). release.js downloads the "mac-build" and "windows-build"
+# artifacts and publishes exactly those files.
 name: Build and test
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+# Every file this workflow builds is also signed by GitHub as having been built
+# here, from this commit ("build provenance"). Anyone can check a download:
+#
+#   gh attestation verify <file> --repo gonkanetworkonboardinghub/gonka-network-onboarding-tool
+#
+# scripts/release.js ships exactly these files, and scripts/publish.js refuses
+# to publish one that doesn't verify, so what people download is what GitHub
+# built from the public source.
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
 
 env:
   APP: The Gonka Network Onboarding Tool
@@ -154,6 +167,11 @@ jobs:
             ci/*.log
           retention-days: 14
 
+      - name: Sign the zips as built here, from this commit
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/Gonka-Network-Onboarding-Tool-*-mac-*.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: mac-build
@@ -255,6 +273,24 @@ jobs:
           if (-not (Get-Process -Name $env:APP -ErrorAction SilentlyContinue)) { $fail += "the app didn't open" }
           if ($fail) { $fail | ForEach-Object { "FAIL: $_" }; exit 1 }
           "install.ps1 OK"
+
+      - name: Sign the installer as built here, from this commit
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/Gonka-Network-Onboarding-Tool-Setup-*.exe
+            !dist/*__uninstaller*
+
+      # This exact file is what gets published: release.js downloads it rather
+      # than building its own, so the signature above covers what people run.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/Gonka-Network-Onboarding-Tool-Setup-*.exe
+            !dist/*__uninstaller*
+          if-no-files-found: error
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         if: always()

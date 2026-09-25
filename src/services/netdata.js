@@ -266,6 +266,23 @@ function decToNumber(d) {
  *   weight              = what counts after the collateral ratio is applied
  * Collateral has to cover the FORMER, so that is what callers should size to.
  */
+/**
+ * The models the network is actually paying for in the epoch running now.
+ *
+ * Governance approves a model long before (and long after) the network pays
+ * anyone to serve it: Kimi-K2.6 sat "approved" for weeks while earning
+ * nothing. This is the honest list — the epoch's own model groups — so a
+ * model that stops paying drops out by itself, with no app update. Returns
+ * null if the chain can't be read, meaning "don't know", never "none".
+ */
+async function payingModels(seed) {
+  try {
+    const j = await getJson(seed + "/chain-api/productscience/inference/inference/current_epoch_group_data");
+    const list = (j && j.epoch_group_data && j.epoch_group_data.sub_group_models) || [];
+    return list.length ? list : null;
+  } catch (_) { return null; }
+}
+
 async function myEpochWeight(seed, address) {
   if (!address) return null;
   const j = await getJson(seed + "/chain-api/productscience/inference/inference/current_epoch_group_data");
@@ -359,5 +376,5 @@ async function probeUrl(url, timeout = 8000) {
 module.exports = {
   firstReachableSeed, governanceModels, participant, account,
   epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf,
-  repoGpuConfigs, probeUrl, nextPoc, modelActivity, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
+  repoGpuConfigs, probeUrl, nextPoc, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
 };
