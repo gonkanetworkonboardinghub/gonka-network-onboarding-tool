@@ -313,12 +313,12 @@ async function openChatView() {
   if (!U.config.model || !U.models.includes(U.config.model)) {
     U.config.model = U.models.find((m) => /MiniMax/i.test(m)) || U.models[0] || null;
   }
-  renderRail();
+  renderChatList();
   startChat(null);
   refreshBalance();
 }
 
-async function renderRail() {
+async function renderChatList() {
   let chats = [];
   try { chats = await api("useChats"); } catch (_) {}
   // Leaving the screen while that was in flight takes the rail with it.
@@ -338,7 +338,7 @@ async function renderRail() {
     b.onclick = async () => {
       if (!confirm(t("Delete this conversation? It is only saved on this computer."))) return;
       await api("useChatDelete", { id: b.dataset.del });
-      if (U.chat && U.chat.id === b.dataset.del) startChat(null); else renderRail();
+      if (U.chat && U.chat.id === b.dataset.del) startChat(null); else renderChatList();
     };
   });
   renderFoot();
@@ -431,7 +431,7 @@ async function startChat(id) {
   }
   if (!id || !U.chat) U.chat = { id: newId(), title: "", model: U.config.model, messages: [] };
   renderChat();
-  renderRail();
+  renderChatList();
 }
 
 function renderChat() {
@@ -763,7 +763,7 @@ async function send() {
   }
   redrawMessages();
   await api("useChatSave", { chat: c }).catch(() => {});
-  renderRail();
+  renderChatList();
   refreshBalance();
   // The service can confirm the exact cost a moment after the reply.
   if (reply.responseId) {

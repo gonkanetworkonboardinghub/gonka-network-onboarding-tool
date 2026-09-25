@@ -82,6 +82,24 @@ for (const b of builds) {
   }
 }
 
+// Last line of defence for the settings the manifest carries besides the
+// release block. Publishing a manifest that has lost one would silently turn
+// off whatever it controls — for every copy of the app, at once.
+const liveSettings = (() => {
+  try {
+    const encoded = gh(["api", `repos/${REPO}/contents/manifest.json`, "--jq", ".content"]).replace(/\s/g, "");
+    const { app: _app, ...rest } = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+    return rest;
+  } catch (_) { return {}; }   // nothing published yet
+})();
+const { app: _newApp, ...newSettings } = manifest;
+const dropped = Object.keys(liveSettings).filter((k) => !(k in newSettings));
+if (dropped.length && !process.argv.includes("--drop-settings")) {
+  die(`The manifest about to be published has lost ${dropped.length === 1 ? "a setting" : "settings"} that is live right now: ${dropped.join(", ")}.\n` +
+    "  Whatever it controls would switch off for every copy of the app.\n" +
+    "  Put it back in website/manifest.json, or pass --drop-settings if removing it is the point.");
+}
+
 const repoFiles = ["install.ps1", "install.sh", "README.md", "manifest.json"];   // manifest last
 for (const f of repoFiles) if (!fs.existsSync(path.join(web, f))) die(`Missing website/${f}.`);
 

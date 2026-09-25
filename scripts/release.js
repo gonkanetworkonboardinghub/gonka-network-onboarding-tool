@@ -83,6 +83,25 @@ async function publishedMacBlock() {
   return null;
 }
 
+/**
+ * Everything the published manifest carries besides the release block.
+ *
+ * The manifest is two things at once: which version is current, and settings
+ * that can be changed without shipping a new app (knowledge.js `overridable`).
+ * Rebuilding it from scratch each release would quietly drop those settings —
+ * it nearly dropped the address the app sends its usage totals to, which would
+ * have broken the counting for everyone with nobody noticing.
+ */
+async function publishedSettings() {
+  const strip = (m) => { const { app: _app, ...rest } = m || {}; return rest; };
+  try {
+    const res = await fetch(LIVE_MANIFEST, { signal: AbortSignal.timeout(10000) });
+    if (res.ok) return strip(await res.json());
+  } catch (_) {}
+  try { return strip(JSON.parse(fs.readFileSync(path.join(root, "website", "manifest.json"), "utf8"))); } catch (_) {}
+  return {};
+}
+
 /** Commit, tag, push; wait for the build; download what it made and signed. */
 async function buildOnGitHub() {
   try { sh(GH, ["auth", "status"]); } catch (_) {
@@ -183,6 +202,7 @@ async function buildOnGitHub() {
   const download = (name) => `${RELEASE_BASE}/releases/download/${tag}/${name}`;
 
   const manifest = {
+    ...(await publishedSettings()),
     app: {
       latest: version,
       minSupported: version,   // every update is required
@@ -233,6 +253,8 @@ async function buildOnGitHub() {
   console.log("\n────────────────────────────────────────────────────────");
   console.log(`release ${version}   Windows ${(fs.statSync(exePath).size / 1e6).toFixed(1)} MB   sha256 ${sha256}`);
   console.log(winDir ? "              built and signed by GitHub from this commit" : "              built on this machine (no GitHub signature)");
+  const carried = Object.keys(manifest).filter((k) => k !== "app");
+  if (carried.length) console.log(`              settings carried over: ${carried.join(", ")}`);
   for (const z of macZips) console.log(`              ${path.basename(z)}   ${(fs.statSync(z).size / 1e6).toFixed(1)} MB`);
   if (!macDir) console.log("              (Windows only — Mac users keep " + ((manifest.app.mac && manifest.app.mac.latest) || "no Mac release") + ")");
   console.log("\nSTAGED FOR UPLOAD in website/ — in this order:");
