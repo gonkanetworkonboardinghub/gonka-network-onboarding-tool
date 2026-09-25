@@ -14,7 +14,9 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawn, execFile } = require("child_process");
-const { Readable, Transform } = require("stream");
+const { Transform } = require("stream");
+const http = require("http");
+const https = require("https");
 const { pipeline } = require("stream/promises");
 
 /**
@@ -23,6 +25,33 @@ const { pipeline } = require("stream/promises");
  * @param {string}   dest      where to save the installer
  * @param {(got:number,total:number)=>void} [onProgress]
  */
+/**
+ * Opens a download the plain way, with Node's own http client rather than
+ * fetch. Not a style choice: Electron 44.4.5's bundled fetch crashes the whole
+ * process — assert(!this.paused) inside its HTTP parser — when a download is
+ * slowed by writing to disk and the server then closes the connection, which
+ * is exactly what installing an update does. A crash there would strand
+ * people, because the app makes updates compulsory. This path has no such
+ * problem, and follows the redirect GitHub sends to its file storage.
+ */
+function openDownload(url, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith("http:") ? http : https;
+    const req = lib.get(url, { headers: { "User-Agent": "Gonka-Network-Onboarding-Tool" } }, (res) => {
+      const code = res.statusCode || 0;
+      if (code >= 300 && code < 400 && res.headers.location) {
+        res.resume();
+        if (!redirectsLeft) return reject(new Error("The download server kept redirecting."));
+        return resolve(openDownload(new URL(res.headers.location, url).toString(), redirectsLeft - 1));
+      }
+      if (code !== 200) { res.resume(); return reject(new Error(`The download server answered HTTP ${code}.`)); }
+      resolve(res);
+    });
+    req.setTimeout(15 * 60 * 1000, () => req.destroy(new Error("The download took too long.")));
+    req.on("error", reject);
+  });
+}
+
 async function downloadVerified(urls, sha256, dest, onProgress) {
   const want = String(sha256 || "").toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(want)) {
@@ -32,9 +61,8 @@ async function downloadVerified(urls, sha256, dest, onProgress) {
   let lastErr = null;
   for (const url of urls.filter(Boolean)) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(15 * 60 * 1000) });
-      if (!res.ok || !res.body) throw new Error(`The download server answered HTTP ${res.status}.`);
-      const total = Number(res.headers.get("content-length")) || 0;
+      const res = await openDownload(url);
+      const total = Number(res.headers["content-length"]) || 0;
       const hash = crypto.createHash("sha256");
       let got = 0;
       let lastTick = 0;
@@ -47,7 +75,7 @@ async function downloadVerified(urls, sha256, dest, onProgress) {
           cb(null, chunk);
         }
       });
-      await pipeline(Readable.fromWeb(res.body), meter, fs.createWriteStream(dest));
+      await pipeline(res, meter, fs.createWriteStream(dest));
       if (onProgress) onProgress(got, total);
 
       const have = hash.digest("hex");
