@@ -92,9 +92,13 @@ app.whenReady().then(async () => {
   await K.loadRemoteManifest();
   // The manifest doubles as the release channel. Never throws: an unreachable
   // website must not stop someone opening the app.
-  try { updateState = updates.evaluate(app.getVersion(), K.get().app, { platform: process.platform, arch: process.arch }); }
+  try { updateState = updates.evaluate(VERSION, K.get().app, { platform: process.platform, arch: process.arch }); }
   catch (_) { updateState = { state: "ok", checked: false }; }
   createWindow();
+  // Send yesterday's total on the way in, not only after the next answer:
+  // otherwise someone who used Use Gonka once and left never reports it, and
+  // a spell where the address was wrong would sit there for good.
+  usage.send().catch(() => {});
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
@@ -113,9 +117,13 @@ const needDriver = () => { if (!driver) throw new Error("Not connected to a serv
 ipcMain.handle("app:knowledge", wrap(async () => K.get()));
 // Release date stamped into package.json by scripts/release.js (absent in dev runs).
 const RELEASED = (() => { try { return require("./package.json").gonkaReleased || null; } catch (_) { return null; } })();
+// The app's own version. The same as app.getVersion() once packaged; in a run
+// from source that call returns Electron's version instead, which made the
+// version line read "v44.4.5".
+const VERSION = (() => { try { return require("./package.json").version || app.getVersion(); } catch (_) { return app.getVersion(); } })();
 ipcMain.handle("app:updateState", wrap(async () => ({
   ...updateState,
-  current: app.getVersion(),
+  current: VERSION,
   released: RELEASED,
   autoUpdate: updater.canSelfUpdate(updateState)
 })));

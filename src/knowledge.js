@@ -254,7 +254,7 @@ const overridable = {
   //   price:  USD per million tokens for MiniMax-M2.7: { flat } | { in, out } | { from } | null (not stated)
   // Where the daily Use Gonka total goes (src/services/usage.js). Empty means
   // nothing is ever sent; the published manifest can set it without a release.
-  usageEndpoint: "https://thegonkanetworkonboardinghub.com/api/gnot-usage",
+  usageEndpoint: "https://thegonkanetworkonboardinghub.com/functions/gnot-usage",
 
   useServicesChecked: "2026-09-21",
   useServices: [
