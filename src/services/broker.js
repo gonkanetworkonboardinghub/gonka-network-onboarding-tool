@@ -272,6 +272,26 @@ async function statusHistory() {
 const running = new Map();   // request id -> AbortController
 
 /**
+ * How much room an answer gets. Services default to something small — Gonka
+ * Proxy stops at 3,072 tokens — and a reply that runs out of room in the
+ * middle of a tool call arrives as half a line of JSON, which used to be read
+ * as a call with no arguments at all. Asking for the room up front is what
+ * stops that happening. Overridable from the manifest, and if a service
+ * refuses the number the request is sent again without it.
+ */
+const answerRoom = () => Number(K.get().useMaxTokens) || 8192;
+/**
+ * How long to wait for one of those answers. Nothing streams while tools are
+ * in play, so the whole file arrives at once at the end: measured on Gonka
+ * Proxy, DeepSeek-V4-Flash writes about 35 tokens a second, so a full-length
+ * answer is nearly four minutes of silence. Three minutes used to be the wait,
+ * and raising the room without raising this just swapped a truncated file for
+ * a timed-out one.
+ */
+const answerWait = () => Number(K.get().useTimeoutMs) || 600000;
+const roomRefused = (e) => /max_?(new_?)?tokens|context length|maximum context|too (large|long)/i.test(String(e && e.message));
+
+/**
  * Streams one reply. onEvent receives {type: "delta", content, reasoning}
  * pieces as they arrive; the promise resolves with the whole reply and usage.
  * Reasoning models send their thinking either as reasoning_content or inside
@@ -290,10 +310,14 @@ async function chatOnce({ model, messages, tools, signal }) {
   const cfg = getConfig();
   const m = model || cfg.model;
   if (!m) throw new Error("No model chosen yet.");
-  const res = await call("/chat/completions", {
-    method: "POST", timeout: 180000, signal,
-    body: { model: m, messages, ...(tools && tools.length ? { tools, tool_choice: "auto" } : {}), stream: false }
-  });
+  const body = { model: m, messages, ...(tools && tools.length ? { tools, tool_choice: "auto" } : {}), stream: false };
+  let res;
+  try {
+    res = await call("/chat/completions", { method: "POST", timeout: answerWait(), signal, body: { ...body, max_tokens: answerRoom() } });
+  } catch (e) {
+    if (!roomRefused(e)) throw e;
+    res = await call("/chat/completions", { method: "POST", timeout: answerWait(), signal, body });
+  }
   const data = await res.json();
   const choice = (data.choices && data.choices[0]) || {};
   const msg = choice.message || {};
@@ -301,12 +325,15 @@ async function chatOnce({ model, messages, tools, signal }) {
   return {
     content: msg.content || "",
     reasoning: msg.reasoning_content || "",
-    toolCalls: (msg.tool_calls || []).map((c) => ({
-      id: c.id,
-      name: c.function && c.function.name,
-      args: (() => { try { return JSON.parse((c.function && c.function.arguments) || "{}"); } catch (_) { return {}; } })(),
-      rawArgs: (c.function && c.function.arguments) || "{}"
-    })),
+    // `whole` says the arguments arrived complete. When an answer is cut off
+    // mid-call the JSON is half-written, and running it anyway is how a write
+    // of a long file turned into "no file name was given".
+    toolCalls: (msg.tool_calls || []).map((c) => {
+      const raw = (c.function && c.function.arguments) || "{}";
+      let args = null;
+      try { args = JSON.parse(raw); } catch (_) { args = null; }
+      return { id: c.id, name: c.function && c.function.name, args: args || {}, rawArgs: raw, whole: args !== null };
+    }),
     finish: choice.finish_reason || null,
     usage: data.usage || null
   };
@@ -365,10 +392,14 @@ async function chat({ id, model, messages }, onEvent) {
   const ctl = new AbortController();
   running.set(id, ctl);
   try {
-    const res = await call("/chat/completions", {
-      method: "POST", signal: ctl.signal,
-      body: { model, messages, stream: true, stream_options: { include_usage: true } }
-    });
+    const body = { model, messages, stream: true, stream_options: { include_usage: true } };
+    let res;
+    try {
+      res = await call("/chat/completions", { method: "POST", signal: ctl.signal, body: { ...body, max_tokens: answerRoom() } });
+    } catch (e) {
+      if (!roomRefused(e)) throw e;
+      res = await call("/chat/completions", { method: "POST", signal: ctl.signal, body });
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "", content = "", reasoning = "", usage = null, responseId = null;

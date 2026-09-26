@@ -256,6 +256,16 @@ const overridable = {
   // nothing is ever sent; the published manifest can set it without a release.
   usageEndpoint: "https://thegonkanetworkonboardinghub.com/functions/gnot-usage",
 
+  // How long an answer may be, in tokens. Services cut answers off at their own
+  // default — Gonka Proxy at 3,072 — and a reply cut off in the middle of a
+  // tool call arrives as half-written JSON. A service that refuses this number
+  // is asked again without it, so raising it is safe.
+  useMaxTokens: 8192,
+
+  // How long to wait for one tool-using answer, in milliseconds. It arrives in
+  // one piece at the end, and a long file takes minutes to write.
+  useTimeoutMs: 600000,
+
   useServicesChecked: "2026-09-21",
   useServices: [
     {

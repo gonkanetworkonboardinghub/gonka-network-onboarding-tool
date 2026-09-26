@@ -516,7 +516,7 @@ function msgHtml(m, i) {
       ${thinking.trim() ? `<details class="think"${parts.thinkingOpen ? " open" : ""}><summary>${esc(t("Thinking"))}</summary><div>${esc(thinking).replace(/\n/g, "<br>")}</div></details>` : ""}
       ${(m.steps || []).map((st) => stepHtml(st, !!(U.pending && U.pending.step === st))).join("")}
       <div class="md">${md(parts.answer)}${m.pending && !parts.answer && !m.working ? `<span class="typing">…</span>` : ""}</div>
-      ${m.working ? `<div class="ws-working"><span class="typing">…</span>${esc(m.working)}</div>` : ""}
+      ${m.working ? `<div class="ws-working"><span class="typing">…</span><span class="ws-working-text">${esc(m.working)}</span></div>` : ""}
       ${m.error ? `<div class="use-err">${esc(m.error)}</div>` : ""}
       ${tokens !== null && !m.pending ? `<div class="use-cost">${esc(costText
         ? t("{tokens} tokens · {cost}", { tokens: tokens.toLocaleString(window.I18N.lang()), cost: costText })
@@ -546,6 +546,7 @@ const MAX_STEPS = 12;   // a runaway loop costs real money, so it stops itself
 const WS_SYSTEM = `You are working inside one folder on the person's own computer, through The Gonka Network Onboarding Tool.
 Use the tools to look at what is there before writing anything. Paths are always relative to that folder.
 Write real, complete files — never a sketch or a placeholder. When you are done, say plainly what you did in one or two sentences.
+Write one file per turn. There is a limit on how long a single reply can be, and a reply that reaches it is cut off in the middle of the file, which writes nothing at all. Several small turns always work; one long turn may not.
 You can read and write text: notes, markdown, CSV, JSON, code, logs. You cannot read pictures, PDFs, Word or Excel files — no model on the Gonka network can look at an image yet.
 If you are asked about a file of that kind, say so plainly instead of guessing at what is in it.`;
 
@@ -595,16 +596,32 @@ async function runWithTools(c, reply, id) {
   const seen = new Map();   // the same call over and over means it is stuck
   for (let round = 0; round < MAX_STEPS; round++) {
     if (U.streaming !== id) return;                     // stopped
-    reply.working = round === 0 ? t("Thinking…")
+    const base = round === 0 ? t("Thinking…")
       : t("Working… step {n} of {max}", { n: round + 1, max: MAX_STEPS });
+    reply.working = base;
     redrawMessages();
-    const r = await api("useChatOnce", { model: c.model, messages: convo, tools });
+    // Writing a long file takes minutes: 35 tokens a second is what the fast
+    // model manages, and nothing streams while tools are in play. A line that
+    // never changes for four minutes looks like a hang — the person asked
+    // "did you get stuck?" — so the seconds tick where they can see them.
+    const began = Date.now();
+    const tick = setInterval(() => {
+      const secs = Math.round((Date.now() - began) / 1000);
+      reply.working = base + " · " + (secs < 60 ? t("{s}s", { s: secs })
+        : t("{m}m {s}s", { m: Math.floor(secs / 60), s: secs % 60 }));
+      const el = document.querySelector(".ws-working .ws-working-text");
+      if (el) el.textContent = reply.working; else redrawMessages();
+    }, 1000);
+    let r;
+    try { r = await api("useChatOnce", { model: c.model, messages: convo, tools }); }
+    finally { clearInterval(tick); }
     reply.working = null;
     if (U.streaming !== id) return;
     if (r.usage) reply.usage = r.usage;
 
     if (!r.toolCalls.length) {
-      reply.content = cleanAnswer(r.content);
+      reply.content = cleanAnswer(r.content)
+        + (r.finish === "length" ? "\n\n" + t("(This answer was cut off because it reached its length limit. Ask for the rest, or ask for something shorter.)") : "");
       reply.reasoning = r.reasoning;
       // Some models put the whole reply inside <think>, or in the reasoning
       // field, leaving nothing to show but a fold. Then that IS the answer.
@@ -637,6 +654,21 @@ async function runWithTools(c, reply, id) {
       const step = { tool: tc.name, args: tc.args, state: "running" };
       reply.steps = (reply.steps || []).concat(step);
       redrawMessages();
+
+      // An answer that runs out of room stops in the middle of writing the
+      // call, so the arguments are half a line of JSON. Running that would be
+      // guessing: a long file to write came through as no file name at all.
+      // Say what actually happened, tell the model the same, and let it try
+      // again with something shorter.
+      if (!tc.whole) {
+        step.state = "failed";
+        step.error = t("The answer was cut off part-way through this step, because it reached its length limit. Nothing was written.");
+        redrawMessages();
+        convo.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({
+          error: "Your reply was cut off at its length limit before this tool call was complete, so it was not run. Nothing was written. Try again with less in one go: a shorter file, or the work split across several smaller files."
+        }) });
+        continue;
+      }
 
       let result;
       try {
@@ -770,7 +802,12 @@ async function send() {
     // An answer of some kind, always: silence with a Stop button still showing
     // is the worst thing this screen can do.
     if (!reply.error && !String(reply.content || "").trim() && !U.pending) {
-      reply.content = t("It finished without saying anything. The steps above are what it did.");
+      // If the run ended on a step that failed, saying "it finished without
+      // saying anything" is true but useless — the failure is the answer.
+      const last = (reply.steps || [])[(reply.steps || []).length - 1];
+      reply.content = last && last.state === "failed"
+        ? t("It stopped here: {why}", { why: last.error })
+        : t("It finished without saying anything. The steps above are what it did.");
     }
     reply.pending = false;
     reply.working = null;
