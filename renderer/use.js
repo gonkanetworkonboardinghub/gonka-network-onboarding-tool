@@ -518,7 +518,7 @@ function msgHtml(m, i) {
       <div class="md">${md(parts.answer)}${m.pending && !parts.answer && !m.working ? `<span class="typing">…</span>` : ""}</div>
       ${m.working ? `<div class="ws-working"><span class="typing">…</span>${esc(m.working)}</div>` : ""}
       ${m.error ? `<div class="use-err">${esc(m.error)}</div>` : ""}
-      ${tokens !== null ? `<div class="use-cost">${esc(costText
+      ${tokens !== null && !m.pending ? `<div class="use-cost">${esc(costText
         ? t("{tokens} tokens · {cost}", { tokens: tokens.toLocaleString(window.I18N.lang()), cost: costText })
         : t("{tokens} tokens", { tokens: tokens.toLocaleString(window.I18N.lang()) }))}</div>` : ""}
     </div>`;
@@ -592,9 +592,11 @@ async function runWithTools(c, reply, id) {
       .map((m) => ({ role: m.role, content: m.role === "assistant" ? splitThinking(m.content).answer : m.content }))
   ];
 
+  const seen = new Map();   // the same call over and over means it is stuck
   for (let round = 0; round < MAX_STEPS; round++) {
     if (U.streaming !== id) return;                     // stopped
-    reply.working = round === 0 ? t("Thinking…") : t("Thinking about what to do next…");
+    reply.working = round === 0 ? t("Thinking…")
+      : t("Working… step {n} of {max}", { n: round + 1, max: MAX_STEPS });
     redrawMessages();
     const r = await api("useChatOnce", { model: c.model, messages: convo, tools });
     reply.working = null;
@@ -625,6 +627,13 @@ async function runWithTools(c, reply, id) {
     // the answer it finishes with is shown.
 
     for (const tc of r.toolCalls) {
+      const fingerprint = tc.name + " " + JSON.stringify(tc.args || {});
+      seen.set(fingerprint, (seen.get(fingerprint) || 0) + 1);
+      if (seen.get(fingerprint) > 3) {
+        reply.content = t("It kept trying the same thing over and over, so it was stopped. Try asking in a different way.");
+        reply.working = null;
+        return;
+      }
       const step = { tool: tc.name, args: tc.args, state: "running" };
       reply.steps = (reply.steps || []).concat(step);
       redrawMessages();
@@ -661,7 +670,8 @@ async function runWithTools(c, reply, id) {
       convo.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, 20000) });
     }
   }
-  reply.content = (reply.content || "") + "\n\n" + t("Stopped after {n} steps, so this doesn't run away on its own. Ask it to carry on if it should keep going.", { n: MAX_STEPS });
+  reply.content = (reply.content ? reply.content + "\n\n" : "")
+    + t("Stopped after {n} steps, so this doesn't run away on its own. Ask it to carry on if it should keep going.", { n: MAX_STEPS });
 }
 
 /** Some models spill the shape of their tool calls into ordinary text. */
@@ -693,8 +703,9 @@ function answerPermission(yes) {
 function stepHtml(s, isPending) {
   const icon = s.state === "done" ? "✓" : s.state === "failed" ? "⚠" : s.state === "refused" ? "✕"
     : s.state === "asking" ? "?" : "…";
-  const label = s.tool === "write_file" ? t("Write {file}", { file: (s.args && s.args.file) || "" })
-    : s.tool === "read_file" ? t("Read {file}", { file: (s.args && s.args.file) || "" })
+  const named = s.args && String(s.args.file || "").trim();
+  const label = s.tool === "write_file" ? (named ? t("Write {file}", { file: named }) : t("Write a file"))
+    : s.tool === "read_file" ? (named ? t("Read {file}", { file: named }) : t("Read a file"))
     : (!s.args || !s.args.folder || s.args.folder === ".") ? t("Look at the folder")
       : t("List {folder}", { folder: s.args.folder });
   const about = s.about || {};
@@ -756,6 +767,11 @@ async function send() {
   } catch (e) {
     if (!/abort/i.test(e.message)) reply.error = e.message;
   } finally {
+    // An answer of some kind, always: silence with a Stop button still showing
+    // is the worst thing this screen can do.
+    if (!reply.error && !String(reply.content || "").trim() && !U.pending) {
+      reply.content = t("It finished without saying anything. The steps above are what it did.");
+    }
     reply.pending = false;
     reply.working = null;
     U.streaming = null;

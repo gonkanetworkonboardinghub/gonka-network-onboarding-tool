@@ -87,6 +87,7 @@ function listFiles({ folder = "." } = {}) {
 }
 
 function readFile({ file } = {}) {
+  if (!String(file || "").trim()) throw new Error("No file name was given. Say which file to read.");
   const abs = resolveInside(file);
   const st = fs.statSync(abs);
   if (!st.isFile()) throw new Error("That is a folder, not a file.");
@@ -104,6 +105,9 @@ function readFile({ file } = {}) {
 }
 
 function writeFile({ file, content } = {}) {
+  // Without a name the path resolves to the folder itself, and the error that
+  // came back ("that is a folder, not a file") told nobody anything.
+  if (!String(file || "").trim()) throw new Error("No file name was given. Say which file to write, such as notes.md.");
   const abs = resolveInside(file);
   const text = String(content == null ? "" : content);
   if (Buffer.byteLength(text, "utf8") > MAX_WRITE) throw new Error("That file is too big to write in one go.");
