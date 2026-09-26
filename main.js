@@ -12,7 +12,11 @@ app.setPath("userData", path.join(app.getPath("appData"), "Gonka Host Setup"));
 // The second copy can even encrypt a key that nothing will read again, which is
 // exactly what happened during testing. Opening the app again just brings the
 // window it already has to the front.
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second copy leaves without touching anything: `leaving` keeps it out of
+// the usage flush below, so it cannot write over counts the first copy is
+// keeping.
+let leaving = false;
+if (!app.requestSingleInstanceLock()) { leaving = true; app.quit(); }
 app.on("second-instance", () => {
   if (!win) return;
   if (win.isMinimized()) win.restore();
@@ -99,9 +103,24 @@ app.whenReady().then(async () => {
   // otherwise someone who used Use Gonka once and left never reports it, and
   // a spell where the address was wrong would sit there for good.
   usage.send().catch(() => {});
+  // And once a day while it stays open, so an app left running for a week
+  // still reports rather than waiting for the next answer to push it.
+  setInterval(() => usage.send().catch(() => {}), 60 * 60 * 1000).unref?.();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+
+// On the way out, send what today's use added up to. Without this, somebody
+// who used Use Gonka all afternoon and then did not open the app again for a
+// fortnight was not counted for a fortnight — and if they never opened it
+// again, never. It waits at most a couple of seconds, and a failure changes
+// nothing: the total stays in the file and goes with the next send.
+app.on("before-quit", (e) => {
+  if (leaving) return;
+  leaving = true;
+  e.preventDefault();
+  usage.flush().catch(() => {}).finally(() => app.quit());
+});
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */

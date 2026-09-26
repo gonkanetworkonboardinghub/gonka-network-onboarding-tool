@@ -145,7 +145,7 @@ async function renderChooser() {
     <div class="use-setup wide">
       <h1>Use Gonka</h1>
       ${U.config.keyUnreadable ? `<p class="warn-banner">${esc(t("The key saved for {name} can't be read on this computer any more, so it needs pasting again. Your account there is untouched.", { name: U.config.name }))}</p>` : ""}
-      <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts how much the Gonka network is used through it: how many answers and how many tokens, once a day, with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
+      <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts how much the Gonka network is used through it: how many answers and how many tokens — once a day, and when you close the app — with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
       <p class="lead">${esc(t("Pick a service to reach the Gonka network through. Each one gives you your own account; this app never touches your money. All of them start free, so you can try before you pay."))}</p>
       <div class="svc-grid">${list.map((s) => `
         <div class="svc-card" data-svc="${esc(s.id)}"${longDown(s.id) ? " hidden" : ""}>
@@ -386,7 +386,7 @@ function renderAccount() {
       </div>
       <div class="card">
         <h3>${esc(t("What this app counts"))}</h3>
-        <p class="small">${esc(t("Use Gonka exists to bring people to the Gonka network, so the app counts how much of it goes through here and sends a daily total to The Gonka Network Onboarding Hub, where anyone can see it. From this computer, so far:"))}</p>
+        <p class="small">${esc(t("Use Gonka exists to bring people to the Gonka network, so the app counts how much of it goes through here and sends the total to The Gonka Network Onboarding Hub — once a day, and when you close the app — where anyone can see it. From this computer, so far:"))}</p>
         <div id="a-usage" class="small">${esc(t("Reading…"))}</div>
         <p class="small">${esc(t("Sent with it: a random number for this computer, the app's version, and which models and services were used. Never what you type, never the answers, never your key, your wallet or your name. Nothing at all is counted in Gonka Host Setup."))}</p>
       </div>

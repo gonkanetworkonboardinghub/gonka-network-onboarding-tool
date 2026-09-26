@@ -3,11 +3,11 @@
  *
  * The whole point of Use Gonka is to bring people to the Gonka network, and
  * nobody can see whether that is working unless something says so. So the app
- * keeps a running count of answers and tokens and sends a daily total to The
- * Gonka Network Onboarding Hub. It is written plainly in the app and on the
+ * keeps a running count of answers and tokens and sends the total to The Gonka
+ * Network Onboarding Hub — once a day, and when the app is closed. It is written plainly in the app and on the
  * website, because people should never discover this by reading the code.
  *
- * What is sent, once a day:
+ * What is sent, once a day and when the app is closed:
  *
  *   { install, version, os, answers, tokens, models: {...}, services: [...] }
  *
@@ -23,6 +23,14 @@
  * wallet or address, any name or email. Nothing from Gonka Host Setup either —
  * this counts Use Gonka only.
  *
+ * WHEN it is sent matters as much as what. Counting only on the way in was
+ * wrong: somebody who opened the app, used it all afternoon and then did not
+ * come back for a fortnight was not counted at all in the meantime, and if
+ * they never came back, never. So it goes out on the way out too — closing the
+ * app sends whatever is waiting, with a short deadline so quitting is never
+ * held up. Nothing is lost either way: what is waiting stays in the file until
+ * a send succeeds.
+ *
  * The address it is sent to lives in knowledge.js and can be changed through
  * the published manifest. If it is unset, nothing is ever sent.
  */
@@ -33,6 +41,9 @@ const { app } = require("electron");
 const K = require("../knowledge");
 
 const DAY = 24 * 60 * 60 * 1000;
+const MIN_GAP = 30 * 1000;      // never two sends within half a minute of each other
+const MAX_A_DAY = 8;            // the endpoint refuses more than 20 from one computer
+const QUIT_MS = 2500;           // how long closing the app may wait for the send
 const file = () => path.join(app.getPath("userData"), "use-gonka", "usage.json");
 
 function read() {
@@ -60,7 +71,7 @@ function record({ service, model, tokens } = {}) {
   u.totals.answers += 1;
   u.totals.tokens += Number(tokens) || 0;
   write(u);
-  send().catch(() => {});      // only actually sends once a day
+  send().catch(() => {});      // posts only if a day has passed; see send()
 }
 
 /** What this computer has counted, so the app can show the person their own numbers. */
@@ -76,14 +87,25 @@ function appVersion() {
   try { return require("../../package.json").version; } catch (_) { return app.getVersion(); }
 }
 
-/** Sends yesterday's total, at most once a day, and never noisily. */
-async function send(force = false) {
+/** Which day it is where this computer is, for the daily cap. */
+const today = () => new Date().toISOString().slice(0, 10);
+const sentToday = (u) => ((u.sends || {}).day === today() ? u.sends.n : 0);
+
+/**
+ * Sends what is waiting. Routinely that is once a day; `now` is the app
+ * closing, which sends whatever is waiting there and then — still not twice
+ * within half a minute, and no more than a handful of times a day.
+ */
+async function send({ now = false, timeout = 10000 } = {}) {
   const url = endpoint();
   if (!url) return { sent: false, why: "no address set" };
   const u = read();
   const p = u.pending || blank();
   if (!p.answers) return { sent: false, why: "nothing to send" };
-  if (!force && Date.now() - (u.lastSent || 0) < DAY) return { sent: false, why: "sent recently" };
+  const since = Date.now() - (u.lastSent || 0);
+  if (!now && since < DAY) return { sent: false, why: "sent recently" };
+  if (now && since < MIN_GAP) return { sent: false, why: "just sent" };
+  if (now && sentToday(u) >= MAX_A_DAY) return { sent: false, why: "enough for today" };
   const body = {
     install: u.install,
     version: appVersion(),
@@ -99,13 +121,23 @@ async function send(force = false) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000)
+    signal: AbortSignal.timeout(timeout)
   });
   if (!res.ok) throw new Error("usage endpoint answered " + res.status);
   u.pending = blank();
   u.lastSent = Date.now();
+  u.sends = { day: today(), n: sentToday(u) + 1 };
   write(u);
   return { sent: true, body };
 }
 
-module.exports = { record, mine, send };
+/**
+ * The app is closing. Send what is waiting, give up quickly, and never throw —
+ * a total that cannot be sent is not a reason to keep somebody's app open.
+ */
+async function flush() {
+  try { return await send({ now: true, timeout: QUIT_MS }); }
+  catch (_) { return { sent: false, why: "could not be sent" }; }
+}
+
+module.exports = { record, mine, send, flush };
