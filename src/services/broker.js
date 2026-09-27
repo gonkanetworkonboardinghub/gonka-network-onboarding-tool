@@ -17,6 +17,7 @@ const { app, safeStorage } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const K = require("../knowledge");
+const toolArgs = require("./toolargs");
 const usageCount = require("./usage");
 const { probe } = require("./service-probe");
 
@@ -325,16 +326,22 @@ async function chatOnce({ model, messages, tools, signal }) {
   return {
     content: msg.content || "",
     reasoning: msg.reasoning_content || "",
-    // `whole` says the arguments arrived complete. When an answer is cut off
-    // mid-call the JSON is half-written, and running it anyway is how a write
-    // of a long file turned into "no file name was given".
+    // `how` says what had to be done to read the arguments: nothing, a repair,
+    // or nothing doing because they stop in the middle. Models pack a whole
+    // file into a JSON string and get the escaping wrong all the time, which
+    // used to end the run; see src/services/toolargs.js.
     toolCalls: (msg.tool_calls || []).map((c) => {
       const raw = (c.function && c.function.arguments) || "{}";
-      let args = null;
-      try { args = JSON.parse(raw); } catch (_) { args = null; }
-      return { id: c.id, name: c.function && c.function.name, args: args || {}, rawArgs: raw, whole: args !== null };
+      const name = c.function && c.function.name;
+      const { args, how } = toolArgs.read(raw, name);
+      return { id: c.id, name, args, rawArgs: raw, how, whole: how === "clean" || how === "repaired" };
     }),
     finish: choice.finish_reason || null,
+    // Services do not always admit to stopping at the limit — one was seen
+    // reporting "tool_calls" on an answer it had truncated — so the token
+    // count is checked too.
+    hitLimit: choice.finish_reason === "length"
+      || (!!data.usage && Number(data.usage.completion_tokens) >= answerRoom() - 8),
     usage: data.usage || null
   };
 }
@@ -402,7 +409,7 @@ async function chat({ id, model, messages }, onEvent) {
     }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buf = "", content = "", reasoning = "", usage = null, responseId = null;
+    let buf = "", content = "", reasoning = "", usage = null, responseId = null, finish = null;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -419,6 +426,10 @@ async function chat({ id, model, messages }, onEvent) {
         if (j.error) throw new Error(typeof j.error === "string" ? j.error : j.error.message || "The service reported an error.");
         responseId = responseId || j.id || null;
         if (j.usage) usage = j.usage;
+        // Why it stopped comes on the last chunk, and until this was read a
+        // streamed answer that ran out of room just ended mid-sentence with
+        // nothing said about it.
+        if (j.choices && j.choices[0] && j.choices[0].finish_reason) finish = j.choices[0].finish_reason;
         const d = j.choices && j.choices[0] && j.choices[0].delta;
         if (!d) continue;
         const piece = { type: "delta", content: d.content || "", reasoning: d.reasoning_content || d.reasoning || "" };
@@ -430,7 +441,7 @@ async function chat({ id, model, messages }, onEvent) {
       }
     }
     countAnswer(model, usage);
-    return { content, reasoning, usage, responseId };
+    return { content, reasoning, usage, responseId, finish };
   } finally {
     running.delete(id);
   }

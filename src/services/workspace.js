@@ -104,7 +104,7 @@ function readFile({ file } = {}) {
   return { file: shortPath(abs), size: st.size, text: fs.readFileSync(abs, "utf8") };
 }
 
-function writeFile({ file, content } = {}) {
+function writeFile({ file, content, append } = {}) {
   // Without a name the path resolves to the folder itself, and the error that
   // came back ("that is a folder, not a file") told nobody anything.
   if (!String(file || "").trim()) throw new Error("No file name was given. Say which file to write, such as notes.md.");
@@ -113,6 +113,14 @@ function writeFile({ file, content } = {}) {
   if (Buffer.byteLength(text, "utf8") > MAX_WRITE) throw new Error("That file is too big to write in one go.");
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   const existed = fs.existsSync(abs);
+  // Adding to the end is what makes a long file possible at all: the whole of
+  // it has to fit in one reply otherwise, and a long reply is the thing that
+  // gets cut off or packed wrong.
+  if (append && existed) {
+    const before = fs.statSync(abs).size;
+    fs.appendFileSync(abs, text, "utf8");
+    return { file: shortPath(abs), bytes: fs.statSync(abs).size, added: Buffer.byteLength(text, "utf8"), appendedTo: before };
+  }
   fs.writeFileSync(abs, text, "utf8");
   return { file: shortPath(abs), bytes: Buffer.byteLength(text, "utf8"), replaced: existed };
 }
@@ -145,12 +153,13 @@ const TOOLS = [
     type: "function",
     function: {
       name: "write_file",
-      description: "Create or replace a text file in the working folder. The person is asked before this happens.",
+      description: "Create or replace a text file in the working folder, or add to the end of one. The person is asked before this happens. A long file should be written in parts: the first part with append false, each later part with append true.",
       parameters: {
         type: "object",
         properties: {
           file: { type: "string", description: "Path of the file to write, relative to the working folder." },
-          content: { type: "string", description: "The complete contents of the file." }
+          content: { type: "string", description: "The text to write. With append false this is the whole file; with append true it is added to the end of what is already there." },
+          append: { type: "boolean", description: "True to add to the end of the file instead of replacing it. Use this to write a long file in several parts." }
         },
         required: ["file", "content"]
       }
@@ -189,7 +198,10 @@ function describe(name, args = {}) {
     const bytes = Buffer.byteLength(String(args.content || ""), "utf8");
     let exists = false;
     try { exists = fs.existsSync(resolveInside(args.file)); } catch (_) {}
-    return { file: String(args.file || ""), bytes, replaces: exists, preview: String(args.content || "").slice(0, 2000) };
+    return {
+      file: String(args.file || ""), bytes, replaces: exists && !args.append,
+      appends: !!args.append && exists, preview: String(args.content || "").slice(0, 2000)
+    };
   }
   if (name === "read_file") return { file: String(args.file || "") };
   if (name === "list_files") return { folder: String(args.folder || ".") };

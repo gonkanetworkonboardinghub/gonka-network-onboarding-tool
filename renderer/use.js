@@ -147,6 +147,7 @@ async function renderChooser() {
       ${U.config.keyUnreadable ? `<p class="warn-banner">${esc(t("The key saved for {name} can't be read on this computer any more, so it needs pasting again. Your account there is untouched.", { name: U.config.name }))}</p>` : ""}
       <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts how much the Gonka network is used through it: how many answers and how many tokens — once a day, and when you close the app — with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
       <p class="lead">${esc(t("Pick a service to reach the Gonka network through. Each one gives you your own account; this app never touches your money. All of them start free, so you can try before you pay."))}</p>
+      <p class="lead">${esc(t("Worth knowing before you start: Gonka is a network of computers other people run. What you send goes through the service you pick to whichever of those computers answers it, and whoever runs that computer can see it. It is not private the way something on your own machine is — so don't send anything secret."))}</p>
       <div class="svc-grid">${list.map((s) => `
         <div class="svc-card" data-svc="${esc(s.id)}"${longDown(s.id) ? " hidden" : ""}>
           <div class="svc-head">
@@ -460,6 +461,7 @@ function renderChat() {
         <div class="use-empty">
           <h2>${esc(t("Ask anything"))}</h2>
           <p>${esc(t("Answers come from open models running on the Gonka network. Your conversations are saved only on this computer."))}</p>
+          <p class="small">${esc(t("What you send travels to the service you chose and on to whichever computer on the network answers it, and whoever runs that computer can see it. Don't send anything secret."))}</p>
         </div>`}</div>
       <div class="use-compose">
         <textarea id="u-input" rows="1" placeholder="${esc(t("Message Gonka…"))}"></textarea>
@@ -533,8 +535,11 @@ function msgHtml(m, i) {
 
    It works through whichever service is connected — the tools are ordinary
    OpenAI-style function definitions, which every service in the list passes
-   through to the network. That is the part nobody else offers: their
-   assistants run on their machines and only with them. */
+   through to the network. Some services do offer an assistant of their own
+   (Gonka Proxy has one), but it runs on their machines and only with them.
+   What is ours is the combination: every service in one place, and this
+   working in a folder through any of them, including the ones that offer
+   nothing of the kind. */
 
 const MAX_STEPS = 12;   // a runaway loop costs real money, so it stops itself
 
@@ -546,7 +551,9 @@ const MAX_STEPS = 12;   // a runaway loop costs real money, so it stops itself
 const WS_SYSTEM = `You are working inside one folder on the person's own computer, through The Gonka Network Onboarding Tool.
 Use the tools to look at what is there before writing anything. Paths are always relative to that folder.
 Write real, complete files — never a sketch or a placeholder. When you are done, say plainly what you did in one or two sentences.
-Write one file per turn. There is a limit on how long a single reply can be, and a reply that reaches it is cut off in the middle of the file, which writes nothing at all. Several small turns always work; one long turn may not.
+Write one file per turn, and write a long file in parts: the first part with append false, then each further part with append true. There is a limit on how long a single reply can be, and a reply that reaches it is cut off in the middle of the file, which writes nothing at all. Several small parts always work; one long one may not.
+The file's text travels inside a JSON string, so every line break in it must be written as 
+ and every quote escaped. Getting that wrong is the commonest way a write fails.
 You can read and write text: notes, markdown, CSV, JSON, code, logs. You cannot read pictures, PDFs, Word or Excel files — no model on the Gonka network can look at an image yet.
 If you are asked about a file of that kind, say so plainly instead of guessing at what is in it.`;
 
@@ -655,17 +662,23 @@ async function runWithTools(c, reply, id) {
       reply.steps = (reply.steps || []).concat(step);
       redrawMessages();
 
-      // An answer that runs out of room stops in the middle of writing the
-      // call, so the arguments are half a line of JSON. Running that would be
-      // guessing: a long file to write came through as no file name at all.
-      // Say what actually happened, tell the model the same, and let it try
-      // again with something shorter.
+      // Models pack a whole file into a JSON string and get the escaping wrong
+      // constantly — a page full of quotes and line breaks is the usual
+      // victim. toolargs.js reads it out anyway, and the person still sees the
+      // whole thing before it is written. Only a call that stops in the middle
+      // is refused, because the rest of the file genuinely never arrived.
+      step.repaired = tc.how === "repaired";
       if (!tc.whole) {
         step.state = "failed";
-        step.error = t("The answer was cut off part-way through this step, because it reached its length limit. Nothing was written.");
+        step.raw = String(tc.rawArgs || "").slice(0, 400);   // so this is diagnosable afterwards
+        step.error = r.hitLimit
+          ? t("The answer was cut off part-way through this step, because it reached its length limit. Nothing was written.")
+          : t("This step arrived in pieces and the rest never came, so it was not run. Nothing was written.");
         redrawMessages();
         convo.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify({
-          error: "Your reply was cut off at its length limit before this tool call was complete, so it was not run. Nothing was written. Try again with less in one go: a shorter file, or the work split across several smaller files."
+          error: r.hitLimit
+            ? "Your reply was cut off at its length limit before this tool call was complete, so it was not run. Nothing was written. Write less in one go: put the first part in the file now, then add the rest with another write_file using append: true."
+            : "This tool call arrived incomplete, so it was not run. Nothing was written. Send it again. Remember the arguments must be one valid JSON object: every line break inside the file's text written as \n and every quote escaped. If the file is long, write the first part now and add the rest with another write_file using append: true."
         }) });
         continue;
       }
@@ -736,20 +749,27 @@ function stepHtml(s, isPending) {
   const icon = s.state === "done" ? "✓" : s.state === "failed" ? "⚠" : s.state === "refused" ? "✕"
     : s.state === "asking" ? "?" : "…";
   const named = s.args && String(s.args.file || "").trim();
-  const label = s.tool === "write_file" ? (named ? t("Write {file}", { file: named }) : t("Write a file"))
+  const adding = s.tool === "write_file" && s.args && s.args.append;
+  const label = s.tool === "write_file"
+    ? (named ? (adding ? t("Add to {file}", { file: named }) : t("Write {file}", { file: named })) : t("Write a file"))
     : s.tool === "read_file" ? (named ? t("Read {file}", { file: named }) : t("Read a file"))
     : (!s.args || !s.args.folder || s.args.folder === ".") ? t("Look at the folder")
       : t("List {folder}", { folder: s.args.folder });
   const about = s.about || {};
   return `<div class="ws-step ${esc(s.state)}">
     <div class="ws-step-line"><span class="ws-icon">${icon}</span><span>${esc(label)}</span>
-      ${s.state === "done" && s.result && s.result.bytes ? `<span class="small">${esc(t("{n} bytes", { n: s.result.bytes }))}</span>` : ""}
+      ${s.state === "done" && s.result && s.result.bytes ? `<span class="small">${esc(s.result.added
+        ? t("{n} bytes added, {total} in all", { n: s.result.added, total: s.result.bytes })
+        : t("{n} bytes", { n: s.result.bytes }))}</span>` : ""}
       ${s.error ? `<span class="small">${esc(s.error)}</span>` : ""}</div>
     ${isPending ? `
       <div class="ws-ask">
-        <p class="small">${esc(about.replaces
-          ? t("This replaces a file that is already there.")
-          : t("This creates a new file in your folder."))}</p>
+        <p class="small">${esc(about.appends
+          ? t("This adds to the end of a file that is already there.")
+          : about.replaces
+            ? t("This replaces a file that is already there.")
+            : t("This creates a new file in your folder."))}</p>
+        ${s.repaired ? `<p class="small ws-repaired">${esc(t("The model packed this badly, so the app read the file out of it. Check it looks right before allowing it."))}</p>` : ""}
         ${about.preview ? `<pre class="ws-preview">${esc(about.preview)}${about.bytes > about.preview.length ? "\n…" : ""}</pre>` : ""}
         <div class="btn-row">
           <button class="primary" id="ws-yes">${esc(t("Write it"))}</button>
@@ -787,7 +807,8 @@ async function send() {
       reply.working = t("Thinking…");   // until the first words arrive
       redrawMessages();
       const r = await api("useChat", { id, model: c.model, messages: [noFolderNote(c)].concat(history) });
-      reply.content = r.content;
+      reply.content = r.content
+        + (r.finish === "length" ? "\n\n" + t("(This answer was cut off because it reached its length limit. Ask for the rest, or ask for something shorter.)") : "");
       reply.reasoning = r.reasoning;
       if (!splitThinking(reply.content).answer.trim() && reply.reasoning) {
         reply.content = reply.reasoning;     // the same quirk, on a streamed answer
