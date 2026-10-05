@@ -1,70 +1,70 @@
 {
-  "asOf": "2026-10-05T18:38:20.921Z",
+  "asOf": "2026-10-05T21:32:45.793Z",
   "epoch": {
     "index": 415,
-    "hours": 22.752790833333332,
+    "hours": 22.74884,
     "mintedGnk": 265463.491624879,
     "totalWeight": 834016,
     "participants": 29,
     "gnkPerWeight": 0.3182954423235034,
-    "networkGnkPerDay": 280015.04719426605
+    "networkGnkPerDay": 280063.6779280656
   },
   "price": {
-    "usd": 0.24085141595,
+    "usd": 0.23092097844572082,
     "sources": [
       {
         "name": "Uniswap (GeckoTerminal)",
-        "usd": 0.2317268319
+        "usd": 0.2321071532
       },
       {
         "name": "DEX Screener",
-        "usd": 0.2316
+        "usd": 0.2318
       },
       {
         "name": "CoinGecko",
-        "usd": 0.249976
+        "usd": 0.229977
       },
       {
         "name": "CoinPaprika",
-        "usd": 0.2500259007749895
+        "usd": 0.23004195689144163
       }
     ]
   },
   "contract": "0x972a7a92d92796a98801a8818bcf91f1648f2f68",
   "vesting": {
     "epochs": 180,
-    "days": 170.64593125
+    "days": 170.6163
   },
   "classes": [
     {
       "id": "B300",
       "gpus": 220,
       "nodes": 133,
-      "gnkPerGpuPerDay": 1024.3282243452327
+      "gnkPerGpuPerDay": 1024.5061213322003
     },
     {
       "id": "B200",
       "gpus": 8,
       "nodes": 1,
-      "gnkPerGpuPerDay": 346.90647123493477
+      "gnkPerGpuPerDay": 346.9667191266999
     },
     {
       "id": "H200",
       "gpus": 155,
       "nodes": 28,
-      "gnkPerGpuPerDay": 346.1659986528069
+      "gnkPerGpuPerDay": 346.2261179453221
     },
     {
       "id": "H100",
       "gpus": 268,
       "nodes": 42,
-      "gnkPerGpuPerDay": 158.747769172975
+      "gnkPerGpuPerDay": 158.7753391931624
     },
     {
       "id": "A100",
       "gpus": 32,
       "nodes": 4,
-      "gnkPerGpuPerDay": 67.85238495437575
+      "gnkPerGpuPerDay": 67.86416900420966
     }
   ],
   "configs": [
@@ -73,9 +73,9 @@
       "gpuClass": "B300",
       "gpuCount": 1,
       "weight": 3340,
-      "gnkPerDay": 1121.2951315771747,
-      "usdPerDay": 270.0655201382041,
-      "breakEvenPerHour": 11.252730005758503,
+      "gnkPerDay": 1121.4898689871848,
+      "usdPerDay": 258.97553786348396,
+      "breakEvenPerHour": 10.790647410978499,
       "basis": "model",
       "sampleGpus": 61,
       "deployable": true
@@ -85,9 +85,9 @@
       "gpuClass": "B300",
       "gpuCount": 2,
       "weight": 3236,
-      "gnkPerDay": 1086.5719491159816,
-      "usdPerDay": 261.7023924761355,
-      "breakEvenPerHour": 10.904266353172313,
+      "gnkPerDay": 1086.7606560863426,
+      "usdPerDay": 250.95583403977173,
+      "breakEvenPerHour": 10.45649308499049,
       "basis": "model",
       "sampleGpus": 66,
       "deployable": false
@@ -97,9 +97,9 @@
       "gpuClass": "B300",
       "gpuCount": 1,
       "weight": 3068,
-      "gnkPerDay": 1030.1648524041798,
-      "usdPerDay": 248.11666336346948,
-      "breakEvenPerHour": 10.338194306811229,
+      "gnkPerDay": 1030.3437630491928,
+      "usdPerDay": 237.92798989876553,
+      "breakEvenPerHour": 9.913666245781897,
       "basis": "model",
       "sampleGpus": 93,
       "deployable": true
@@ -109,9 +109,9 @@
       "gpuClass": "H200",
       "gpuCount": 2,
       "weight": 2110,
-      "gnkPerDay": 708.421058599377,
-      "usdPerDay": 170.62421505245788,
-      "breakEvenPerHour": 7.109342293852412,
+      "gnkPerDay": 708.5440914015923,
+      "usdPerDay": 163.61769485838994,
+      "breakEvenPerHour": 6.817403952432914,
       "basis": "model",
       "sampleGpus": 125,
       "deployable": true
@@ -121,9 +121,9 @@
       "gpuClass": "B200",
       "gpuCount": 2,
       "weight": 2067,
-      "gnkPerDay": 693.8129424698695,
-      "usdPerDay": 167.10582959830398,
-      "breakEvenPerHour": 6.962742899929332,
+      "gnkPerDay": 693.9334382533998,
+      "usdPerDay": 160.24378853767828,
+      "breakEvenPerHour": 6.676824522403262,
       "basis": "model",
       "sampleGpus": 8,
       "deployable": true
@@ -133,9 +133,9 @@
       "gpuClass": "B200",
       "gpuCount": 2,
       "weight": 2067,
-      "gnkPerDay": 693.8129424698695,
-      "usdPerDay": 167.10582959830398,
-      "breakEvenPerHour": 6.962742899929332,
+      "gnkPerDay": 693.9334382533998,
+      "usdPerDay": 160.24378853767828,
+      "breakEvenPerHour": 6.676824522403262,
       "basis": "class",
       "sampleGpus": 8,
       "deployable": true
@@ -145,9 +145,9 @@
       "gpuClass": "H200",
       "gpuCount": 2,
       "weight": 2062,
-      "gnkPerDay": 692.3319973056138,
-      "usdPerDay": 166.74914185854865,
-      "breakEvenPerHour": 6.94788091077286,
+      "gnkPerDay": 692.4522358906441,
+      "usdPerDay": 159.90174783879462,
+      "breakEvenPerHour": 6.662572826616443,
       "basis": "class",
       "sampleGpus": 155,
       "deployable": true
@@ -157,9 +157,9 @@
       "gpuClass": "H100",
       "gpuCount": 4,
       "weight": 1891,
-      "gnkPerDay": 634.9940832554709,
-      "usdPerDay": 152.93922407195234,
-      "breakEvenPerHour": 6.3724676696646805,
+      "gnkPerDay": 635.104363858376,
+      "usdPerDay": 146.65892111732327,
+      "breakEvenPerHour": 6.1107883798884695,
       "basis": "model",
       "sampleGpus": 260,
       "deployable": true
@@ -169,9 +169,9 @@
       "gpuClass": "H200",
       "gpuCount": 6,
       "weight": 1889,
-      "gnkPerDay": 634.2727891690762,
-      "usdPerDay": 152.76549936992782,
-      "breakEvenPerHour": 6.36522914041366,
+      "gnkPerDay": 634.3829445034964,
+      "usdPerDay": 146.4923302540248,
+      "breakEvenPerHour": 6.1038470939177,
       "basis": "model",
       "sampleGpus": 24,
       "deployable": false
@@ -181,9 +181,9 @@
       "gpuClass": "H100",
       "gpuCount": 4,
       "weight": 1084,
-      "gnkPerDay": 363.78530309590053,
-      "usdPerDay": 87.61820535244756,
-      "breakEvenPerHour": 3.6507585563519815,
+      "gnkPerDay": 363.848482365773,
+      "usdPerDay": 84.0202475538949,
+      "breakEvenPerHour": 3.500843648078954,
       "basis": "model",
       "sampleGpus": 8,
       "deployable": true
@@ -193,9 +193,9 @@
       "gpuClass": "A100",
       "gpuCount": 4,
       "weight": 808,
-      "gnkPerDay": 271.409539817503,
-      "usdPerDay": 65.3693719673835,
-      "breakEvenPerHour": 2.7237238319743127,
+      "gnkPerDay": 271.4566760168386,
+      "usdPerDay": 62.68504123143141,
+      "breakEvenPerHour": 2.6118767179763087,
       "basis": "model",
       "sampleGpus": 32,
       "deployable": true
