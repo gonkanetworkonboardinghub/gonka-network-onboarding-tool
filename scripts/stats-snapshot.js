@@ -28,6 +28,14 @@ const CONST_WIN = /^Gonka-(Network-Onboarding-Tool|Host-Setup)\.exe$/;
 const VERSIONED_WIN = /^Gonka-(Network-Onboarding-Tool|Host-Setup)-Setup-.*\.exe$/;
 const MAC = /-mac-(arm64|x64)\.zip$/;
 
+// Downloads that were our own test robot, not people. Until October 2026 the
+// Windows build check downloaded the published 1.0.2 installer on every build
+// to test upgrading from it — 17 times, counted from the Actions history (the
+// "Updating an open 1.0.2 install" step of every windows job that ran it).
+// The check now uses a copy kept in the ci-fixtures release of the source
+// repository, so this number will never grow, and it is taken off here.
+const ROBOT = { "1.0.2": 17 };
+
 const out = process.argv[2];
 if (!out) {
   console.error("Usage: node scripts/stats-snapshot.js <out.json>");
@@ -61,7 +69,8 @@ if (!out) {
     .map((r) => {
       const count = (re) => (r.assets || []).filter((a) => re.test(a.name)).reduce((n, a) => n + a.download_count, 0);
       const version = r.tag_name.replace(/^v/, "");
-      const constName = count(CONST_WIN), versioned = count(VERSIONED_WIN), mac = count(MAC);
+      const robot = ROBOT[r.tag_name.replace(/^v/, "")] || 0;
+      const constName = count(CONST_WIN), versioned = Math.max(0, count(VERSIONED_WIN) - robot), mac = count(MAC);
       const split = atLeast(version, SPLIT_FROM);
       return {
         version,
@@ -69,6 +78,7 @@ if (!out) {
         windows: constName + versioned,
         mac,
         downloads: constName + versioned + mac,
+        ...(robot ? { robotLeftOut: robot } : {}),
         split,
         ...(split ? { installs: constName, updates: versioned } : {})
       };
@@ -82,6 +92,23 @@ if (!out) {
     source: `https://api.github.com/repos/${REPO}/releases`,
     latest: versions[0] ? { version: versions[0].version, published: versions[0].published } : null,
     releases: versions.length,
+    // What the website shows. Exact where GitHub makes it exact, and labelled
+    // as mixed where it cannot be split, never turned into a number of people.
+    exact: {
+      // From 1.3.0 the install command and the updater fetch different files:
+      // every download of the constant-named file is the install command being
+      // run, and every download of the versioned file is an update.
+      since: (versions.filter((v) => v.split).map((v) => v.published).sort()[0] || "").slice(0, 10),
+      installs: sum(versions.filter((v) => v.split), "installs"),
+      updates: sum(versions.filter((v) => v.split), "updates")
+    },
+    mixed: {
+      // Windows before 1.3.0 used one file for both, and the Mac zips always
+      // do, so these cannot be told apart. Our own test robot is taken off;
+      // our own computer's updates are in here and cannot be separated.
+      downloads: sum(versions.filter((v) => !v.split), "windows") + sum(versions, "mac"),
+      robotLeftOut: Object.values(ROBOT).reduce((a, b) => a + b, 0)
+    },
     totals: {
       downloads: sum(versions, "downloads"),
       windows: sum(versions, "windows"),
