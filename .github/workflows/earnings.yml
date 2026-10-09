@@ -1,25 +1,38 @@
-# The public numbers the website shows, refreshed hourly and published as plain
-# JSON on the `data` branch:
+# The public numbers the website shows, published as plain JSON on the `data`
+# branch:
 #
 #   earnings.json   - "Mine it or buy it?": what each rig mined last epoch
 #   onboarded.json  - nodes and GPUs set up with GNOT, per epoch, with the
 #                     transactions that prove each one
 #   services.json   - which "Use Gonka" services are answering, and since when
 #                     any has been silent (the app drops one after three days)
-#   stats.json      - downloads of the app, split into new installs and
-#                     updates, straight from GitHub's public counters
+#   stats.json      - downloads of the app, straight from GitHub's counters
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
 #
 # The app reads the chain itself; a web page cannot, so this runs the same code
-# on a schedule. It lives on its own branch so hourly snapshots never clutter
-# main's history.
+# on a schedule. It lives on its own branch so snapshots never clutter main.
+#
+# HOW OFTEN. It asks GitHub for every fifteen minutes, but GitHub treats a
+# schedule as a suggestion: when it is busy it drops runs, and in early October
+# an "hourly" job ran 43 times in three days with gaps of up to seven hours.
+# So the website can also start it (workflow_dispatch) when somebody opens the
+# impact page and the numbers are more than fifteen minutes old. Every file
+# carries its own asOf time, so whatever happens, the page can say honestly how
+# old each number is.
+#
+# ONE PART FAILING NO LONGER LOSES THE REST. Each part runs on its own. If one
+# fails — on 8 October a single Gonka node did not answer and the whole run was
+# thrown away — the others are still published and the failed part keeps its
+# previous file, with its old asOf, so it shows as older rather than vanishing.
+# The run is then marked failed at the very end, after publishing, so it still
+# stands out in the Actions list.
 name: Earnings snapshot
 
 on:
   schedule:
-    - cron: "17 * * * *"      # hourly, off the hour so it is not in the rush
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -43,11 +56,18 @@ jobs:
       - name: Install dependencies
         run: npm ci --omit=dev --ignore-scripts
 
-      - name: Read the chain
-        run: node scripts/earnings-snapshot.js "$RUNNER_TEMP/earnings.json"
-
-      - name: Sanity-check the earnings file
+      - name: Fetch what was published last time
         run: |
+          git fetch origin data --depth=1 || true
+          for f in earnings onboarded services stats; do
+            git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
+          done
+
+      - name: Read the chain
+        id: earnings
+        continue-on-error: true
+        run: |
+          node scripts/earnings-snapshot.js "$RUNNER_TEMP/earnings.json" || { rm -f "$RUNNER_TEMP/earnings.json"; exit 1; }
           node -e '
             const d = require(process.env.RUNNER_TEMP + "/earnings.json");
             if (!d.configs.length) throw new Error("no configurations");
@@ -55,26 +75,45 @@ jobs:
             if (d.price.usd !== null && !(d.price.usd > 0)) throw new Error("bad price");
             for (const c of d.configs) if (!(c.gnkPerDay > 0)) throw new Error("bad row: " + c.model);
             console.log("ok: " + d.configs.length + " configurations, epoch " + d.epoch.index);
-          '
+          ' || { rm -f "$RUNNER_TEMP/earnings.json"; exit 1; }
 
       - name: Count the nodes set up with GNOT
+        id: onboarded
+        continue-on-error: true
         run: |
-          git fetch origin data --depth=1 || true
-          git show origin/data:onboarded.json > "$RUNNER_TEMP/onboarded-prev.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/onboarded-prev.json"
-          node scripts/onboarded-snapshot.js "$RUNNER_TEMP/onboarded-prev.json" "$RUNNER_TEMP/earnings.json" "$RUNNER_TEMP/onboarded.json"
+          # if the chain read failed, count against last time's epoch figures
+          src="$RUNNER_TEMP/earnings.json"; [ -s "$src" ] || src="$RUNNER_TEMP/prev-earnings.json"
+          node scripts/onboarded-snapshot.js "$RUNNER_TEMP/prev-onboarded.json" "$src" "$RUNNER_TEMP/onboarded.json" \
+            || { rm -f "$RUNNER_TEMP/onboarded.json"; exit 1; }
 
       - name: Check the Use Gonka services
+        id: services
+        continue-on-error: true
         run: |
-          git show origin/data:services.json > "$RUNNER_TEMP/services-prev.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/services-prev.json"
-          node scripts/services-snapshot.js "$RUNNER_TEMP/services-prev.json" "$RUNNER_TEMP/services.json"
+          node scripts/services-snapshot.js "$RUNNER_TEMP/prev-services.json" "$RUNNER_TEMP/services.json" \
+            || { rm -f "$RUNNER_TEMP/services.json"; exit 1; }
 
-      - name: Count downloads, installs and updates
+      - name: Count downloads
+        id: stats
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/stats-snapshot.js "$RUNNER_TEMP/stats.json"
+        run: |
+          node scripts/stats-snapshot.js "$RUNNER_TEMP/stats.json" \
+            || { rm -f "$RUNNER_TEMP/stats.json"; exit 1; }
 
       - name: Publish them on the data branch
         run: |
+          kept=""
+          for f in earnings onboarded services stats; do
+            if [ -s "$RUNNER_TEMP/$f.json" ] && node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$RUNNER_TEMP/$f.json"; then
+              cp "$RUNNER_TEMP/$f.json" "$RUNNER_TEMP/out-$f.json"
+            else
+              cp "$RUNNER_TEMP/prev-$f.json" "$RUNNER_TEMP/out-$f.json"
+              kept="$kept $f"
+            fi
+          done
+          echo "KEPT=$kept" >> "$GITHUB_ENV"
           git config user.name "Gonka Network Onboarding Hub"
           git config user.email "noreply@thegonkanetworkonboardinghub.com"
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
@@ -83,10 +122,13 @@ jobs:
             git checkout --orphan data
             git rm -rf . >/dev/null 2>&1 || true
           fi
-          cp "$RUNNER_TEMP/earnings.json" earnings.json
-          cp "$RUNNER_TEMP/onboarded.json" onboarded.json
-          cp "$RUNNER_TEMP/services.json" services.json
-          cp "$RUNNER_TEMP/stats.json" stats.json
+          for f in earnings onboarded services stats; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
           git add earnings.json onboarded.json services.json stats.json
-          git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing changed"; exit 0; }
+          git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }
           git push origin data
+
+      - name: Say which parts had to keep last time's numbers
+        if: env.KEPT != ''
+        run: |
+          echo "::error::These parts failed this run and kept their previous file:$KEPT"
+          exit 1
