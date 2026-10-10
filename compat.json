@@ -1,38 +1,28 @@
 {
- "asOf": "2026-10-10T23:06:06.963Z",
- "ok": false,
+ "asOf": "2026-10-10T23:36:05.871Z",
+ "ok": true,
  "chain": {
   "version": "v0.2.16-post1",
-  "height": 6493494,
+  "height": 6493833,
   "upgrade": null
  },
  "checkedAgainst": {
-  "chain": "v0.2.15",
-  "on": "2026-09-11",
+  "chain": "v0.2.16",
+  "on": "2026-10-10",
   "realRun": "2026-08-03",
-  "feeGroups": []
+  "feeGroups": [
+   "epoch",
+   "cosmos"
+  ]
  },
- "problems": [
-  {
-   "id": "chain-newer",
-   "text": "Gonka runs v0.2.16-post1. This app was last checked against v0.2.15 (2026-09-11), and a node was last set up with it from start to finish on 2026-08-03. It needs a look and a real run."
-  },
-  {
-   "id": "fees-epoch",
-   "text": "The chain charges fees in a group the app was never taught about: \"epoch\" (MsgPoCV2StoreCommit, MsgSubmitHardwareDiff) at 1 ngonka per gas."
-  },
-  {
-   "id": "fees-cosmos",
-   "text": "The chain charges fees in a group the app was never taught about: \"cosmos\" at 1 ngonka per gas."
-  }
- ],
+ "problems": [],
  "warnings": [
   "No node has been set up with this app from start to finish for 68 days (last: 2026-08-03)."
  ],
  "unknown": [],
  "fix": null,
  "grant": {
-  "feeNgonka": 1022395,
+  "feeNgonka": 1023259,
   "faucetClaimNgonka": 10000000
  },
  "changes": [],
