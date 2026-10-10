@@ -166,6 +166,12 @@ server.listen(0, "127.0.0.1", async () => {
   check("run from source: no 'open' note", (await usage.opened()).why, "no address set");
   check("run from source: no usage", (await usage.send()).why, "no address set");
   electronApp.isPackaged = true;
+  // A Mac build machine opens the app without the shell's settings, so it
+  // says what it is with a file instead.
+  fs.writeFileSync(path.join(DIR, "build-machine.txt"), "ours");
+  check("build machine marked by a file: no 'open' note", (await usage.opened()).why, "no address set");
+  check("build machine marked by a file: no usage", (await usage.send()).why, "no address set");
+  fs.rmSync(path.join(DIR, "build-machine.txt"));
   check("  …and nothing went out in any of those", posts.length, 0);
   check("an installed copy, run by a person, still reports", (await usage.opened()).sent, true);
   check("  …and sends the answer that was waiting", (await usage.send()).sent, true);

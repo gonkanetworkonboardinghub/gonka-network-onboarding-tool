@@ -116,10 +116,19 @@ function mine() {
  *     could have downloaded that version.
  *   - a copy run straight from the source code while working on the app.
  *
- * Both send nothing at all. CI and GITHUB_ACTIONS are set on every build
- * machine; isPackaged is false for anything not built into an installer.
+ * Both send nothing at all. isPackaged is false for anything not built into an
+ * installer. A build machine is known two ways, because one was not enough:
+ * CI and GITHUB_ACTIONS are set in its shell — but on a Mac the app is opened
+ * through `open`, which starts it without the shell's settings, so the 1.4.0
+ * build's Mac machine reported itself and was counted as a person. So the
+ * build also leaves a file called build-machine.txt in the app's data folder
+ * before it starts the app (.github/workflows/build.yml), and that is checked
+ * here too.
  */
-const automated = () => !!(process.env.CI || process.env.GITHUB_ACTIONS) || app.isPackaged === false;
+function buildMachine() {
+  try { return fs.existsSync(path.join(app.getPath("userData"), "build-machine.txt")); } catch (_) { return false; }
+}
+const automated = () => !!(process.env.CI || process.env.GITHUB_ACTIONS) || app.isPackaged === false || buildMachine();
 const endpoint = () => (automated() ? "" : (K.get().usageEndpoint || "").trim());
 
 /** The app's own version. app.getVersion() reports Electron's in a dev run. */

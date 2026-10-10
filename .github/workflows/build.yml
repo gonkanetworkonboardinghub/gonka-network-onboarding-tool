@@ -53,6 +53,19 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      # This machine is ours, not a person. The app reports when it is opened so
+      # the website can count computers, and it must never count this one. The
+      # shell's CI setting is not enough here: install.sh starts the app through
+      # macOS's "open", which does not pass the shell's settings on, and the 1.4.0
+      # build was counted as a person that way. A file in the app's data folder
+      # is something the app can always see. build-machine.txt makes it send
+      # nothing; team-copy.txt marks anything that still got out as ours.
+      - name: Mark this machine as ours before the app is ever started
+        run: |
+          mkdir -p "$HOME/Library/Application Support/Gonka Host Setup"
+          echo "build machine" > "$HOME/Library/Application Support/Gonka Host Setup/build-machine.txt"
+          echo "build machine" > "$HOME/Library/Application Support/Gonka Host Setup/team-copy.txt"
+
       - name: Build ad-hoc signed zips for arm64 and x64
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -194,6 +207,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      # The same as on the Mac machine: say this is ours before the app starts.
+      - name: Mark this machine as ours before the app is ever started
+        run: |
+          New-Item -ItemType Directory -Force "$env:APPDATA\Gonka Host Setup" | Out-Null
+          Set-Content "$env:APPDATA\Gonka Host Setup\build-machine.txt" "build machine"
+          Set-Content "$env:APPDATA\Gonka Host Setup\team-copy.txt" "build machine"
 
       - name: Build the Windows installer
         run: |
