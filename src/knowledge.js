@@ -69,6 +69,14 @@ const overridable = {
   // commands used; at or above the chain's minimum.
   gasPriceNgonka: 10,
 
+  // The last state of the Gonka network a person checked this app against.
+  // scripts/check-chain.js compares it with the live network every day: a newer
+  // chain, or a kind of fee the chain charges that is not listed here, means
+  // the app needs looking at before anyone trusts it with a rented server.
+  // Overridable, so "we looked, it still fits" can be published without an app
+  // update. realRun is the last time a node was set up from start to finish.
+  checkedAgainst: { chain: "v0.2.15", on: "2026-09-11", realRun: "2026-08-03", feeGroups: [] },
+
   // API paths (relative to a node base URL)
   api: {
     governanceModels: "/v1/governance/models",

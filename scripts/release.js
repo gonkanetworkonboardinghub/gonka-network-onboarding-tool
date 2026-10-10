@@ -65,6 +65,21 @@ if (!process.argv.includes("--allow-old-electron")) {
   }
 }
 
+// Never cut a release that no longer fits the live Gonka network. 1.3.9 went
+// out two days after the chain's v0.2.16 upgrade had broken the grant step,
+// because nothing looked. Exit code 2 means the chain could not be reached,
+// which is not a reason to block a release.
+if (!process.argv.includes("--allow-chain-mismatch")) {
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, "check-chain.js")], { cwd: root, stdio: "inherit" });
+  } catch (e) {
+    if (e.status === 1) {
+      console.error("\nStopping: Gonka Host Setup would not work on the live network. Add --allow-chain-mismatch to release anyway.");
+      process.exit(1);
+    }
+  }
+}
+
 const sha256Of = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const today = () => {
   const d = new Date();

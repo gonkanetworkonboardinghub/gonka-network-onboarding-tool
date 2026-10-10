@@ -7,6 +7,9 @@
 #   services.json   - which "Use Gonka" services are answering, and since when
 #                     any has been silent (the app drops one after three days)
 #   stats.json      - downloads of the app, straight from GitHub's counters
+#   compat.json     - whether the app still fits the live Gonka network, and
+#                     what changed at Gonka since the last look
+#                     (scripts/check-chain.js)
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -59,7 +62,7 @@ jobs:
       - name: Fetch what was published last time
         run: |
           git fetch origin data --depth=1 || true
-          for f in earnings onboarded services stats; do
+          for f in earnings onboarded services stats compat; do
             git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
           done
 
@@ -102,10 +105,19 @@ jobs:
           node scripts/stats-snapshot.js "$RUNNER_TEMP/stats.json" \
             || { rm -f "$RUNNER_TEMP/stats.json"; exit 1; }
 
+      - name: Compare the app with the live network
+        id: compat
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/check-chain.js "$RUNNER_TEMP/prev-compat.json" "$RUNNER_TEMP/compat.json" \
+            || { rm -f "$RUNNER_TEMP/compat.json"; exit 1; }
+
       - name: Publish them on the data branch
         run: |
           kept=""
-          for f in earnings onboarded services stats; do
+          for f in earnings onboarded services stats compat; do
             if [ -s "$RUNNER_TEMP/$f.json" ] && node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$RUNNER_TEMP/$f.json"; then
               cp "$RUNNER_TEMP/$f.json" "$RUNNER_TEMP/out-$f.json"
             else
@@ -122,8 +134,8 @@ jobs:
             git checkout --orphan data
             git rm -rf . >/dev/null 2>&1 || true
           fi
-          for f in earnings onboarded services stats; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
-          git add earnings.json onboarded.json services.json stats.json
+          for f in earnings onboarded services stats compat; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
+          git add earnings.json onboarded.json services.json stats.json compat.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }
           git push origin data
 

@@ -1,0 +1,52 @@
+# Does the app still fit the live Gonka network?
+#
+# Once a day, and whenever the app's facts about Gonka change, this runs
+# scripts/check-chain.js: the chain's version, a scheduled upgrade, the
+# permission list against Gonka's own code, a dry run of the grant transaction
+# on the live chain, the fee rules, and the files and commands the setup relies
+# on. It goes red when something would break a setup or mislead a person, so a
+# change at Gonka is seen the day it happens instead of when somebody's rented
+# server fails.
+#
+# The same check also runs inside the data job, which publishes its result as
+# compat.json for the website and the app to read. This workflow exists for the
+# red mark, and for the email GitHub sends when a run fails.
+#
+# Nothing here signs or sends a transaction: the dry run only asks the chain
+# whether one would go through.
+name: Chain watch
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "src/knowledge.js"
+      - "src/services/keys.js"
+      - "src/services/wallet.js"
+      - "scripts/check-chain.js"
+      - ".github/workflows/chain-watch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Compare the app with the live network
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-chain.js
