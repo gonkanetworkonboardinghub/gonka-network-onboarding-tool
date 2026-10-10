@@ -45,6 +45,23 @@ const ROBOT = { "1.0.2": 17 };
 // stays.
 const TEST_INSTALLS = { "1.3.4": 1 };
 
+// How many of the downloads GitHub counted before the app could count for
+// itself were made by people other than us. On 10 October 2026 all 58 were
+// traced one by one — the automated runs' own logs, every command run while
+// building, the update files still on the publisher's computer, and old
+// readings of these counters — and the whole ledger is in
+// docs/downloads-audit-2026-10-10.txt. 24 were our robots, 9 were checks made
+// while building, 17 were the publisher's own computer, 6 came before anyone had
+// been told the app existed, and 2 match nobody: both 1.1.0 for Windows, in the
+// week the first messages went out. Those 2 are what the website adds to the
+// computers the app itself has counted since. They may have been one person.
+const AUDIT = {
+  asOf: "2026-10-10",
+  downloadsExamined: 58,
+  byOtherPeople: 2,
+  ledger: "https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/blob/main/docs/downloads-audit-2026-10-10.txt"
+};
+
 const out = process.argv[2];
 if (!out) {
   console.error("Usage: node scripts/stats-snapshot.js <out.json>");
@@ -102,6 +119,7 @@ if (!out) {
     source: `https://api.github.com/repos/${REPO}/releases`,
     latest: versions[0] ? { version: versions[0].version, published: versions[0].published } : null,
     releases: versions.length,
+    audited: AUDIT,
     // What the website shows. Exact where GitHub makes it exact, and labelled
     // as mixed where it cannot be split, never turned into a number of people.
     exact: {

@@ -1,0 +1,62 @@
+GNOT — WHO MADE EVERY DOWNLOAD
+Audit of 10 October 2026. All 58 downloads GitHub has ever counted, matched one by one.
+
+WHAT IT WAS CHECKED AGAINST
+  1. GitHub's own logs of every automated run in the project (440 runs), step by step, with times.
+  2. The record of all 12 work sessions, 6 July to 10 October: every command that was run.
+  3. The publisher's computer: every update file its copy of the app downloaded is still in the
+     temp folder with its time, plus the PowerShell history.
+  4. Old readings of the counters: an exact one from 20 Sept 17:51 UTC, and about one an hour
+     from 25 Sept 16:31 UTC onward (274 snapshots on the data branch).
+  5. A test on 10 Oct: one "ping" (HEAD request, redirect not followed) at a private file's
+     download link raised its counter from 1 to 2. So a ping counts as a download.
+  The publisher told people about GNOT on 16 Sept at 11:00 AM Eastern (15:00 UTC).
+
+THE 58 DOWNLOADS
+
+  Automated build check ........ 17   1.0.2, downloaded on every build to test upgrading from it
+                                      (13 Sept x2, 20 Sept x2, 21 Sept x3, 25 Sept x6, 26 Sept x3, 27 Sept x1)
+  Screenshot robot, Windows ....  6   ran the real install command: 16 Sept 13:33 and 14:26 (1.1.0),
+                                      20 Sept 19:47 (1.2.0), 23:09 (1.2.1), 21 Sept 00:11 (1.2.2), 00:49 (1.2.3)
+  Screenshot robot, Mac ........  1   16 Sept 13:35, 1.1.0 for Apple silicon. Its own screenshot shows
+                                      "Downloading version 1.1.0 for Apple silicon... Done!"
+  Checks made while building ...  9   1.0.0 x2 (downloaded twice on 11 Sept to check which build was live),
+                                      pings to check links worked: 1.0.1 x2, 1.0.2 x1,
+                                      1.1.0 x3 (Windows, Mac arm64, Mac x64),
+                                      and one run of the install command on 26 Sept for a video (1.3.4)
+  The publisher's own computer . 17   its updates, each file still on disk with its time:
+                                      1.0.2, 1.1.0, 1.2.0-1.2.4, 1.3.0-1.3.4, 1.3.6-1.3.9 (16),
+                                      and one fresh install on 26 Sept to record the video (1)
+  Before anyone was told .......  6   1.0.0 x1, 1.0.1 x2, 1.0.2 x3 — all before 13 Sept 21:19 UTC,
+                                      three days before the first message went out
+  NOT MATCHED TO ANYONE ........  2   both version 1.1.0 for Windows, some time between 13 Sept 21:19
+                                      and 20 Sept 17:51 UTC: one of the version-named file (what the
+                                      install command fetches) and one of the plain-named file (what a
+                                      direct link or the GitHub releases page gives)
+                                 --
+                                 58
+
+BY VERSION (file counters as GitHub shows them)
+  1.0.0   plain 3                        = 2 checks + 1 before anyone was told
+  1.0.1   versioned 3, plain 1           = 2 pings + 2 before anyone was told
+  1.0.2   versioned 20, plain 2          = 17 build check + 1 ping + 1 own update + 3 before anyone was told
+  1.1.0   versioned 5, plain 1, Mac 3    = 3 pings + 1 own update + 2 Windows robot + 1 Mac robot + 2 NOT MATCHED
+  1.2.0   2    1.2.1   2    1.2.2   2    1.2.3   2    = own update + screenshot robot, each
+  1.2.4   1    = own update
+  1.3.0 - 1.3.3   1 each   = own update
+  1.3.4   versioned 1, plain 2           = own update + 1 video test + 1 own fresh install
+  1.3.6 - 1.3.9   1 each   = own update
+
+WHAT THIS MEANS
+  - Since 20 Sept 17:51 UTC, every single download is the publisher's own computer, a robot, or a
+    test. No other computer has installed or updated the app in that time.
+  - In the whole history there are at most 2 downloads by anybody else, both of 1.1.0, in the
+    week the first messages went out. They may be two people, one person, or the publisher on
+    another device; the records cannot say.
+  - "Computers, at least 21", shown on the website until 9 Oct, was wrong. It came from 1.0.2's
+    22 downloads, 17 of which were the build check.
+
+WHAT WAS CHANGED SO THIS CANNOT BUILD UP AGAIN
+  - The build check takes 1.0.2 from a private copy (ci-fixtures), fingerprint-checked.
+  - The app sends nothing from a build machine or from a copy run from source.
+  - No test may run the real install command or download from the public releases.
