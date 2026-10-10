@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("gonka", {
   downloadWeights: call("deploy:downloadWeights"),
   containers: call("deploy:containers"),
   nodeSync: call("deploy:nodeSync"),
+  feeBudget: call("deploy:feeBudget"),
   mlnode: call("deploy:mlnode"),
 
   seed: call("net:seed"),

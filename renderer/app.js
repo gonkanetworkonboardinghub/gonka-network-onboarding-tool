@@ -284,6 +284,28 @@ function toast(msg) { logLine("\n" + msg + "\n"); }
 const RENDER = {};
 
 /* --- 0 Welcome ------------------------------------------------------ */
+/* Gonka changes, and a setup tool that has fallen behind wastes the money a
+   rented server costs. The app is compared with the live network every day
+   (scripts/check-chain.js, read at start as S.K.compat); when the network runs
+   a newer version than this copy was checked against, say so before anyone
+   rents anything. The notice clears by itself: either an update arrives, or
+   "we looked, it still fits" is published and checkedAgainst moves on. */
+function chainNotice() {
+  const c = S.K.compat, checked = (S.K.checkedAgainst || {}).chain;
+  if (!c) return "";
+  const v = (s) => { const m = String(s || "").match(/(\d+)\.(\d+)\.(\d+)/); return m ? [+m[1], +m[2], +m[3]] : null; };
+  const live = v(c.chain), mine = v(checked);
+  const newer = live && mine && ((live[0] - mine[0]) || (live[1] - mine[1]) || (live[2] - mine[2])) > 0;
+  let html = "";
+  if (newer) {
+    html += `<div class="warn-banner">${t("<b>Gonka has changed since this app was last checked.</b> The network now runs {live}; this app was checked against {checked}. A setup may stop halfway or leave something out, and a rented server costs money while it waits. It is safer to hold off until this notice is gone. It clears by itself once the new version has been checked.", { live: `<b>${esc(c.chain)}</b>`, checked: esc(checked) })}</div>`;
+  }
+  if (c.upgrade) {
+    html += `<div class="info-banner">${t("Gonka has scheduled an upgrade to {name}. A node set up just before an upgrade may need attention right after it.", { name: `<b>${esc(c.upgrade)}</b>` })}</div>`;
+  }
+  return html;
+}
+
 RENDER.welcome = () => {
   const req = S.K.requirements;
   stage(`
@@ -291,6 +313,7 @@ RENDER.welcome = () => {
       This wizard takes you from a bare server to a registered, earning node on the Gonka network.
       It checks your machine, fixes what's missing, creates your keys the safe way, writes the
       configuration for you, and launches everything in the right order.`)}
+    ${chainNotice()}
     <div class="card" id="right-now-card">
       <h3>${esc(t("What's supported right now"))}</h3>
       <span class="small">Checking the live network and repository…</span>
@@ -1033,15 +1056,21 @@ RENDER.wallet = () => {
 
     // Live funding helper: shows how to fund the wallet, and auto-detects the
     // moment GNK arrives (polls the address) so there's no guessing.
+    // What Gonka's guide suggests keeping here for fees, in ngonka.
+    const feeStart = (Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK;
+    const feesButton = () => (S.K.docs.fees ? `<button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button>` : "");
+    const wireFeesButton = () => { if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees }); };
+
     function fundingCard() {
       return `
         <div class="card">
           <h3>${esc(t("Fund this wallet"))}</h3>
-          <p class="small">${t("Registering is free, but the \"grant permissions\" step (during launch) needs GNK for gas. One faucet claim ({amt}) covers it with little to spare — if the grant later stops with \"insufficient funds,\" claim again or top up. Collateral is optional and needs much more.", { amt: fa.amount ? esc(fa.amount) : "0.01 GNK" })}</p>
+          <p class="small">${t("This wallet pays for two things. <b>Setting up:</b> one small transaction during launch, about 0.001 GNK, which one faucet claim ({amt}) covers many times over. <b>Taking part:</b> since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Gonka's guide suggests starting with about {start}, which the faucet does not give. Collateral is optional and separate.", { amt: fa.amount ? esc(fa.amount) : "0.01 GNK", start: `<b>${gnk(feeStart)}</b>` })}</p>
           <div class="kv">${esc(t("Send GNK to"))}&nbsp; <b>${esc(w.address)}</b></div>
           <div class="btn-row" style="margin-top:6px">
             <button id="b-copy-addr">${esc(t("Copy address"))}</button>
             ${fa.url ? `<button id="b-faucet" class="primary">${esc(t("Open the Gonka faucet"))}</button>` : ""}
+            ${feesButton()}
           </div>
           <p class="hint" style="margin-top:10px">${t("The faucet sends GNK to a browser \"gg wallet,\" not directly here. Two ways to get it into this wallet:")}</p>
           <ul class="plain small">
@@ -1060,9 +1089,16 @@ RENDER.wallet = () => {
         if (!area) { S.balPoll && clearInterval(S.balPoll); S.balPoll = null; return; }
         if (bal === null) {
           area.innerHTML = `<div class="info-banner">${esc(t("Couldn't read the balance right now — that's fine, you can continue."))}</div>`;
-        } else if (bal > 0) {
+        } else if (bal >= feeStart) {
           S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
-          area.innerHTML = `<div class="info-banner"><span class="pill ok">FUNDED</span> ${t("Balance: {n}. The steps that pay gas (granting permissions, and collateral) will work.", { n: `<b>${gnk(bal)}</b>` })}</div>`;
+          area.innerHTML = `<div class="info-banner"><span class="pill ok">FUNDED</span> ${t("Balance: {n}. Enough to set up, and by Gonka's guide enough for the node's fees in its first epochs.", { n: `<b>${gnk(bal)}</b>` })}</div>`;
+        } else if (bal > 0) {
+          // Enough to set up, not enough to keep taking part: say both, and keep
+          // watching, because the rest can arrive at any moment.
+          area.innerHTML = `<div class="info-banner"><span class="pill warn">${esc(t("SETUP ONLY"))}</span> ${t("Balance: {n}. Enough to set up. To take part in epochs the node also pays fees from this wallet; Gonka's guide suggests about {start} to start with. You can add it now or after launch: the Verify step shows whether your node has enough.", { n: `<b>${gnk(bal)}</b>`, start: `<b>${gnk(feeStart)}</b>` })}
+            <div class="kv" style="margin-top:8px">${esc(t("Send GNK to"))}&nbsp; <b>${esc(w.address)}</b></div>
+            <div class="btn-row" style="margin-top:6px">${feesButton()}</div></div>`;
+          wireFeesButton();
         } else {
           // Only (re)render the funding card once, then just refresh the live line.
           if (!$("#bal-live")) {
@@ -1073,6 +1109,7 @@ RENDER.wallet = () => {
               setTimeout(() => { $("#b-copy-addr").textContent = t("Copy address"); }, 1500);
             };
             if ($("#b-faucet")) $("#b-faucet").onclick = () => api("openExternal", { url: fa.url });
+            wireFeesButton();
           }
         }
       } catch (_) {}
@@ -1618,6 +1655,7 @@ RENDER.verify = () => {
       <p class="small">${t("Both dashboards list every participant — search for your address there. gonka.gg is community-run and usually the quickest to update; the original dashboard is the network's own.")}</p>
     </div>
     <div class="card" id="v-card"><span class="small">${t("Checking…")}</span></div>
+    <div class="card" id="fee-card"><span class="small">${t("Checking…")}</span></div>
     <div class="card">
       <h3>${t("What each line above means")}</h3>
       <ul class="plain">
@@ -1924,6 +1962,47 @@ RENDER.verify = () => {
     } catch (e) {
       card.innerHTML = `<span class="pill err">CHECK FAILED</span> <span class="small">${esc(e.message)}</span>`;
     }
+    fees();
+  }
+
+  /**
+   * Can the node pay its way? From Gonka v0.2.16 it pays a fee for every Proof
+   * of Compute out of the wallet, and a node that cannot is left out of the
+   * epoch while every other line on this page still looks healthy. The node
+   * works out what an epoch may cost; this asks it, and says the answer in
+   * words. Before the node is up there is only the wallet's balance to show.
+   */
+  async function fees() {
+    const el = $("#fee-card");
+    if (!el) return;
+    const start = (Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK;
+    let bal = null, fb = null;
+    try { bal = await api("balance", { seed: S.seed || S.K.seedNodes[0], address: S.wallet.address }); } catch (_) {}
+    if (S.connected) { try { fb = await api("feeBudget"); } catch (_) {} }
+    if (!$("#fee-card")) return;
+
+    let verdict;
+    if (fb && fb.covers) {
+      verdict = `<p><span class="pill ok">${esc(t("FEES COVERED"))}</span> <span class="small">${t("Your node says it can pay this epoch's fees: it may need up to {need} and can spend {have}.", { need: `<b>${gnk(fb.budget)}</b>`, have: `<b>${gnk(fb.spendable)}</b>` })}</span></p>`;
+    } else if (fb && bal !== null && bal >= fb.budget) {
+      // The wallet has it, the node may not spend it: the allowance granted to
+      // the node's own key is used up, and it cannot be topped up, only renewed.
+      verdict = `<p><span class="pill err">${esc(t("ALLOWANCE USED UP"))}</span> <span class="small">${t("Your wallet has enough, but the allowance your node may spend from it is used up: it can spend {have} and this epoch may need {need}. Sending more GNK does not help. The allowance has to be renewed, as Gonka's guide describes under \"Refresh the feegrant\".", { have: `<b>${gnk(fb.spendable)}</b>`, need: `<b>${gnk(fb.budget)}</b>` })}</span></p>`;
+    } else if (fb) {
+      verdict = `<p><span class="pill err">${esc(t("NOT ENOUGH FOR FEES"))}</span> <span class="small">${t("Your node says it cannot pay this epoch's fees: it may need up to {need} and can spend {have}. Send at least {more} to the address above, or it will be left out of the epoch.", { need: `<b>${gnk(fb.budget)}</b>`, have: `<b>${gnk(fb.spendable)}</b>`, more: `<b>${gnk(Math.max(0, fb.budget - fb.spendable))}</b>` })}</span></p>`;
+    } else if (bal !== null && bal < start) {
+      verdict = `<p><span class="pill warn">${esc(t("LOW FOR FEES"))}</span> <span class="small">${t("Your node has not said yet what this epoch will cost. Gonka's guide suggests keeping about {start} in the wallet; it holds less than that.", { start: `<b>${gnk(start)}</b>` })}</span></p>`;
+    } else {
+      verdict = `<p class="small">${t("Your node has not said yet what this epoch will cost. It can once it is running and has seen a Proof of Compute.")}</p>`;
+    }
+    el.innerHTML = `
+      <h3>${esc(t("Fees your node pays"))}</h3>
+      <p class="small">${t("Since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of the wallet above. A node that cannot pay stays registered but is left out of the epoch and earns nothing.")}</p>
+      <div class="kv">${esc(t("In your wallet now"))}&nbsp; <b>${bal === null ? "—" : gnk(bal)}</b></div>
+      ${verdict}
+      ${fb && !fb.known ? `<p class="small">${t("The node's figure is a first guess until it has taken part in a Proof of Compute.")}</p>` : ""}
+      ${S.K.docs.fees ? `<div class="btn-row"><button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button></div>` : ""}`;
+    if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees });
   }
 };
 

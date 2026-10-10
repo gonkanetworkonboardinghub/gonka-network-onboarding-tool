@@ -94,6 +94,9 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await K.loadRemoteManifest();
+  // The daily comparison with the live Gonka network: what to tell a person when
+  // the network has changed, and Gonka's own permission list when ours is stale.
+  await K.loadCompat();
   // The manifest doubles as the release channel. Never throws: an unreachable
   // website must not stop someone opening the app.
   try { updateState = updates.evaluate(VERSION, K.get().app, { platform: process.platform, arch: process.arch }); }
@@ -338,6 +341,7 @@ ipcMain.handle("deploy:downloadWeights", wrap(async ({ models }) =>
   deploy.downloadWeights(needDriver(), models, onData, lastScanFacts.hfHomePath)));
 ipcMain.handle("deploy:containers", wrap(async () => deploy.containersStatus(needDriver())));
 ipcMain.handle("deploy:nodeSync", wrap(async () => deploy.nodeSyncStatus(needDriver())));
+ipcMain.handle("deploy:feeBudget", wrap(async () => deploy.feeBudget(needDriver())));
 ipcMain.handle("deploy:mlnode", wrap(async () => deploy.mlnodeStatus(needDriver())));
 
 /* ------------------------------------------------------------------ */

@@ -42,40 +42,59 @@ const overridable = {
 
   // Message types the node's ML-operational (warm) key may sign on the
   // account's behalf: the list `grant-ml-ops-permissions` grants in inferenced
-  // v0.2.15 (inference-chain/x/inference/permissions.go). It must track the
+  // v0.2.16 (inference-chain/x/inference/permissions.go). It must track the
   // chain — granting a type the chain has removed fails the whole tx (v0.2.14
-  // dropped MsgStartInference → "doesn't exist: invalid type") — so it lives
-  // here, where the remote manifest can update it without an app release.
+  // dropped MsgStartInference, v0.2.16 dropped MsgRequestThresholdSignature →
+  // "doesn't exist: invalid type") — so it lives here, where the remote
+  // manifest can update it without an app release, and scripts/check-chain.js
+  // compares it with Gonka's own file every day.
   mlOpsPermissions: [
     "/inference.inference.MsgClaimRewards",
     "/inference.inference.MsgSubmitPocBatch",
     "/inference.inference.MsgSubmitPocValidationsV2",
     "/inference.inference.MsgPoCV2StoreCommit",
+    "/inference.inference.MsgSubmitPoCChallengeValidations",
+    "/inference.inference.MsgPoCChallengeStoreCommit",
     "/inference.inference.MsgMLNodeWeightDistribution",
     "/inference.inference.MsgSubmitSeed",
     "/inference.inference.MsgBridgeExchange",
     "/inference.inference.MsgSubmitNewUnfundedParticipant",
     "/inference.inference.MsgSubmitHardwareDiff",
+    "/inference.inference.MsgDeclarePoCIntent",
     "/inference.bls.MsgSubmitDealerPart",
     "/inference.bls.MsgSubmitVerificationVector",
     "/inference.bls.MsgRespondDealerComplaints",
-    "/inference.bls.MsgRequestThresholdSignature",
     "/inference.bls.MsgSubmitPartialSignature",
     "/inference.bls.MsgSubmitGroupKeyValidationSignature"
   ],
-  // Fee allowance granted to the warm key alongside (DefaultMLOpsFeeAllowance, 10 GNK).
+  // Fee allowance granted to the warm key alongside (DefaultMLOpsFeeAllowance,
+  // 10 GNK). From v0.2.16 the node pays its epoch fees out of this allowance.
   mlOpsFeeAllowanceNgonka: "10000000000",
-  // Price per unit of gas for the wallet's transactions — what the CLI
-  // commands used; at or above the chain's minimum.
-  gasPriceNgonka: 10,
+  // Price per unit of gas for the wallet's transactions. From v0.2.16 the chain
+  // sets it: 1 ngonka per gas for grants, sends and collateral (fee_params in
+  // the chain's own parameters). Before that nothing was charged at all, and
+  // this said 10.
+  gasPriceNgonka: 1,
+  // What Gonka's guide suggests a new host keeps in the wallet for fees: from
+  // v0.2.16 a node pays for every Proof of Compute it takes part in, and
+  // without the balance it stays registered but is left out of the epoch.
+  feeStartGnk: 10,
 
   // The last state of the Gonka network a person checked this app against.
   // scripts/check-chain.js compares it with the live network every day: a newer
   // chain, or a kind of fee the chain charges that is not listed here, means
   // the app needs looking at before anyone trusts it with a rented server.
   // Overridable, so "we looked, it still fits" can be published without an app
-  // update. realRun is the last time a node was set up from start to finish.
-  checkedAgainst: { chain: "v0.2.15", on: "2026-09-11", realRun: "2026-08-03", feeGroups: [] },
+  // update. realRun is the last time a node was set up from start to finish
+  // on a real server — older than the chain it names until the next real run,
+  // and the daily check keeps saying so.
+  checkedAgainst: { chain: "v0.2.16", on: "2026-10-10", realRun: "2026-08-03", feeGroups: ["epoch", "cosmos"] },
+
+  // Where the daily comparison with the live network is published. The app
+  // reads it at start: to say so plainly when Gonka has changed and this copy
+  // has not been checked against it yet, and to take Gonka's own corrected
+  // permission list by itself. Empty means never read.
+  compatUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/compat.json",
 
   // API paths (relative to a node base URL)
   api: {
@@ -345,6 +364,8 @@ const overridable = {
     // that the build they installed came from it (see the repository's README).
     sourceCode: "https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool",
     quickstart: "https://gonka.ai/docs/host/quickstart/",
+    // The guide's own part on what a host pays from v0.2.16, and how much to keep.
+    fees: "https://gonka.ai/docs/host/quickstart/#fund-account-fees",
     keyManagement: "https://gonka.ai/host/key-management/",
     multiModelPoc: "https://gonka.ai/docs/host/multi_model_poc/",
     collateral: "https://gonka.ai/host/collateral/",
@@ -382,6 +403,51 @@ function deepMerge(base, over) {
   return base;
 }
 
+/**
+ * Read the daily comparison with the live network (scripts/check-chain.js).
+ *
+ * Two things come out of it. `compat` is what the app shows a person when the
+ * network has moved past what this copy was checked against. And when Gonka's
+ * permission list has changed, the comparison carries Gonka's own current list,
+ * already accepted by the live chain in a dry run — the app takes it, so a
+ * changed list mends itself within a day instead of breaking the grant step
+ * until somebody publishes a fix.
+ *
+ * Kept apart from loadRemoteManifest on purpose: the comparison itself must
+ * judge the app WITHOUT its own correction, or it would call a stale list fine
+ * and the correction would vanish the next day.
+ */
+const COMPAT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const OWN_MESSAGE = /^\/inference\.(inference|bls)\.Msg[A-Za-z0-9]+$/;
+
+async function loadCompat() {
+  if (!merged.compatUrl) return merged;
+  try {
+    // Short on purpose: this runs before the window opens.
+    const res = await fetch(merged.compatUrl, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return merged;
+    const c = await res.json();
+    const age = Date.now() - Date.parse(c.asOf);
+    if (!(age >= 0 && age < COMPAT_MAX_AGE_MS)) return merged;   // stale or undated: ignore it whole
+    merged.compat = {
+      ok: !!c.ok, asOf: c.asOf,
+      chain: (c.chain && c.chain.version) || null,
+      upgrade: (c.chain && c.chain.upgrade && c.chain.upgrade.name) || null,
+      problems: (c.problems || []).map((p) => p.id)
+    };
+    // Only ever Gonka's own messages, and only a list of a believable size: a
+    // permission to move coins must never arrive this way.
+    const list = c.fix && c.fix.mlOpsPermissions;
+    if (Array.isArray(list) && list.length >= 8 && list.length <= 40 && list.every((p) => OWN_MESSAGE.test(p))) {
+      merged.mlOpsPermissions = list;
+      merged.compat.listMended = true;
+    }
+  } catch (e) {
+    // Offline or not published — the app goes on with what it has.
+  }
+  return merged;
+}
+
 function get() { return merged; }
 
-module.exports = { get, loadRemoteManifest, REMOTE_MANIFEST_URL };
+module.exports = { get, loadRemoteManifest, loadCompat, REMOTE_MANIFEST_URL };

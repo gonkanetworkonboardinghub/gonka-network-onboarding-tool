@@ -469,6 +469,31 @@ async function mlnodeStatus(driver) {
   };
 }
 
+/**
+ * What the node itself says about this epoch's fees. From Gonka v0.2.16 a host
+ * pays for each Proof of Compute commit and hardware report out of the cold
+ * wallet, through the fee allowance granted to the warm key; a node that
+ * cannot pay stays registered but is left out of the epoch. The node's admin
+ * API (it only listens on the server itself) works the sum out:
+ *   budget_balance     ngonka this epoch may need — an upper estimate
+ *   spendable_balance  what it can spend: the wallet's balance, capped by what
+ *                      is left of the allowance
+ * null when the node is not up yet or is older than v0.2.16.
+ */
+async function feeBudget(driver) {
+  const r = await driver.exec("curl -s -m 8 http://127.0.0.1:9200/admin/v1/epoch-fee-budget", { timeoutMs: 15000 });
+  let j;
+  try { j = JSON.parse(r.stdout); } catch (_) { return null; }
+  if (!j || j.budget_balance === undefined || j.spendable_balance === undefined) return null;
+  return {
+    budget: Number(j.budget_balance),
+    spendable: Number(j.spendable_balance),
+    covers: !!j.spendable_covers_budget,
+    // false while the node has not seen a Proof of Compute to size the estimate from
+    known: j.budget_known !== false
+  };
+}
+
 async function containersStatus(driver) {
   const r = await driver.exec(
     `cd ${JOIN()} && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml ps --format json 2>/dev/null || ` +
@@ -480,5 +505,6 @@ module.exports = {
   cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName,
   listComposeImages, serverArch,
   pullImages, startCore, warmKeyExists, createWarmKey, getConsensusKey,
-  registerHost, launchAll, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime
+  registerHost, launchAll, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
+  feeBudget
 };

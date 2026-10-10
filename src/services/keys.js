@@ -210,11 +210,12 @@ async function grantMlOps({ keyName, passphrase, warmAddress, seedApiUrl, grante
     onData && onData("Existing feegrant allowance from cold to warm detected; skipping it.\n");
   }
 
-  // This tx bundles ~15 authz grants plus a feegrant allowance, so it's sized
-  // by simulation. Adjustment is 1.2, not the docs' 1.5: at 1.5 a real run
-  // needed 11,488,450 ngonka, which overshoots the 10,000,000 (0.01 GNK) a
-  // faucet claim gives, leaving new hosts stuck. 1.2 still clears with ~20%
-  // headroom and fits inside one claim.
+  // This tx bundles 17 authz grants plus a feegrant allowance, so it's sized
+  // by simulation, with 20% headroom. At the chain's price from v0.2.16
+  // (1 ngonka per gas) that is about 1,020,000 ngonka — a tenth of the
+  // 10,000,000 (0.01 GNK) one faucet claim gives. scripts/check-chain.js
+  // dry-runs it against the live chain daily and goes red if it ever stops
+  // fitting inside a claim.
   const r = await wallet.signAndBroadcast({
     seed, priv: key.priv, messages, gasAdjustment: 1.2, gasPrice: k.gasPriceNgonka, memo: GNOT_MEMO, onData
   });
