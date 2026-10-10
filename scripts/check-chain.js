@@ -164,6 +164,12 @@ function commandsIn(html) {
     problem("chain-newer", `Gonka runs ${version}. This app was last checked against ${checked.chain} (${checked.on}), ` +
       `and a node was last set up with it from start to finish on ${checked.realRun}. It needs a look and a real run.`);
   }
+  // Everything below compares lists and files. Only setting up a real node
+  // proves the whole thing, so say how long ago that last happened.
+  const sinceRun = Math.floor((Date.now() - Date.parse(checked.realRun)) / 864e5);
+  if (sinceRun > 45) {
+    warnings.push(`No node has been set up with this app from start to finish for ${sinceRun} days (last: ${checked.realRun}).`);
+  }
 
   const plan = (await get(`${seed}/chain-api/cosmos/upgrade/v1beta1/current_plan`)).json;
   const upgrade = plan && plan.plan ? { name: plan.plan.name, height: Number(plan.plan.height) } : null;
