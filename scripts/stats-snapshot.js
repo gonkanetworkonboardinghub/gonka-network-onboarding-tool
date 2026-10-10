@@ -36,6 +36,15 @@ const MAC = /-mac-(arm64|x64)\.zip$/;
 // repository, so this number will never grow, and it is taken off here.
 const ROBOT = { "1.0.2": 17 };
 
+// Runs of the install command that were a test, not a person installing. On
+// 26 September 2026 at 18:24 UTC the command was run once, on 1.3.4, purely to
+// capture what it prints for a video. The snapshots on the data branch show
+// the install counter going from 0 to 2 in that one hour and never moving
+// since; the other one, about 19:09 UTC, was the publisher installing afresh
+// to record the video now on the Download page — a person installing, so it
+// stays.
+const TEST_INSTALLS = { "1.3.4": 1 };
+
 const out = process.argv[2];
 if (!out) {
   console.error("Usage: node scripts/stats-snapshot.js <out.json>");
@@ -70,7 +79,8 @@ if (!out) {
       const count = (re) => (r.assets || []).filter((a) => re.test(a.name)).reduce((n, a) => n + a.download_count, 0);
       const version = r.tag_name.replace(/^v/, "");
       const robot = ROBOT[r.tag_name.replace(/^v/, "")] || 0;
-      const constName = count(CONST_WIN), versioned = Math.max(0, count(VERSIONED_WIN) - robot), mac = count(MAC);
+      const tests = TEST_INSTALLS[r.tag_name.replace(/^v/, "")] || 0;
+      const constName = Math.max(0, count(CONST_WIN) - tests), versioned = Math.max(0, count(VERSIONED_WIN) - robot), mac = count(MAC);
       const split = atLeast(version, SPLIT_FROM);
       return {
         version,
@@ -100,7 +110,8 @@ if (!out) {
       // run, and every download of the versioned file is an update.
       since: (versions.filter((v) => v.split).map((v) => v.published).sort()[0] || "").slice(0, 10),
       installs: sum(versions.filter((v) => v.split), "installs"),
-      updates: sum(versions.filter((v) => v.split), "updates")
+      updates: sum(versions.filter((v) => v.split), "updates"),
+      testInstallsLeftOut: Object.values(TEST_INSTALLS).reduce((a, b) => a + b, 0)
     },
     mixed: {
       // Windows before 1.3.0 used one file for both, and the Mac zips always
