@@ -15,12 +15,12 @@
 # on a schedule. It lives on its own branch so snapshots never clutter main.
 #
 # HOW OFTEN. It asks GitHub for every fifteen minutes, but GitHub treats a
-# schedule as a suggestion: when it is busy it drops runs, and in early October
-# an "hourly" job ran 43 times in three days with gaps of up to seven hours.
-# So the website can also start it (workflow_dispatch) when somebody opens the
-# impact page and the numbers are more than fifteen minutes old. Every file
-# carries its own asOf time, so whatever happens, the page can say honestly how
-# old each number is.
+# schedule as a suggestion: when it is busy it drops runs. Measured in October
+# 2026, a request for every fifteen minutes produced two runs in ten hours. So
+# what this really gives is a few runs a day, and the website says exactly that
+# rather than promising a time. Every file carries its own asOf, so the page
+# can always show honestly how old each number is. It can also be started by
+# hand (workflow_dispatch) when a fresh reading is wanted at once.
 #
 # ONE PART FAILING NO LONGER LOSES THE REST. Each part runs on its own. If one
 # fails — on 8 October a single Gonka node did not answer and the whole run was

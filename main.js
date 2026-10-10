@@ -103,9 +103,15 @@ app.whenReady().then(async () => {
   // otherwise someone who used Use Gonka once and left never reports it, and
   // a spell where the address was wrong would sit there for good.
   usage.send().catch(() => {});
-  // And once a day while it stays open, so an app left running for a week
-  // still reports rather than waiting for the next answer to push it.
-  setInterval(() => usage.send().catch(() => {}), 60 * 60 * 1000).unref?.();
+  // Say the app is open, so the website can count computers exactly instead of
+  // guessing from downloads. At most once an hour, whatever the timer does.
+  usage.opened().catch(() => {});
+  // Every fifteen minutes while it stays open: anything new from Use Gonka goes
+  // out, so the public numbers are minutes old rather than a day old.
+  setInterval(() => {
+    usage.send().catch(() => {});
+    usage.opened().catch(() => {});
+  }, 15 * 60 * 1000).unref?.();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

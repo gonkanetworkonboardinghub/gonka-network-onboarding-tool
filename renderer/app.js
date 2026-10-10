@@ -310,6 +310,7 @@ RENDER.welcome = () => {
         <li>${t("Nothing gets installed on your server without showing you the exact commands first.")}</li>
       </ul>
       <p class="small" style="margin-top:10px">${t("One thing it does add: the transactions your wallet signs here carry a public note, <b>Set up with GNOT</b>, so anyone can count the nodes this app has helped bring into the network. The note says nothing about you.")}</p>
+      <p class="small">${esc(t("And when the app opens, it tells our website so — a random number for this computer, the app's version and whether it is Windows or Mac, nothing else — so we can count exactly how many computers use it, instead of guessing from downloads."))}</p>
     </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>

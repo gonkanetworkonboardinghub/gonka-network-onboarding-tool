@@ -3,7 +3,8 @@
  *
  * Checks src/services/usage.js without Electron and without the real endpoint:
  * a stub "electron" pointing at a throwaway folder, a stub knowledge pointing
- * at a local server, and then the situations that matter.
+ * at a local server, and then the situations that matter for the numbers on
+ * the website being exact.
  */
 const http = require("http");
 const fs = require("fs");
@@ -15,9 +16,10 @@ const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "usage-test-"));
 const ROOT = path.join(__dirname, "..");
 let PORT = 0;
 let endpoint = () => `http://127.0.0.1:${PORT}/functions/gnot-usage`;
+let slow = 0;   // ms the server waits before answering
 
 const real = Module._load;
-Module._load = function (request, parent, isMain) {
+Module._load = function (request, parent) {
   if (request === "electron") return { app: { getPath: () => DIR, getVersion: () => "0.0.0-test" } };
   if (parent && parent.filename.endsWith("usage.js") && request === "../knowledge") {
     return { get: () => ({ usageEndpoint: endpoint() }) };
@@ -28,7 +30,11 @@ Module._load = function (request, parent, isMain) {
 const usage = require(path.join(ROOT, "src", "services", "usage.js"));
 const file = path.join(DIR, "use-gonka", "usage.json");
 const readFile = () => JSON.parse(fs.readFileSync(file, "utf8"));
+const setFile = (patch) => fs.writeFileSync(file, JSON.stringify({ ...readFile(), ...patch }));
 const posts = [];
+const usagePosts = () => posts.filter((p) => p.kind === "usage");
+const openPosts = () => posts.filter((p) => p.kind === "open");
+const ago = (ms) => Date.now() - ms;
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -40,81 +46,102 @@ const check = (name, got, want) => {
 const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (d) => (body += d));
-  req.on("end", () => {
+  req.on("end", () => setTimeout(() => {
     posts.push(JSON.parse(body));
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end('{"ok":true}');
-  });
+  }, slow));
 });
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 server.listen(0, "127.0.0.1", async () => {
   PORT = server.address().port;
 
-  // 1. A brand-new computer: the very first answer reports straight away.
+  // 1. Opening the app says so, once.
+  let r = await usage.opened();
+  check("opening the app sends an 'open' note", [r.sent, openPosts().length], [true, 1]);
+  check("  …carrying only number, version and system", Object.keys(openPosts()[0]).sort(), ["at", "install", "kind", "os", "version"]);
+  const install = openPosts()[0].install;
+  check("  …and the number is kept, not remade", readFile().install, install);
+  r = await usage.opened();
+  check("opening again within the hour sends nothing", [r.sent, openPosts().length], [false, 1]);
+  setFile({ lastOpen: ago(61 * 60 * 1000) });
+  r = await usage.opened();
+  check("an hour later it says so again", [r.sent, openPosts().length], [true, 2]);
+  check("  …under the same number", openPosts()[1].install, install);
+
+  // 2. The first answer goes at once; the next ones wait fifteen minutes.
   usage.record({ service: "proxy", model: "m", tokens: 100 });
   await sleep(150);
-  check("first answer is sent at once", posts.length, 1);
-  check("  …and says one answer", posts[0] && posts[0].answers, 1);
-
-  // 2. More answers in the same session wait: no flood.
+  check("the first answer is sent at once", usagePosts().length, 1);
+  check("  …marked as usage, under the same number", [usagePosts()[0].kind, usagePosts()[0].install], ["usage", install]);
   usage.record({ service: "proxy", model: "m", tokens: 200 });
-  usage.record({ service: "proxy", model: "m", tokens: 300 });
   await sleep(150);
-  check("later answers do not each send", posts.length, 1);
-  check("  …they are waiting in the file", readFile().pending.answers, 2);
-
-  // 3. Closing the app sends what is waiting — the whole point of the change.
-  const u = readFile(); u.lastSent = Date.now() - 60 * 1000; fs.writeFileSync(file, JSON.stringify(u));
-  let r = await usage.flush();
-  check("closing sends what is waiting", [r.sent, posts.length], [true, 2]);
-  check("  …with both answers and their tokens", [posts[1].answers, posts[1].tokens], [2, 500]);
+  check("the next answer waits", [usagePosts().length, readFile().pending.answers], [1, 1]);
+  setFile({ lastSent: ago(16 * 60 * 1000) });
+  r = await usage.send();
+  check("fifteen minutes on, it goes", [r.sent, usagePosts().length, usagePosts()[1].answers], [true, 2, 1]);
   check("  …and nothing is left waiting", readFile().pending.answers, 0);
 
-  // 4. Closing with nothing new sends nothing.
-  r = await usage.flush();
-  check("closing again sends nothing", [r.sent, r.why, posts.length], [false, "nothing to send", 2]);
+  // 3. An answer that arrives during a send is not lost.
+  setFile({ lastSent: ago(16 * 60 * 1000) });
+  usage.record({ service: "proxy", model: "m", tokens: 10 });   // goes now…
+  await sleep(10);
+  slow = 300;
+  setFile({ lastSent: ago(16 * 60 * 1000) });
+  const inFlight = usage.send();                                // (already sending: refused)
+  usage.record({ service: "proxy", model: "m", tokens: 20 });   // …this one arrives meanwhile
+  await inFlight; await sleep(450); slow = 0;
+  const waiting = readFile().pending;
+  check("an answer arriving mid-send waits for the next send", [waiting.answers, waiting.tokens], [1, 20]);
 
-  // 5. Two closes within half a minute: only the first sends.
-  usage.record({ service: "proxy", model: "m", tokens: 10 });
-  await sleep(100);
-  r = await usage.flush();
-  check("a second close right away is held back", [r.sent, r.why], [false, "just sent"]);
-  check("  …and keeps the answer for next time", readFile().pending.answers, 1);
+  // 4. Two sends at once never carry the same answers twice.
+  posts.length = 0;
+  setFile({ lastSent: ago(16 * 60 * 1000) });
+  slow = 200;
+  const both = await Promise.all([usage.send(), usage.send()]);
+  slow = 0;
+  check("two sends at once: only one goes", [both.filter((b) => b.sent).length, usagePosts().length], [1, 1]);
+  check("  …and the answer is counted once", usagePosts()[0].answers, 1);
 
-  // 6. The daily cap holds.
-  const capped = readFile();
-  capped.lastSent = Date.now() - 60 * 1000;
-  capped.sends = { day: new Date().toISOString().slice(0, 10), n: 8 };
-  fs.writeFileSync(file, JSON.stringify(capped));
+  // 5. Closing the app sends what is waiting.
+  usage.record({ service: "proxy", model: "m", tokens: 5 });
+  setFile({ lastSent: ago(60 * 1000) });
   r = await usage.flush();
-  check("eight sends in a day is enough", [r.sent, r.why], [false, "enough for today"]);
+  check("closing sends what is waiting", [r.sent, r.body && r.body.answers], [true, 1]);
+  usage.record({ service: "proxy", model: "m", tokens: 5 });
+  r = await usage.flush();
+  check("closing twice in a row: the second waits", [r.sent, r.why], [false, "just sent"]);
 
-  // 7. A send that fails loses nothing.
-  const good = endpoint;
+  // 6. A failed send loses nothing.
   endpoint = () => "http://127.0.0.1:1/nowhere";
-  const broken = readFile();
-  broken.lastSent = Date.now() - 60 * 1000;
-  broken.sends = { day: "1970-01-01", n: 0 };
-  fs.writeFileSync(file, JSON.stringify(broken));
+  setFile({ lastSent: ago(60 * 1000) });
   r = await usage.flush();
   check("a failed send never throws", r.sent, false);
   check("  …and the answer is still waiting", readFile().pending.answers, 1);
-  endpoint = good;
+  endpoint = () => `http://127.0.0.1:${PORT}/functions/gnot-usage`;
 
-  // 8. With no address set, nothing is ever sent (this is the test copy).
+  // 7. No address, nothing at all.
+  const realEndpoint = endpoint;
   endpoint = () => "";
-  r = await usage.flush();
-  check("no address means no sending", [r.sent, r.why], [false, "no address set"]);
-  endpoint = good;
+  check("no address: no usage", (await usage.send()).why, "no address set");
+  check("no address: no 'open' note", (await usage.opened()).why, "no address set");
+  endpoint = realEndpoint;
 
-  // 9. And once the address is back, the waiting answer goes out.
-  const back = readFile(); back.lastSent = Date.now() - 60 * 1000; fs.writeFileSync(file, JSON.stringify(back));
-  r = await usage.flush();
-  check("it goes out when the address works again", [r.sent, posts.length], [true, 3]);
-  check("  …never carrying anything typed", Object.keys(posts[2]).sort(),
-    ["answers", "install", "models", "os", "services", "since", "tokens", "until", "version"]);
+  // 8. Our own copies mark themselves.
+  posts.length = 0;
+  fs.writeFileSync(path.join(DIR, "team-copy.txt"), "ours");
+  setFile({ lastOpen: 0, lastSent: ago(16 * 60 * 1000) });
+  await usage.opened();
+  await usage.send();
+  check("a team copy marks its 'open' note", openPosts()[0].team, true);
+  check("a team copy marks its usage", usagePosts()[0].team, true);
+  check("the person can see it is marked", usage.mine().team, true);
+  fs.rmSync(path.join(DIR, "team-copy.txt"));
+
+  // 9. Nothing personal ever goes.
+  check("usage carries nothing it should not", Object.keys(usagePosts()[0]).sort(),
+    ["answers", "install", "kind", "models", "os", "services", "since", "team", "tokens", "until", "version"]);
 
   server.close();
   console.log(failures ? `\n${failures} FAILED` : "\nall good");

@@ -145,7 +145,7 @@ async function renderChooser() {
     <div class="use-setup wide">
       <h1>Use Gonka</h1>
       ${U.config.keyUnreadable ? `<p class="warn-banner">${esc(t("The key saved for {name} can't be read on this computer any more, so it needs pasting again. Your account there is untouched.", { name: U.config.name }))}</p>` : ""}
-      <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts how much the Gonka network is used through it: how many answers and how many tokens — once a day, and when you close the app — with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
+      <p class="small use-counted">${esc(t("So that the work on this app can be shown to be worth doing, it counts two things: that the app was opened, and how many answers and tokens go through Use Gonka — every fifteen minutes while there is something new — with a random number for this computer. Never what you type, never what comes back, never your key. Your own numbers are on the Account page, and the totals are public on the website."))}</p>
       <p class="lead">${esc(t("Pick a service to reach the Gonka network through. Each one gives you your own account; this app never touches your money. All of them start free, so you can try before you pay."))}</p>
       <p class="lead">${esc(t("Worth knowing before you start: Gonka is a network of computers other people run. What you send goes through the service you pick to whichever of those computers answers it, and whoever runs that computer can see it. It is not private the way something on your own machine is — so don't send anything secret."))}</p>
       <div class="svc-grid">${list.map((s) => `
@@ -387,9 +387,9 @@ function renderAccount() {
       </div>
       <div class="card">
         <h3>${esc(t("What this app counts"))}</h3>
-        <p class="small">${esc(t("Use Gonka exists to bring people to the Gonka network, so the app counts how much of it goes through here and sends the total to The Gonka Network Onboarding Hub — once a day, and when you close the app — where anyone can see it. From this computer, so far:"))}</p>
+        <p class="small">${esc(t("Use Gonka exists to bring people to the Gonka network, so the app counts how much of it goes through here and sends the total to The Gonka Network Onboarding Hub — every fifteen minutes while there is something new, and when you close the app — where anyone can see it. From this computer, so far:"))}</p>
         <div id="a-usage" class="small">${esc(t("Reading…"))}</div>
-        <p class="small">${esc(t("Sent with it: a random number for this computer, the app's version, and which models and services were used. Never what you type, never the answers, never your key, your wallet or your name. Nothing at all is counted in Gonka Host Setup."))}</p>
+        <p class="small">${esc(t("Sent with it: a random number for this computer, the app's version, and which models and services were used. The app also says when it is opened, under that same number, so the website can count computers exactly instead of guessing. Never what you type, never the answers, never your key, your wallet or your name — and nothing about what you do in Gonka Host Setup."))}</p>
       </div>
     </div>`;
   api("useUsage").then((u) => {
@@ -400,7 +400,7 @@ function renderAccount() {
       tokens: (u.totals.tokens || 0).toLocaleString(window.I18N.lang())
     }))}</b><br>${esc(u.lastSent
       ? t("Last sent {when}.", { when: new Date(u.lastSent).toLocaleString(window.I18N.lang()) })
-      : t("Nothing has been sent yet."))}`;
+      : t("Nothing has been sent yet."))}${u.team ? `<br><b>${esc(t("This copy is marked as ours, so it is left out of the public numbers."))}</b>` : ""}`;
   }).catch(() => {});
   if ($("#a-dash")) $("#a-dash").onclick = () => api("openExternal", { url: s.dashboard });
   if ($("#a-extras")) $("#a-extras").onclick = () => api("openExternal", { url: s.extrasUrl });
