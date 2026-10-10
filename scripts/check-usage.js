@@ -12,15 +12,22 @@ const os = require("os");
 const path = require("path");
 const Module = require("module");
 
+// These checks may themselves run on a build machine; the cases below set and
+// clear these on purpose.
+delete process.env.CI;
+delete process.env.GITHUB_ACTIONS;
+
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "usage-test-"));
 const ROOT = path.join(__dirname, "..");
 let PORT = 0;
 let endpoint = () => `http://127.0.0.1:${PORT}/functions/gnot-usage`;
 let slow = 0;   // ms the server waits before answering
 
+// isPackaged is true for an installed copy and false for one run from source.
+const electronApp = { getPath: () => DIR, getVersion: () => "0.0.0-test", isPackaged: true };
 const real = Module._load;
 Module._load = function (request, parent) {
-  if (request === "electron") return { app: { getPath: () => DIR, getVersion: () => "0.0.0-test" } };
+  if (request === "electron") return { app: electronApp };
   if (parent && parent.filename.endsWith("usage.js") && request === "../knowledge") {
     return { get: () => ({ usageEndpoint: endpoint() }) };
   }
@@ -139,9 +146,35 @@ server.listen(0, "127.0.0.1", async () => {
   check("the person can see it is marked", usage.mine().team, true);
   fs.rmSync(path.join(DIR, "team-copy.txt"));
 
-  // 9. Nothing personal ever goes.
+  // 9. Our build machines and copies run from source never report. The first
+  //    build after "opened" notes existed counted its own two machines as
+  //    people; this is what stops that.
+  setFile({ lastSent: Date.now() });                           // so the answer below waits
+  usage.record({ service: "proxy", model: "m", tokens: 5 });   // something to send
+  await sleep(100);
+  setFile({ lastOpen: 0, lastSent: ago(16 * 60 * 1000) });     // both would go now
+  posts.length = 0;
+  process.env.GITHUB_ACTIONS = "true";
+  check("on a build machine: no 'open' note", (await usage.opened()).why, "no address set");
+  check("on a build machine: no usage", (await usage.send()).why, "no address set");
+  check("on a build machine: nothing on closing", (await usage.flush()).why, "no address set");
+  delete process.env.GITHUB_ACTIONS;
+  process.env.CI = "true";
+  check("with CI set: no 'open' note", (await usage.opened()).why, "no address set");
+  delete process.env.CI;
+  electronApp.isPackaged = false;
+  check("run from source: no 'open' note", (await usage.opened()).why, "no address set");
+  check("run from source: no usage", (await usage.send()).why, "no address set");
+  electronApp.isPackaged = true;
+  check("  …and nothing went out in any of those", posts.length, 0);
+  check("an installed copy, run by a person, still reports", (await usage.opened()).sent, true);
+  check("  …and sends the answer that was waiting", (await usage.send()).sent, true);
+
+  // 10. Nothing personal ever goes.
   check("usage carries nothing it should not", Object.keys(usagePosts()[0]).sort(),
-    ["answers", "install", "kind", "models", "os", "services", "since", "team", "tokens", "until", "version"]);
+    ["answers", "install", "kind", "models", "os", "services", "since", "tokens", "until", "version"]);
+  check("an 'open' note carries nothing it should not", Object.keys(openPosts()[0]).sort(),
+    ["at", "install", "kind", "os", "version"]);
 
   server.close();
   console.log(failures ? `\n${failures} FAILED` : "\nall good");

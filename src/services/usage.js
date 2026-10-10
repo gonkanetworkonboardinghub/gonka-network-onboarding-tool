@@ -106,7 +106,21 @@ function mine() {
   return { install: u.install, totals: u.totals, waiting: u.pending || blank(), lastSent: u.lastSent || 0, endpoint: endpoint(), team: teamCopy() };
 }
 
-const endpoint = () => (K.get().usageEndpoint || "").trim();
+/**
+ * Only a real installed copy, run by a person, ever reports. Two things look
+ * exactly like one and are not:
+ *
+ *   - our automated build checks start the freshly built app to test it. The
+ *     first build after "opened" notes were added counted its own Windows and
+ *     Mac machines as two computers using GNOT, eight minutes before anyone
+ *     could have downloaded that version.
+ *   - a copy run straight from the source code while working on the app.
+ *
+ * Both send nothing at all. CI and GITHUB_ACTIONS are set on every build
+ * machine; isPackaged is false for anything not built into an installer.
+ */
+const automated = () => !!(process.env.CI || process.env.GITHUB_ACTIONS) || app.isPackaged === false;
+const endpoint = () => (automated() ? "" : (K.get().usageEndpoint || "").trim());
 
 /** The app's own version. app.getVersion() reports Electron's in a dev run. */
 function appVersion() {
