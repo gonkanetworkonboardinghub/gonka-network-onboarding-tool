@@ -1,9 +1,9 @@
 {
- "asOf": "2026-10-16T21:57:39.565Z",
+ "asOf": "2026-10-17T00:13:53.563Z",
  "ok": true,
  "chain": {
   "version": "v0.2.16-post3",
-  "height": 6590150,
+  "height": 6591688,
   "upgrade": null
  },
  "checkedAgainst": {
@@ -17,7 +17,7 @@
  },
  "problems": [],
  "warnings": [
-  "No node has been set up with this app from start to finish for 74 days (last: 2026-08-03)."
+  "No node has been set up with this app from start to finish for 75 days (last: 2026-08-03)."
  ],
  "unknown": [],
  "fix": null,
@@ -26,6 +26,10 @@
   "faucetClaimNgonka": 10000000
  },
  "changes": [
+  {
+   "at": "2026-10-17T00:13:53.563Z",
+   "text": "The quickstart's commands changed (1 new, 0 gone). New: curl -s http://node2.gonka.ai:8000/chain-api/productscience/inference/inference/params \\."
+  },
   {
    "at": "2026-10-15T01:40:21.028Z",
    "text": "New proposal #115: \"Activate full range Dynamic Coeff\", voting until 2026-10-17."
@@ -153,6 +157,7 @@
    "curl -s \"http://node2.gonka.ai:8000/v2/accounts/<your-gonka-cold-address>\" | jq '.balance, .denom'",
    "curl -s $DAPI_CHAIN_NODE__URL/status | jq -r '.result.validator_info.pub_key.value'",
    "curl -s http://127.0.0.1:9200/admin/v1/epoch-fee-budget | jq",
+   "curl -s http://node2.gonka.ai:8000/chain-api/productscience/inference/inference/params \\",
    "curl -sS http://node2.gonka.ai:8000/v1/governance/models",
    "curl http://0.0.0.0:26657/status",
    "curl http://<PUBLIC_IP>:8000/chain-rpc/status",
