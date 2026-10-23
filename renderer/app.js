@@ -414,11 +414,14 @@ function pocAdviceText() {
   if (!pocState) return "";
   const H = 3600000, remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
   const day = (ms) => new Date(Date.now() + ms).toDateString();
-  // The day is named only when it differs from the Proof of Compute's own.
-  const at = (ms) => new Date(Date.now() + ms).toLocaleString(undefined,
-    ms === remain || day(ms) !== day(remain) ? { weekday: "short", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
-  const when = at(remain);
-  if (remain > 3 * H) return t("Next one: {when}. Best time to start: {from} – {to}.", { when, from: at(remain - 3 * H), to: at(remain - 2 * H) });
+  // This computer's own clock and time zone, like the countdown bar; the zone
+  // is named ("EDT", "GMT+3") so nobody wonders whose time it is. The day is
+  // named only when it differs from the Proof of Compute's own.
+  const at = (ms, zone) => new Date(Date.now() + ms).toLocaleString(undefined, {
+    ...(ms === remain || day(ms) !== day(remain) ? { weekday: "short" } : {}),
+    hour: "2-digit", minute: "2-digit", ...(zone ? { timeZoneName: "short" } : {}) });
+  const when = at(remain, true);
+  if (remain > 3 * H) return t("Next one: {when}. Best time to start: {from} – {to}.", { when, from: at(remain - 3 * H), to: at(remain - 2 * H, true) });
   if (remain >= 2 * H) return t("Next one: {when}. Now is a good time to start.", { when });
   return t("Next one: {when}, less than 2 hours away. Starting now, your node will most likely join the one after it, about a day later.", { when });
 }
