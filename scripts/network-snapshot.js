@@ -9,6 +9,13 @@
  * question each), and a public node refuses a caller who asks too much at once,
  * so this asks here, slowly, and publishes network.json on the data branch;
  * the app reads it in one download and adds the live figures itself.
+ *
+ * The same answers say which models each machine serves on which GPUs, and how
+ * much memory each GPU has ("NVIDIA B300 SXM6 AC | 268GB"). Host Setup uses that
+ * to show what a model really runs on, and what memory a chosen setup needs:
+ *   models  { model: [{ gpus: [{ kind, count }], machines, hosts }] }, working
+ *           machines only, most common setup first
+ *   vram    { kind: GB per GPU }, as the machines report it
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
@@ -48,17 +55,30 @@ const WORKING = /INFERENCE|POC|POW/i;
 
   const hosts = {};
   const totals = { hosts: 0, gpus: 0, gpusWorking: 0, machines: 0, kinds: {} };
+  const setups = {};     // model -> "8× NVIDIA H200" -> { gpus, machines, hosts }
+  const sizes = {};      // kind -> { GB: GPUs reporting it }
   for (const p of ap.participants || []) {
     const r = await getJson(`${seed}${INF}/hardware_nodes/${p.index}`).catch(() => null);
     const nodes = (r && r.nodes && r.nodes.hardware_nodes) || [];
     const h = { gpus: 0, working: 0, machines: nodes.length, kinds: {} };
     for (const n of nodes) {
+      const gpus = [];
       for (const g of n.hardware || []) {
-        const kind = String(g.type || "").split("|")[0].trim() || "unknown";
+        const [name, mem] = String(g.type || "").split("|");
+        const kind = name.trim() || "unknown";
         const c = Number(g.count) || 0;
         h.gpus += c; h.kinds[kind] = (h.kinds[kind] || 0) + c;
         totals.kinds[kind] = (totals.kinds[kind] || 0) + c;
         if (WORKING.test(n.status || "")) h.working += c;
+        const gb = parseInt(mem, 10);
+        if (gb > 0 && c > 0) { sizes[kind] = sizes[kind] || {}; sizes[kind][gb] = (sizes[kind][gb] || 0) + c; }
+        if (c > 0) gpus.push({ kind, count: c });
+      }
+      if (!WORKING.test(n.status || "") || !gpus.length) continue;
+      const key = gpus.map((g) => `${g.count}× ${g.kind}`).join(" + ");
+      for (const m of n.models || []) {
+        const s = ((setups[m] = setups[m] || {})[key] = setups[m][key] || { gpus, machines: 0, hosts: new Set() });
+        s.machines++; s.hosts.add(p.index);
       }
     }
     hosts[p.index] = h;
@@ -73,7 +93,13 @@ const WORKING = /INFERENCE|POC|POW/i;
     totals,
     hosts,
     supply: supply && supply.amount ? Number(supply.amount.amount) : null,
-    communityPool: pool && pool.pool ? Math.floor(coins(pool.pool)) : null
+    communityPool: pool && pool.pool ? Math.floor(coins(pool.pool)) : null,
+    models: Object.fromEntries(Object.entries(setups).map(([m, byKey]) => [m,
+      Object.values(byKey).map((s) => ({ gpus: s.gpus, machines: s.machines, hosts: s.hosts.size }))
+        .sort((a, b) => b.machines - a.machines)])),
+    // The size most GPUs of a kind report (a few report a little less).
+    vram: Object.fromEntries(Object.entries(sizes).map(([kind, by]) =>
+      [kind, Number(Object.entries(by).sort((a, b) => b[1] - a[1])[0][0])]))
   };
   fs.writeFileSync(outPath, JSON.stringify(out) + "\n");
   console.log(`epoch ${epoch}: ${totals.hosts} hosts, ${totals.gpus} GPUs (${totals.gpusWorking} on working machines), ` +
