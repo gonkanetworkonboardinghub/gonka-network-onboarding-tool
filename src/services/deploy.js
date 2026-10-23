@@ -276,6 +276,13 @@ async function registerHost(driver, onData) {
   }
   if (/Found participant:|Participant is now available/i.test(out)) return { ok: true, output: out };
   if (/already exists|already registered/i.test(out)) return { ok: true, alreadyRegistered: true, output: out };
+  // From Gonka v0.2.17 the seed no longer registers hosts for them: POST
+  // /v1/participants answers 410 Gone and the CLI calls the command
+  // deprecated. The way Gonka names instead (fund the account, sign
+  // MsgSubmitNewParticipant) is the wallet registration the wizard already has.
+  if (/status code:\s*410\b|is deprecated|are suspended/i.test(out) || /\bGone\b/.test(out)) {
+    return { ok: false, needsManualFallback: true, deprecated: true, output: out };
+  }
   // The registration POST returned success, but the follow-up availability
   // poll can time out — a new participant record often takes longer than the
   // CLI's 30s to become queryable (and only earns weight after the next PoC).
