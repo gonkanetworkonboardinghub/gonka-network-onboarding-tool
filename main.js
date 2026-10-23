@@ -240,7 +240,6 @@ ipcMain.handle("keys:manualRegister", wrap(async (a) => keys.manualRegister(a, o
 ipcMain.handle("keys:deposit", wrap(async (a) => keys.depositCollateral(a, onData)));
 ipcMain.handle("keys:sequence", wrap(async ({ address, seedApiUrl }) => keys.accountSequence(address, seedApiUrl)));
 ipcMain.handle("keys:sshKeygen", wrap(async () => keys.sshKeygen()));
-ipcMain.handle("keys:sendGnk", wrap(async (a) => keys.sendGnk(a, onData)));
 
 ipcMain.handle("keys:sshKeyInfo", wrap(async () => keys.sshKeyInfo()));
 ipcMain.handle("keys:names", wrap(async () => keys.keyringKeyNames()));

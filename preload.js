@@ -70,7 +70,6 @@ contextBridge.exposeInMainWorld("gonka", {
   earnings: call("net:earnings"),
   gnkPrice: call("net:gnkPrice"),
 
-  sendGnk: call("keys:sendGnk"),
   probe: call("net:probe"),
   nextPoc: call("net:nextPoc"),
   payingModels: call("net:payingModels"),
