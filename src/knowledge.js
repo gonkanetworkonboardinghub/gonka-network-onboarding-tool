@@ -96,6 +96,16 @@ const overridable = {
   // permission list by itself. Empty means never read.
   compatUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/compat.json",
 
+  // Every host's results for the recent epochs, kept as one file by the same
+  // job (scripts/epochs-snapshot.js). Gonka Host Monitor/Vote draws a node's
+  // reward history from it; asking the chain for thirty epochs at once gets a
+  // caller refused. Empty means the app asks the chain, a few epochs at a time.
+  epochsUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/epochs.json",
+
+  // Each host's GPUs and the network's totals (supply, community pool), kept by
+  // the same job (scripts/network-snapshot.js) for the network page.
+  networkUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/network.json",
+
   // API paths (relative to a node base URL)
   api: {
     governanceModels: "/v1/governance/models",

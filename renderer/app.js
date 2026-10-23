@@ -1569,7 +1569,9 @@ RENDER.deploy = () => {
         throw new Error("Registration failed. Log tail:\n" + reg.output.slice(-500));
       }
       if (reg.needsManualFallback) {
-        toast("Standard registration hit a known edge case — signing with your wallet instead (automatic).");
+        toast(reg.deprecated
+          ? "The network no longer registers hosts for them — signing the registration with your wallet instead (automatic)."
+          : "Standard registration hit a known edge case — signing with your wallet instead (automatic).");
         await walletRegister();
       }
       if (await onChain(5, 5000)) {
@@ -2229,61 +2231,6 @@ function setTheme(value) {
   if (h) h.value = value;
 }
 
-/* Tools that are announced but not built yet. Their cards are clickable: the
-   panel says what the tool will do, so "coming soon" explains itself instead
-   of being a dead end. */
-const SOON_TOOLS = [
-  {
-    id: "monitor",
-    name: "Gonka Host Monitor",
-    desc: "Check on a node you already run: how it's doing, what it earns and where that goes. Change settings like collateral, or shut it down cleanly.",
-    lead: "A window into a node you already run.",
-    points: [
-      "See at a glance whether the node is registered, in this epoch's group, and passing validation.",
-      "Follow what it earns, epoch by epoch, and which wallet the coins land in.",
-      "Change what can be changed, like collateral, and shut the node down cleanly when you are done."
-    ],
-    foot: "Point it at any node you run, whether Gonka Host Setup built it or you set it up yourself."
-  },
-  {
-    id: "vote",
-    name: "Gonka Vote",
-    desc: "Vote with your node, read what each proposal says and see how past ones ended, no command lines.",
-    lead: "Your node gives you a say in how the network changes.",
-    points: [
-      "Read every live proposal in plain language, with what it would actually change.",
-      "See how past proposals ended and how the network voted.",
-      "Cast your vote from the app, with the key you already have, this app's or your own."
-    ],
-    foot: "Today voting means the command line. This turns it into a few clicks."
-  }
-];
-
-function openSoon(id) {
-  const tool = SOON_TOOLS.find((x) => x.id === id);
-  if (!tool || $("#sheet")) return;
-  const el = document.createElement("div");
-  el.id = "sheet";
-  el.innerHTML = `
-    <div class="sheet-box" role="dialog" aria-modal="true" aria-label="${esc(tool.name)}">
-      <div class="sheet-top">
-        <span class="tool-name">${esc(tool.name)}</span>
-        <span class="tool-badge">${esc(t("Coming soon"))}</span>
-      </div>
-      <p class="sheet-lead">${esc(t(tool.lead))}</p>
-      <ul>${tool.points.map((p) => `<li>${esc(t(p))}</li>`).join("")}</ul>
-      <p class="sheet-foot">${esc(t(tool.foot))}</p>
-      <div class="btn-row"><button class="primary" id="sheet-close">${esc(t("Close"))}</button></div>
-    </div>`;
-  const onKey = (e) => { if (e.key === "Escape") close(); };
-  function close() { el.remove(); document.removeEventListener("keydown", onKey); }
-  el.onclick = (e) => { if (e.target === el) close(); };
-  document.body.appendChild(el);
-  $("#sheet-close").onclick = close;
-  document.addEventListener("keydown", onKey);
-  $("#sheet-close").focus();
-}
-
 /* ---- What a rig mines --------------------------------------------------
    A strip on the home screen, and a panel with every deployable rig, what it
    earned over the last epoch and what it can cost to rent before it stops
@@ -2497,40 +2444,25 @@ function renderHome() {
   el.innerHTML = `
     <div class="home-wrap">
       <header class="home-brand">
-        <div class="title">${APP_NAME}</div>
-        <div class="sub">GNOT · ${esc(t("by The Gonka Network Onboarding Hub"))}</div>
+        <div class="gnot-mark home"><b>GNOT</b><span>The Gonka Network Onboarding Tool</span></div>
+        <div class="sub">${esc(t("by GNOH · The Gonka Network Onboarding Hub"))}</div>
       </header>
       <button class="earn-strip" id="earn-strip" hidden></button>
-      <h1>${esc(t("What would you like to do?"))}</h1>
-      <div class="tool-grid">
-        <button class="tool-card" id="tool-host">
-          <span class="tool-top">
-            <span class="led on"></span><span class="tool-name">Gonka Host Setup</span>
-          </span>
+      <div class="tool-grid home-choices">
+        <button class="tool-card big" id="tool-host">
+          <span class="tool-kicker">Gonka Host Setup</span>
+          <span class="tool-name">${esc(t("Set up a node"))}</span>
           ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : ""}
-          <span class="tool-desc">${esc(t("Take a GPU server from bare metal to a registered, earning Gonka node, step by step."))}</span>
-          <span class="tool-go">${esc(progress ? t("Continue →") : t("Open →"))}</span>
+          <span class="tool-desc">${esc(t("From a rented GPU server to a registered, earning node. Step by step, no command line."))}</span>
+          <span class="tool-go">${esc(progress ? t("Continue →") : t("Start →"))}</span>
         </button>
-        ${SOON_TOOLS.map((tool) => `
-        <button class="tool-card soon" data-soon="${tool.id}">
-          <span class="tool-top">
-            <span class="led"></span><span class="tool-name">${esc(tool.name)}</span>
-          </span>
-          <span class="tool-badge">${esc(t("Coming soon"))}</span>
-          <span class="tool-desc">${esc(t(tool.desc))}</span>
-          <span class="tool-go">${esc(t("See what's coming →"))}</span>
-        </button>`).join("")}
+        <button class="tool-card big" id="tool-monitor">
+          <span class="tool-kicker">Gonka Host Monitor/Vote</span>
+          <span class="tool-name">${esc(t("Watch nodes and vote"))}</span>
+          <span class="tool-desc">${esc(t("Your node, every host, the whole network and what it is voting on, at a glance."))}</span>
+          <span class="tool-go">${esc(t("Open →"))}</span>
+        </button>
       </div>
-      <!-- Under the node tools, one wide card for people who came to use the AI. -->
-      <button class="tool-card tool-wide" id="tool-use">
-        <span class="tool-wide-text">
-          <span class="tool-top">
-            <span class="led on"></span><span class="tool-name">Use Gonka</span>
-          </span>
-          <span class="tool-desc">${esc(t("Use the AI models running on the Gonka network, through your own account with a service that connects to it."))}</span>
-        </span>
-        <span class="tool-go">${esc(t("Open →"))}</span>
-      </button>
       <footer class="home-foot">
         <div>
           <div class="pickers">
@@ -2545,8 +2477,7 @@ function renderHome() {
       </footer>
     </div>`;
   $("#tool-host").onclick = () => showHostSetup();
-  $("#tool-use").onclick = () => showUse();
-  el.querySelectorAll("[data-soon]").forEach((b) => { b.onclick = () => openSoon(b.dataset.soon); });
+  $("#tool-monitor").onclick = () => showMonitor();
   renderEarnStrip();
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
   const ht = $("#home-theme");
@@ -2560,7 +2491,7 @@ function renderHome() {
 
 function showHome() {
   document.body.classList.add("on-home");
-  document.title = APP_NAME;
+  document.title = "GNOT — The Gonka Network Onboarding Tool";
   renderHome();
   // Nothing to lose by closing from here, unless a server is still connected.
   window.gonka.setCloseGuard(!!S.connected && !S.setupFinished);
@@ -2568,7 +2499,7 @@ function showHome() {
 
 function showHostSetup() {
   document.body.classList.remove("on-home");
-  document.title = `Gonka Host Setup — ${APP_NAME}`;
+  document.title = "Gonka Host Setup — GNOT";
   window.gonka.setCloseGuard(!S.setupFinished);
 }
 

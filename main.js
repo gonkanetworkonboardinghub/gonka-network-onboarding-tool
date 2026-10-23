@@ -32,9 +32,8 @@ const keys = require("./src/services/keys");
 const configgen = require("./src/services/configgen");
 const deploy = require("./src/services/deploy");
 const netdata = require("./src/services/netdata");
+const monitor = require("./src/services/monitor");
 const earnings = require("./src/services/earnings");
-const broker = require("./src/services/broker");
-const workspace = require("./src/services/workspace");
 const usage = require("./src/services/usage");
 const updates = require("./src/update");
 const updater = require("./src/updater");
@@ -243,47 +242,6 @@ ipcMain.handle("keys:sequence", wrap(async ({ address, seedApiUrl }) => keys.acc
 ipcMain.handle("keys:sshKeygen", wrap(async () => keys.sshKeygen()));
 ipcMain.handle("keys:sendGnk", wrap(async (a) => keys.sendGnk(a, onData)));
 
-/* ------------------------------------------------------------------ */
-/* IPC: Use Gonka (chat through the person's own broker account)       */
-/* ------------------------------------------------------------------ */
-ipcMain.handle("use:config", wrap(async () => broker.getConfig()));
-ipcMain.handle("use:setConfig", wrap(async (a) => broker.setConfig(a)));
-ipcMain.handle("use:switchTo", wrap(async ({ serviceId }) => broker.switchTo(serviceId)));
-ipcMain.handle("use:toolCheck", wrap(async (a) => broker.toolCheck(a || {})));
-ipcMain.handle("use:usage", wrap(async () => usage.mine()));
-
-/* ---- Workspace: the assistant working in one folder on this computer ---- */
-// The folder is the permission. Picking it is a deliberate act with a normal
-// system dialog, and nothing outside it can be read or written.
-ipcMain.handle("ws:pick", wrap(async () => {
-  const r = await dialog.showOpenDialog(win, {
-    title: "Choose the folder the assistant may work in",
-    properties: ["openDirectory", "createDirectory"]
-  });
-  if (r.canceled || !r.filePaths[0]) return { folder: workspace.getFolder() };
-  return { folder: workspace.setFolder(r.filePaths[0]) };
-}));
-ipcMain.handle("ws:folder", wrap(async () => ({ folder: workspace.getFolder(), tools: workspace.TOOLS })));
-ipcMain.handle("ws:set", wrap(async ({ folder }) => ({ folder: workspace.setFolder(folder) })));
-ipcMain.handle("ws:clear", wrap(async () => ({ folder: workspace.setFolder(null) })));
-ipcMain.handle("ws:describe", wrap(async ({ name, args }) => workspace.describe(name, args)));
-ipcMain.handle("ws:run", wrap(async ({ name, args }) => workspace.run(name, args)));
-ipcMain.handle("use:chatOnce", wrap(async (a) => broker.chatOnce(a || {})));
-ipcMain.handle("use:testKey", wrap(async (a) => broker.testKey(a)));
-ipcMain.handle("use:models", wrap(async () => broker.models()));
-ipcMain.handle("use:probe", wrap(async () => broker.probeAll()));
-ipcMain.handle("use:status", wrap(async () => broker.statusHistory()));
-ipcMain.handle("use:balance", wrap(async () => broker.balance()));
-ipcMain.handle("use:costOf", wrap(async ({ responseId }) => broker.costOf(responseId)));
-ipcMain.handle("use:chat", wrap(async ({ id, model, messages }) =>
-  broker.chat({ id, model, messages }, (ev) => {
-    if (win && !win.isDestroyed()) win.webContents.send("use:delta", { id, ...ev });
-  })));
-ipcMain.handle("use:stop", wrap(async ({ id }) => broker.stop(id)));
-ipcMain.handle("use:chats", wrap(async () => broker.listChats()));
-ipcMain.handle("use:chatLoad", wrap(async ({ id }) => broker.loadChat(id)));
-ipcMain.handle("use:chatSave", wrap(async ({ chat }) => broker.saveChat(chat)));
-ipcMain.handle("use:chatDelete", wrap(async ({ id }) => broker.deleteChat(id)));
 ipcMain.handle("keys:sshKeyInfo", wrap(async () => keys.sshKeyInfo()));
 ipcMain.handle("keys:names", wrap(async () => keys.keyringKeyNames()));
 ipcMain.handle("keys:resetKeyring", wrap(async () => keys.resetKeyring()));
@@ -363,6 +321,32 @@ ipcMain.handle("net:modelActivity", wrap(async ({ seed }) => netdata.modelActivi
 ipcMain.handle("net:payingModels", wrap(async ({ seed }) => netdata.payingModels(seed)));
 ipcMain.handle("net:releaseArch", wrap(async ({ arch }) => netdata.releaseArchStatus(arch || "amd64")));
 ipcMain.handle("net:chainHeight", wrap(async ({ seed }) => netdata.chainHeight(seed)));
+
+// Gonka Host Monitor/Vote: public facts about a node somebody already runs.
+// Nothing here needs a key or a server; the seed is remembered for a while so
+// every refresh does not start by looking for one again.
+const monitorDir = () => path.join(app.getPath("userData"), "monitor");
+// Gonka's public nodes do not all answer the same questions, so the tool is
+// given every one of them, the one that answers first in front.
+let monitorSeed = { url: null, at: 0 };
+async function seedForMonitor() {
+  if (!monitorSeed.url || Date.now() - monitorSeed.at > 5 * 60 * 1000) monitorSeed = { url: await netdata.firstReachableSeed(), at: Date.now() };
+  return [...new Set([monitorSeed.url, ...K.get().seedNodes])];
+}
+ipcMain.handle("monitor:network", wrap(async () => monitor.network(await seedForMonitor())));
+ipcMain.handle("monitor:networkOverview", wrap(async () => monitor.networkOverview(await seedForMonitor())));
+ipcMain.handle("monitor:overview", wrap(async ({ address, epochs }) => {
+  if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
+  return monitor.overview(await seedForMonitor(), String(address).trim(),
+    { epochs: Math.min(180, Math.max(7, Number(epochs) || 30)) });
+}));
+ipcMain.handle("monitor:nodes", wrap(async () => monitor.loadNodes(monitorDir())));
+ipcMain.handle("monitor:saveNodes", wrap(async ({ nodes }) => monitor.saveNodes(monitorDir(), nodes)));
+ipcMain.handle("monitor:proposals", wrap(async () => monitor.proposals(await seedForMonitor())));
+ipcMain.handle("monitor:voteOf", wrap(async ({ id, address }) => {
+  if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
+  return monitor.voteOf(await seedForMonitor(), Number(id), String(address).trim());
+}));
 ipcMain.handle("net:myEpochWeight", wrap(async ({ seed, address }) => netdata.myEpochWeight(seed, address)));
 
 /* ------------------------------------------------------------------ */
