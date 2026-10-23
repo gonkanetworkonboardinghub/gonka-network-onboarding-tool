@@ -14,6 +14,9 @@
 #                     the chain once and slowly, so Gonka Host Monitor/Vote can
 #                     draw a node's history from one download instead of asking
 #                     the chain thirty questions (scripts/epochs-snapshot.js)
+#   network.json    - each host's GPUs and the network's totals, supply and
+#                     community pool, for GNOT's network page
+#                     (scripts/network-snapshot.js)
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -66,7 +69,7 @@ jobs:
       - name: Fetch what was published last time
         run: |
           git fetch origin data --depth=1 || true
-          for f in earnings onboarded services stats compat epochs; do
+          for f in earnings onboarded services stats compat epochs network; do
             git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
           done
 
@@ -125,10 +128,17 @@ jobs:
           node scripts/epochs-snapshot.js "$RUNNER_TEMP/prev-epochs.json" "$RUNNER_TEMP/epochs.json" \
             || { rm -f "$RUNNER_TEMP/epochs.json"; exit 1; }
 
+      - name: Count every host's GPUs, and the network's totals
+        id: network
+        continue-on-error: true
+        run: |
+          node scripts/network-snapshot.js "$RUNNER_TEMP/network.json" \
+            || { rm -f "$RUNNER_TEMP/network.json"; exit 1; }
+
       - name: Publish them on the data branch
         run: |
           kept=""
-          for f in earnings onboarded services stats compat epochs; do
+          for f in earnings onboarded services stats compat epochs network; do
             if [ -s "$RUNNER_TEMP/$f.json" ] && node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$RUNNER_TEMP/$f.json"; then
               cp "$RUNNER_TEMP/$f.json" "$RUNNER_TEMP/out-$f.json"
             else
@@ -145,8 +155,8 @@ jobs:
             git checkout --orphan data
             git rm -rf . >/dev/null 2>&1 || true
           fi
-          for f in earnings onboarded services stats compat epochs; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
-          git add earnings.json onboarded.json services.json stats.json compat.json epochs.json
+          for f in earnings onboarded services stats compat epochs network; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
+          git add earnings.json onboarded.json services.json stats.json compat.json epochs.json network.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }
           git push origin data
 
