@@ -824,3 +824,57 @@ body.on-home #monitor { display: none; }
 
 /* breathing room under a node page's name */
 .mon-head { margin-bottom: 18px; }
+
+/* ------------------------------------------------------------------ */
+/* Fewer words on screen: explanations fold away under a plain question */
+/* ------------------------------------------------------------------ */
+details.more { margin-top: 12px; border-top: 1px solid var(--line); }
+details.more > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  padding: 10px 0 2px; font-size: 13px; font-weight: 600; color: var(--text);
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before {
+  content: "›"; display: inline-block; width: 12px; color: var(--muted);
+  font-size: 15px; line-height: 1; transition: transform 0.15s ease;
+}
+details.more[open] > summary::before { transform: rotate(90deg); }
+details.more > summary:hover { color: var(--accent); }
+details.more > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.more-body { padding: 6px 0 2px 20px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.more-body p { margin: 0 0 8px; }
+.more-body ul { margin: 0 0 8px; padding-inline-start: 16px; }
+.more-body li { margin-bottom: 5px; }
+.more-body b { color: var(--text); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { details.more > summary::before { transition: none; } }
+
+/* What can be run: one row per model, its GPU setups as small boxes */
+.model-list { margin-top: 4px; }
+.model-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.model-row:last-child { border-bottom: none; }
+.model-id { flex: 1 1 auto; min-width: 0; }
+.model-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.model-org { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+.gpu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.gpu-chip {
+  font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--wash); white-space: nowrap;
+}
+.gpu-chip .var { color: var(--muted); font-size: 10.5px; margin-left: 4px; }
+.model-hosts { flex: none; text-align: right; }
+.model-hosts b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.model-hosts span { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.model-hosts.none b { color: var(--red); }
+
+/* What a server needs: one figure per tile */
+.need-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 6px; }
+.need { border: 1px solid var(--line); border-radius: var(--radius); background: var(--wash); padding: 12px 14px; min-width: 0; }
+.need-label { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.need-value { font-size: 18px; font-weight: 700; margin: 6px 0 3px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.need-sub { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.need-note { margin: 12px 0 0; font-size: 12.5px; color: var(--text); }
+
+/* Two short cards side by side */
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.two-col > .card { margin-bottom: 14px; }
+@media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }

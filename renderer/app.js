@@ -308,32 +308,62 @@ function chainNotice() {
 
 RENDER.welcome = () => {
   const req = S.K.requirements;
+  const nn = req.networkNode;
+  // One figure per tile, so the list can be checked at a glance before renting.
+  const need = (label, value, sub) => `
+    <div class="need">
+      <div class="need-label">${esc(t(label))}</div>
+      <div class="need-value"><span dir="ltr">${value}</span></div>
+      <div class="need-sub">${esc(sub)}</div>
+    </div>`;
   stage(`
-    ${header("Step 1", "Become a Gonka host", `
-      This wizard takes you from a bare server to a registered, earning node on the Gonka network.
-      It checks your machine, fixes what's missing, creates your keys the safe way, writes the
-      configuration for you, and launches everything in the right order.`)}
+    ${header("Step 1", "Become a Gonka host",
+      "Step by step from a rented GPU server to an earning node. The wizard checks the server, fixes what's missing and starts everything for you.")}
     ${chainNotice()}
     <div class="card" id="right-now-card">
       <h3>${esc(t("What's supported right now"))}</h3>
       <span class="small">Checking the live network and repository…</span>
     </div>
     <div class="card">
-      <h3>${esc(t("What you'll need"))}</h3>
-      <ul class="plain">
-        <li>${t("About 30–60 minutes of your time. Model downloads run on their own and can take longer.")}</li>
-        <li>${t("A pen and paper for your wallet recovery phrase. Seriously — paper.")}</li>
-      </ul>
+      <h3>${esc(t("What your server needs"))}</h3>
+      <div class="need-grid">
+        ${need("GPUs", `<span id="need-gpu-ex">…</span>`, t("or any other setup listed above"))}
+        ${need("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))}
+        ${need("Memory", `${nn.ramGB} GB+`, t("and at least 1.5 × your GPUs' memory"))}
+        ${need("CPU", `${nn.cpuCores}+`, t("CPU cores"))}
+        ${need("System", "Linux", t("with an NVIDIA driver, CUDA {range}", { range: `${req.cudaMin}–${req.cudaMax}` }))}
+        ${need("Access", "root", t("the SSH login your provider gives you"))}
+        ${need("Open ports", "8000 · 5000", t("8443 instead of 8000 for HTTPS"))}
+      </div>
+      <p class="need-note">${esc(t("Check this list before paying for anything — once you connect, the health check verifies every item automatically."))}</p>
+      <details class="more"><summary>${esc(t("More about these"))}</summary><div class="more-body">
+        <p>${esc(t("Ubuntu is the most common choice; Debian, Rocky and AlmaLinux work too. Windows and macOS cannot run a node. The wizard installs any missing software."))}</p>
+        <p>${esc(t("Ports are opened in your rental provider's dashboard (look for firewall, security group or port mapping), not on the server. Many providers leave them open already, and the Verify step at the end tests them from outside."))}</p>
+      </div></details>
+      <details class="more"><summary>${esc(t("No SSH key yet?"))}</summary><div class="more-body">
+        <p>${esc(t("Choose \"A rented / remote server\" on the next screen. The wizard makes a key and shows you exactly what to paste into your provider's form."))}</p>
+      </div></details>
     </div>
-    <div class="card">
-      <h3>${esc(t("What this app never does"))}</h3>
-      <ul class="plain">
-        <li>${t("Your wallet's master key is created on <b>this computer</b> and never leaves it — not even to your own server.")}</li>
-        <li>${t("Your recovery phrase is shown once and never saved by this app.")}</li>
-        <li>${t("Nothing gets installed on your server without showing you the exact commands first.")}</li>
-      </ul>
-      <p class="small" style="margin-top:10px">${t("One thing it does add: the transactions your wallet signs here carry a public note, <b>Set up with GNOT</b>, so anyone can count the nodes this app has helped bring into the network. The note says nothing about you.")}</p>
-      <p class="small">${esc(t("And when the app opens, it tells our website so — a random number for this computer, the app's version and whether it is Windows or Mac, nothing else — so we can count exactly how many computers use it, instead of guessing from downloads."))}</p>
+    <div class="two-col">
+      <div class="card">
+        <h3>${esc(t("What you'll need"))}</h3>
+        <ul class="plain">
+          <li>${t("About 30–60 minutes of your time. Model downloads run on their own and can take longer.")}</li>
+          <li>${t("A pen and paper for your wallet recovery phrase. Seriously — paper.")}</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>${esc(t("What this app never does"))}</h3>
+        <ul class="plain">
+          <li>${t("Your wallet's master key is created on <b>this computer</b> and never leaves it — not even to your own server.")}</li>
+          <li>${t("Your recovery phrase is shown once and never saved by this app.")}</li>
+          <li>${t("Nothing gets installed on your server without showing you the exact commands first.")}</li>
+        </ul>
+        <details class="more"><summary>${esc(t("What it does share"))}</summary><div class="more-body">
+          <p>${t("One thing it does add: the transactions your wallet signs here carry a public note, <b>Set up with GNOT</b>, so anyone can count the nodes this app has helped bring into the network. The note says nothing about you.")}</p>
+          <p>${esc(t("And when the app opens, it tells our website so — a random number for this computer, the app's version and whether it is Windows or Mac, nothing else — so we can count exactly how many computers use it, instead of guessing from downloads."))}</p>
+        </div></details>
+      </div>
     </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>
@@ -445,65 +475,49 @@ RENDER.welcome = () => {
       const readyIds = new Set(ready.map((r) => r.model));
       const notReady = models.filter((m) => !readyIds.has(m.id) && paysFor(m.id));
 
+      // One row per model, its GPU setups as small boxes: what to rent, at a glance.
+      const byModel = new Map();
+      for (const r of ready) { if (!byModel.has(r.model)) byModel.set(r.model, []); byModel.get(r.model).push(r); }
+      const chip = (r) => `<span class="gpu-chip" dir="ltr">${r.gpuCount ? `${r.gpuCount} × ` : ""}${esc(r.gpuClass || "—")}${variantOf(r) ? `<span class="var">${esc(variantOf(r))}</span>` : ""}</span>`;
+      const split = (id) => { const i = String(id).indexOf("/"); return i > 0 ? [id.slice(i + 1), id.slice(0, i)] : [id, ""]; };
+      const hostsBox = (id) => {
+        const n = hostsOf(id);
+        return `<div class="model-hosts${n === 0 ? " none" : ""}"><b>${n === null ? "—" : n}</b><span>${esc(t("hosts now"))}</span></div>`;
+      };
+      const ids = (list) => list.map((id) => `<code>${esc(id)}</code>`).join(", ");
+      const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
       card.innerHTML = `
-        <h3>What's supported right now</h3>
+        <h3>${esc(t("What's supported right now"))}</h3>
         <div id="arch-warn"></div>
-        <p class="small">Fetched live from the network and the official repository — this updates automatically as
-          Gonka adds models or GPU classes, no app update needed.</p>
-
-        <h4>Ready to deploy through this wizard</h4>
-        ${ready.length ? `
-          <table class="hw-table">
-            <thead><tr><th>Model</th><th>GPU class</th><th class="num">GPUs needed</th><th class="num">Active hosts</th><th>Config source</th></tr></thead>
-            <tbody>${ready.map((r) => `
-              <tr><td><code>${esc(r.model)}</code></td>
-                <td>${esc(r.gpuClass || "—")}${variantOf(r) ? ` <span class="small">${esc(variantOf(r))}</span>` : ""}</td>
-                <td class="num">${r.gpuCount ?? "—"}</td>
-                <td class="num">${hostsOf(r.model) === null ? "—" : hostsOf(r.model) === 0 ? "0 ⚠" : hostsOf(r.model)}</td>
-                <td class="small">${esc(r.src)}</td></tr>`).join("")}</tbody>
-          </table>
-          <ul class="plain small" style="margin-top:10px">
-            <li><b>${esc(t("Model"))}</b> — ${t("the AI model your node will run and earn on")}</li>
-            <li><b>${esc(t("GPU class"))}</b> — ${t("the graphics-card type this configuration is built for")}</li>
-            <li><b>${esc(t("GPUs needed"))}</b> — ${t("how many of that card the reference configuration uses — rent exactly that many of that GPU class to run it")}</li>
-            <li><b>${esc(t("Active hosts"))}</b> — ${t("how many participants are serving that model in the current epoch, read live from the chain. One host can serve several models at once, so these counts overlap")}</li>
-            <li><b>${esc(t("Config source"))}</b> — ${t("where the ready-made configuration comes from — \"repository\" ships inside Gonka's official code repository; \"official docs\" is published on Gonka's documentation site and bundled into this app")}</li>
-          </ul>` :
+        ${ready.length ? `<div class="model-list">${[...byModel].map(([id, rs]) => {
+          const [name, org] = split(id);
+          return `
+          <div class="model-row">
+            <div class="model-id">
+              <div class="model-name">${esc(name)}</div>
+              ${org ? `<div class="model-org">${esc(org)}</div>` : ""}
+              <div class="gpu-chips">${rs.map(chip).join("")}</div>
+            </div>
+            ${hostsBox(id)}
+          </div>`;
+        }).join("")}</div>` :
           `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>`}
-
-        ${notReady.length ? `
-          <h4 style="margin-top:16px">Approved on the network, but not automated here yet</h4>
-          <table class="hw-table">
-            <thead><tr><th>Model</th><th class="num">Total VRAM needed</th><th class="num">Active hosts</th></tr></thead>
-            <tbody>${notReady.map((m) => `
-              <tr><td><code>${esc(m.id)}</code></td><td class="num">${m.v_ram ? m.v_ram + " GB" : "—"}</td>
-                <td class="num">${hostsOf(m.id) === null ? "—" : hostsOf(m.id) === 0 ? "0 ⚠" : hostsOf(m.id)}</td></tr>`).join("")}</tbody>
-          </table>
-          <p class="hint">${t("These models are live and earning on the network, but no tested reference configuration has been published for them yet — in the repository or the official docs. If you know vLLM and want to try building your own <code>node-config.json</code>, you can paste one in the Model & GPUs step later — otherwise, stick with the models listed above as ready.")}
-            ${t("As soon as a reference configuration for such a model appears in the repository, it moves to the ready table automatically.")}</p>` : ""}
-        ${unpaid.length ? `
-          <p class="hint" style="margin-top:16px">${t("Approved by governance, but the network is paying nobody to run them this epoch:")}
-            ${unpaid.map((id) => `<code>${esc(id)}</code>`).join(", ")}.
-            ${t("Hardware rented for these earns nothing right now, so they are left out of the tables above. They come back on their own if the network starts paying for them again.")}</p>` : ""}
-
-        ${(() => {
-          const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
-          return inactive.length ? `<div class="warn-banner">⚠ ${inactive.map((m) => `<code>${esc(m.id)}</code>`).join(", ")} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : "";
-        })()}
-
-        <h4 style="margin-top:16px">${esc(t("What your computer or server must have"))}</h4>
-        <ul class="plain">
-          <li>${t("GPUs: exactly like a row in the ready table above — same count and class, e.g. {ex}",
-            { ex: ready.length ? `${ready[0].gpuCount}× ${ready[0].gpuClass} (${ready[0].model.split("/").pop()})` : "2× H200" })}</li>
-          <li>${t("Disk / storage: at least {gb} GB — rental defaults are often 500 GB, upgrade if needed", { gb: req.networkNode.diskGB })}</li>
-          <li>${t("RAM: at least {gb} GB, and at least 1.5× your GPUs' total VRAM", { gb: req.networkNode.ramGB })}</li>
-          <li>${t("CPU: {n}+ cores", { n: req.networkNode.cpuCores })}</li>
-          <li>${t("System: Linux (a distribution such as Ubuntu, Debian, Rocky, or AlmaLinux — Ubuntu is the most common and works great) with NVIDIA drivers (CUDA {range}). Not Windows or macOS. The wizard installs any missing software for you.", { range: `${req.cudaMin}–${req.cudaMax}` })}</li>
-          <li>${t("Access: administrator (root) rights — on a rented server that means the SSH login your provider gives you")}</li>
-          <li>${t("Network: a public IP, with ports 8000 and 5000 open to the internet (8443 instead of 8000 for HTTPS). You don't open these on the server — you open them in your rental provider's dashboard (look for \"firewall\", \"security group\", or \"port mapping\"). Many GPU providers leave all ports open already, so often there's nothing to do; the Verify step at the end tests it from the outside and tells you for sure.")}</li>
-        </ul>
-        <p class="small">${t("Check this list before paying for anything — once you connect, the health check verifies every item automatically.")}</p>
-        <p class="small">${t("No SSH key yet? If you're renting a server and the provider asks for an \"SSH public key\" before you can deploy, choose \"A rented / remote server\" on the next screen — the wizard can create the key for you and show you exactly what to paste.")}</p>`;
+        ${inactive.length ? `<div class="warn-banner">⚠ ${ids(inactive.map((m) => m.id))} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : ""}
+        <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
+          <p>${esc(t("Each line is a model the network pays hosts to run. The boxes are the GPU setups Gonka has a ready-made configuration for: rent exactly that many of that GPU, for example 2 × H200."))}</p>
+          <p>${esc(t("A word after the GPU, such as nvfp4, marks a variant of the same setup. nvfp4, for example, is a 4-bit build."))}</p>
+          <p>${esc(t("Hosts now: how many hosts run that model in this epoch, read live from the chain. One host can run several models."))}</p>
+          <p>${esc(t("The list comes live from the network and Gonka's repository, so it changes by itself when Gonka adds a model or a GPU."))}</p>
+        </div></details>
+        ${notReady.length || unpaid.length ? `
+        <details class="more"><summary>${esc(t("Why aren't other models here?"))}</summary><div class="more-body">
+          ${notReady.length ? `<p>${notReady.map((m) => `<code>${esc(m.id)}</code>${m.v_ram ? ` · ${m.v_ram} GB VRAM` : ""}${hostsOf(m.id) !== null ? ` · ${hostsOf(m.id)} ${esc(t("hosts now"))}` : ""}`).join("<br>")}</p>
+            <p>${esc(t("Earning on the network, but Gonka has not published a ready-made setup for them yet. They appear above by themselves once it does. If you know vLLM, you can paste your own node-config.json in the Model & GPUs step."))}</p>` : ""}
+          ${unpaid.length ? `<p>${ids(unpaid)}</p>
+            <p>${esc(t("Approved, but the network pays nobody to run them this epoch, so a server rented for them would earn nothing. They come back by themselves when the network pays for them again."))}</p>` : ""}
+        </div></details>` : ""}`;
+      const ex = $("#need-gpu-ex");
+      if (ex) ex.textContent = ready.length && ready[0].gpuCount ? `${ready[0].gpuCount} × ${ready[0].gpuClass}` : "—";
 
       // Can a normal (x86/amd64) server even run the current release? Gonka has
       // shipped releases built only for arm64, which makes joining impossible
@@ -523,6 +537,8 @@ RENDER.welcome = () => {
         <p class="small">Couldn't reach the network or GitHub from here (${esc(e.message)}). You'll see this again once
           you're connected — for now, the baseline is ${req.networkNode.cpuCores}+ CPU cores, ${req.networkNode.ramGB}+ GB RAM,
           ${req.networkNode.diskGB}+ GB disk, CUDA ${req.cudaMin}–${req.cudaMax}, on a supported NVIDIA GPU (A100/H100/H200/B200).</p>`;
+      const ex = $("#need-gpu-ex");
+      if (ex) ex.textContent = "A100 · H100 · H200 · B200";
     }
   })();
 };
