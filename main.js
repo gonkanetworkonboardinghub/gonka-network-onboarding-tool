@@ -8,15 +8,9 @@ const path = require("path");
 app.setPath("userData", path.join(app.getPath("appData"), "Gonka Host Setup"));
 
 // One copy at a time. Two of them share the same folder and fight over the same
-// files — wallets, saved progress, the keyring the API keys are encrypted with.
-// The second copy can even encrypt a key that nothing will read again, which is
-// exactly what happened during testing. Opening the app again just brings the
-// window it already has to the front.
-// A second copy leaves without touching anything: `leaving` keeps it out of
-// the usage flush below, so it cannot write over counts the first copy is
-// keeping.
-let leaving = false;
-if (!app.requestSingleInstanceLock()) { leaving = true; app.quit(); }
+// files — wallets, saved progress, the keyring. Opening the app again just
+// brings the window it already has to the front.
+if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => {
   if (!win) return;
   if (win.isMinimized()) win.restore();
@@ -101,34 +95,14 @@ app.whenReady().then(async () => {
   try { updateState = updates.evaluate(VERSION, K.get().app, { platform: process.platform, arch: process.arch }); }
   catch (_) { updateState = { state: "ok", checked: false }; }
   createWindow();
-  // Send yesterday's total on the way in, not only after the next answer:
-  // otherwise someone who used Use Gonka once and left never reports it, and
-  // a spell where the address was wrong would sit there for good.
-  usage.send().catch(() => {});
   // Say the app is open, so the website can count computers exactly instead of
-  // guessing from downloads. At most once an hour, whatever the timer does.
+  // guessing from downloads. At most once an hour, whatever the timer does; the
+  // timer covers a window left open for days.
   usage.opened().catch(() => {});
-  // Every fifteen minutes while it stays open: anything new from Use Gonka goes
-  // out, so the public numbers are minutes old rather than a day old.
-  setInterval(() => {
-    usage.send().catch(() => {});
-    usage.opened().catch(() => {});
-  }, 15 * 60 * 1000).unref?.();
+  setInterval(() => { usage.opened().catch(() => {}); }, 15 * 60 * 1000).unref?.();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-
-// On the way out, send what today's use added up to. Without this, somebody
-// who used Use Gonka all afternoon and then did not open the app again for a
-// fortnight was not counted for a fortnight — and if they never opened it
-// again, never. It waits at most a couple of seconds, and a failure changes
-// nothing: the total stays in the file and goes with the next send.
-app.on("before-quit", (e) => {
-  if (leaving) return;
-  leaving = true;
-  e.preventDefault();
-  usage.flush().catch(() => {}).finally(() => app.quit());
-});
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
