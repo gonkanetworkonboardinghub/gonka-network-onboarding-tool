@@ -124,6 +124,29 @@ async function dryRunGrant(seed, perms, feeAllowance) {
   }
 }
 
+/**
+ * Would the chain accept the wallet-signed registration (keys.manualRegister)?
+ * Since Gonka v0.2.17 it is the only way a host registers. The dry-run
+ * account is already a host, so this proves the message and the permission
+ * to register, not the creation of a new record. Nothing is sent.
+ */
+async function dryRunRegister(seed) {
+  const acct = await get(`${seed}/chain-api/cosmos/auth/v1beta1/accounts/${DRY_RUN_ACCOUNT}`);
+  const a = acct.json && acct.json.account;
+  if (!a || !a.pub_key) return { unknown: "could not read the dry-run account from the chain" };
+  const msg = wallet.Msg.submitNewParticipant({ creator: DRY_RUN_ACCOUNT, url: "http://203.0.113.7:8000",
+    validatorKey: crypto.randomBytes(32).toString("base64"), workerKey: "" });
+  const { txBody, authInfo, txRaw } = wallet._internal;
+  const raw = txRaw(txBody([msg], "dry run"), authInfo(Buffer.from(a.pub_key.key, "base64"), BigInt(a.sequence || 0), { amount: [], gas: 0 }), [Buffer.alloc(0)]);
+  try {
+    return { gas: await wallet.simulate(seed, raw) };
+  } catch (e) {
+    const said = String(e.message).replace(/^failed to simulate gas:\s*/, "");
+    const refused = said.match(/message index: \d+: (.*?)(?: \[|$)/);
+    return refused ? { refused: refused[1].trim() } : { unknown: said.slice(0, 200) };
+  }
+}
+
 /** Lines of the quickstart that are commands, so a changed command shows up. */
 function commandsIn(html) {
   const text = html.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "")
@@ -220,6 +243,13 @@ function commandsIn(html) {
       fix = null;
     }
   }
+
+  // The registration the wallet signs (keys.js manualRegister pays gas x 2.0).
+  const reg = await dryRunRegister(seed);
+  let registerFee = null;
+  if (reg.refused) problem("register-refused", `The live chain refuses the registration the app signs with the wallet: "${reg.refused}"`);
+  else if (reg.unknown) unknown.push("dry run of the registration: " + reg.unknown);
+  else registerFee = Math.floor(reg.gas * 2.0) * Number(k.gasPriceNgonka);
 
   /* ---- 4. fees -------------------------------------------------------- */
   const params = (await get(`${seed}${k.api.inferenceParams}`)).json;
@@ -361,6 +391,7 @@ function commandsIn(html) {
     // messages only, and accepted by the live chain in a dry run.
     fix,
     grant: grantFee ? { feeNgonka: grantFee, faucetClaimNgonka: claim || null } : null,
+    register: registerFee ? { feeNgonka: registerFee } : null,
     // News, newest first; the last sixty are kept.
     changes: [...changes.reverse(), ...(prev.changes || [])].slice(0, 60),
     seen

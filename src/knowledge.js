@@ -88,7 +88,9 @@ const overridable = {
   // update. realRun is the last time a node was set up from start to finish
   // on a real server — older than the chain it names until the next real run,
   // and the daily check keeps saying so.
-  checkedAgainst: { chain: "v0.2.16", on: "2026-10-10", realRun: "2026-08-03", feeGroups: ["epoch", "cosmos"] },
+  // "wasm" arrives with v0.2.17 (smart-contract transactions, at the cosmos
+  // rate). The app sends none, so it changes nothing here.
+  checkedAgainst: { chain: "v0.2.16", on: "2026-10-23", realRun: "2026-08-03", feeGroups: ["epoch", "cosmos", "wasm"] },
 
   // Where the daily comparison with the live network is published. The app
   // reads it at start: to say so plainly when Gonka has changed and this copy

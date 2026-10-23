@@ -276,19 +276,21 @@ async function registerHost(driver, onData) {
   }
   if (/Found participant:|Participant is now available/i.test(out)) return { ok: true, output: out };
   if (/already exists|already registered/i.test(out)) return { ok: true, alreadyRegistered: true, output: out };
-  // From Gonka v0.2.17 the seed no longer registers hosts for them: POST
-  // /v1/participants answers 410 Gone and the CLI calls the command
-  // deprecated. The way Gonka names instead (fund the account, sign
-  // MsgSubmitNewParticipant) is the wallet registration the wizard already has.
-  if (/status code:\s*410\b|is deprecated|are suspended/i.test(out) || /\bGone\b/.test(out)) {
-    return { ok: false, needsManualFallback: true, deprecated: true, output: out };
-  }
   // The registration POST returned success, but the follow-up availability
   // poll can time out — a new participant record often takes longer than the
   // CLI's 30s to become queryable (and only earns weight after the next PoC).
   // A 200 + "registration successful" is the authoritative accept signal.
   if (/registration successful/i.test(out) || /Response status code:\s*20[01]\b/i.test(out)) {
     return { ok: true, propagating: true, output: out };
+  }
+  // From Gonka v0.2.17 the seed no longer registers hosts for them: POST
+  // /v1/participants answers 410 Gone and the CLI calls the command
+  // deprecated. The way Gonka names instead (fund the account, sign
+  // MsgSubmitNewParticipant) is the wallet registration the wizard already has.
+  // Checked after the success lines, so a seed that still accepts (v0.2.16)
+  // is never sent down this path by some unrelated warning.
+  if (/status code:\s*410\b|is deprecated|are suspended/i.test(out) || /\bGone\b/.test(out)) {
+    return { ok: false, needsManualFallback: true, deprecated: true, output: out };
   }
   return { ok: false, needsManualFallback: false, output: out };
 }
@@ -310,6 +312,13 @@ async function registerHost(driver, onData) {
  *     descriptor" and aborts the whole launch. Gonka only ever does compute;
  *     it never renders, so dropping the graphics capability changes nothing
  *     except that the broken hook is skipped.
+ *
+ *  3. The ML node image for an older NVIDIA driver. From mlnode 4.0.0 the
+ *     default image needs driver 580 or newer, and Gonka's compose file names
+ *     the image for older drivers in a comment ("# NVIDIA driver older than
+ *     580 (CUDA 12.x): <image>"). When this server's driver is older, that
+ *     image goes into config.env as MLNODE_IMAGE, unless MLNODE_IMAGE is
+ *     already set there. Without such a comment nothing changes.
  */
 async function ensureMlnodeCompose(driver, gpuCount, onData) {
   const ids = gpuCount > 0
@@ -323,9 +332,19 @@ async function ensureMlnodeCompose(driver, gpuCount, onData) {
     `grep -q NVIDIA_DRIVER_CAPABILITIES "$F" || ` +
     `  sed -i '0,/^ *environment:$/s//&\\n      - NVIDIA_DRIVER_CAPABILITIES=compute,utility/' "$F"; ` +
     `grep -q NVIDIA_DRIVER_CAPABILITIES "$F" && echo CAPS_OK; ` +
-    `grep -q 'device_ids' "$F" && echo IDS_OK; true`,
+    `grep -q 'device_ids' "$F" && echo IDS_OK; ` +
+    `L=$(grep -m1 -E '^ *# *NVIDIA driver older than [0-9]+' "$F"); ` +
+    `N=$(echo "$L" | grep -oE 'older than [0-9]+' | grep -oE '[0-9]+'); ` +
+    `I=$(echo "$L" | grep -oE '[^ ]+-cu12[^ ]*' | head -1 | grep -E '^[A-Za-z0-9._/:@-]+$'); ` +
+    `D=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | grep -oE '^[0-9]+'); ` +
+    `if [ -n "$N" ] && [ -n "$I" ] && [ -n "$D" ] && [ "$D" -lt "$N" ] && [ -f config.env ] && ! grep -qE '^ *(export +)?MLNODE_IMAGE=' config.env; then ` +
+    `  { echo; echo "# Set by GNOT: this server's NVIDIA driver ($D) is older than $N."; echo "export MLNODE_IMAGE=$I"; } >> config.env; fi; ` +
+    `[ -f config.env ] && grep -E '^ *(export +)?MLNODE_IMAGE=' config.env | tail -1 | sed 's/^[^=]*=/IMAGE=/'; ` +
+    `[ -n "$D" ] && echo "DRIVER=$D"; true`,
     { onData });
-  return { caps: /CAPS_OK/.test(r.stdout), deviceIds: /IDS_OK/.test(r.stdout) };
+  const image = (r.stdout.match(/^IMAGE=(\S+)/m) || [])[1] || null;
+  const driverMajor = Number((r.stdout.match(/^DRIVER=(\d+)/m) || [])[1]) || null;
+  return { caps: /CAPS_OK/.test(r.stdout), deviceIds: /IDS_OK/.test(r.stdout), image, driverMajor };
 }
 
 /**
@@ -374,6 +393,7 @@ async function launchAll(driver, onData, gpuCount) {
   // failure should simply get a working launch.
   const fixed = await ensureMlnodeCompose(driver, gpuCount, onData);
   if (fixed.caps) onData && onData("ML node limited to compute capabilities.\n");
+  if (fixed.image) onData && onData(`ML node image: ${fixed.image}\n`);
   // Host-level: repair a CDI spec whose /dev/dri symlink hook breaks every GPU
   // container on this machine. No-op when the host is healthy.
   await ensureGpuRuntime(driver, onData);
