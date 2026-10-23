@@ -263,6 +263,7 @@ function renderEpochBar() {
     { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
   $("#epoch-text").textContent =
     `⏱ ${t("Next Proof of Compute")}: ${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s · ${at} · ${(frac * 100).toFixed(1)}%`;
+  renderPocAdvice();   // the first step's "best time to start" (only there when it is shown)
 }
 function header(eyebrow, title, lede) {
   // "Step N" eyebrows get the word translated; everything else goes through
@@ -306,16 +307,130 @@ function chainNotice() {
   return html;
 }
 
-RENDER.welcome = () => {
-  const req = S.K.requirements;
-  const nn = req.networkNode;
-  // One figure per tile, so the list can be checked at a glance before renting.
-  const need = (label, value, sub) => `
-    <div class="need">
+/* What a GPU setup needs. Clicking a setup on the first step ("2 × B200") turns
+   the general list of needs into that setup's own: its GPUs, the memory those
+   GPUs call for, and how many machines on the network run the model on that
+   GPU now. How much memory each kind of GPU has comes from the network's own
+   machines (network.json, monitor.hardwareSetups); these sizes are only for
+   when that file cannot be read. */
+const VRAM_FALLBACK = { A100: 80, H100: 80, H200: 141, B200: 180, B300: 268 };
+const WELCOME = { hw: null, pick: null, example: "…" };
+const classIds = () => (S.K.gpuClasses || []).map((c) => c.id).filter(Boolean);
+const classRe = (id) => new RegExp(`\\b${String(id).replace(/[^A-Za-z0-9]/g, "")}\\b`, "i");
+/** GB on one GPU of a kind ("NVIDIA H200 NVL") or a class ("H200"). */
+function vramOf(kindOrClass) {
+  const v = (WELCOME.hw && WELCOME.hw.vram) || {};
+  if (v[kindOrClass]) return v[kindOrClass];
+  const re = classRe(kindOrClass);
+  const found = Object.entries(v).filter(([k]) => re.test(k)).map(([, gb]) => gb);
+  return found.length ? Math.max(...found) : VRAM_FALLBACK[kindOrClass] || null;
+}
+/** A GPU kind as machines report it, in the short form the configs use. */
+function gpuShort(kind) {
+  return classIds().find((c) => classRe(c).test(kind)) || String(kind).replace(/^NVIDIA\s+/i, "");
+}
+/** Working machines on the network serving a model on GPUs of one class. */
+function machinesOn(model, gpu) {
+  const re = classRe(gpu);
+  return ((WELCOME.hw && WELCOME.hw.models[model]) || [])
+    .filter((s) => s.gpus.length && s.gpus.every((g) => re.test(g.kind)))
+    .reduce((a, s) => a + s.machines, 0);
+}
+/** The tiles under "What your server needs": the general list, or the picked setup's. */
+function needsTiles() {
+  const req = S.K.requirements, nn = req.networkNode, p = WELCOME.pick;
+  const tile = (label, value, sub, picked) => `
+    <div class="need${picked ? " picked" : ""}">
       <div class="need-label">${esc(t(label))}</div>
       <div class="need-value"><span dir="ltr">${value}</span></div>
       <div class="need-sub">${esc(sub)}</div>
     </div>`;
+  let gpuVal = esc(WELCOME.example), gpuSub = t("or any other setup listed above");
+  let ramVal = `${nn.ramGB} GB+`, ramSub = t("and at least 1.5 × your GPUs' memory");
+  if (p) {
+    gpuVal = esc(`${p.count} × ${p.gpu}`) + (p.variant ? `<span class="var">${esc(p.variant)}</span>` : "");
+    gpuSub = p.custom ? t("No ready-made configuration: you would write your own node-config.json.")
+      : p.machines ? t("Machines running it on {gpu} now: {n}", { gpu: p.gpu, n: p.machines })
+      : t("A ready-made configuration from Gonka");
+    const per = vramOf(p.kind || p.gpu);
+    if (per) {
+      const total = Math.round(per * p.count);
+      const ram = Math.max(nn.ramGB, Math.ceil(total * req.mlNodeRamToVramRatio / 10) * 10);
+      ramVal = `${ram.toLocaleString()} GB+`;
+      ramSub = t("1.5 × the {gb} GB of memory on the GPUs", { gb: total.toLocaleString() });
+    }
+  }
+  return tile("GPUs", gpuVal, gpuSub, !!p)
+    + tile("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))
+    + tile("Memory", ramVal, ramSub, !!(p && ramVal !== `${nn.ramGB} GB+`))
+    + tile("CPU", `${nn.cpuCores}+`, t("CPU cores"))
+    + tile("System", "Linux", t("with an NVIDIA driver, CUDA {range}", { range: `${req.cudaMin}–${req.cudaMax}` }))
+    + tile("Access", "root", t("the SSH login your provider gives you"))
+    + tile("Open ports", "8000 · 5000", t("8443 instead of 8000 for HTTPS"));
+}
+function renderNeeds() {
+  const grid = $("#need-grid"), line = $("#need-for");
+  if (!grid) return;
+  grid.innerHTML = needsTiles();
+  const p = WELCOME.pick;
+  line.hidden = !p;
+  line.innerHTML = p ? `<span>${t("For {setup} running {model}.", {
+      setup: `<b dir="ltr">${esc(`${p.count} × ${p.gpu}`)}${p.variant ? " " + esc(p.variant) : ""}</b>`,
+      model: `<b>${esc(p.model.split("/").pop())}</b>` })}</span>
+    <button type="button" id="need-clear">${esc(t("Show the general list"))}</button>` : "";
+  if (p) $("#need-clear").onclick = () => pickSetup(null);
+}
+/** Pick a setup (or null for the general list); picking the same one again clears it. */
+function pickSetup(chip) {
+  const d = chip ? chip.dataset : null;
+  const same = d && WELCOME.pick && WELCOME.pick.key === d.key;
+  WELCOME.pick = !d || same ? null : {
+    key: d.key, model: d.model, gpu: d.gpu, kind: d.kind || null, count: Number(d.count),
+    variant: d.variant || "", custom: d.custom === "1", machines: Number(d.machines) || 0
+  };
+  document.querySelectorAll("#stage .gpu-chip").forEach((c) => {
+    const on = !!WELCOME.pick && c.dataset.key === WELCOME.pick.key;
+    c.classList.toggle("sel", on);
+    c.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  renderNeeds();
+  if (WELCOME.pick) {
+    const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $("#needs-card").scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "nearest" });
+  }
+}
+/** A clickable GPU setup. */
+function chipHtml({ model, gpu, kind = "", count, variant = "", custom = false, machines = 0 }) {
+  const key = [model, count, gpu, variant, custom ? "own" : ""].join("|");
+  const sel = WELCOME.pick && WELCOME.pick.key === key;
+  return `<button type="button" class="gpu-chip${sel ? " sel" : ""}" dir="ltr" aria-pressed="${sel ? "true" : "false"}"
+    data-key="${esc(key)}" data-model="${esc(model)}" data-gpu="${esc(gpu)}" data-kind="${esc(kind)}" data-count="${count}"
+    data-variant="${esc(variant)}" data-custom="${custom ? "1" : ""}" data-machines="${machines}">${count ? `${count} × ` : ""}${esc(gpu)}${variant ? `<span class="var">${esc(variant)}</span>` : ""}</button>`;
+}
+/** Start 2–3 hours before the next Proof of Compute: when that is, in words. */
+function pocAdviceText() {
+  if (!pocState) return "";
+  const H = 3600000, remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
+  const day = (ms) => new Date(Date.now() + ms).toDateString();
+  // The day is named only when it differs from the Proof of Compute's own.
+  const at = (ms) => new Date(Date.now() + ms).toLocaleString(undefined,
+    ms === remain || day(ms) !== day(remain) ? { weekday: "short", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
+  const when = at(remain);
+  if (remain > 3 * H) return t("Next one: {when}. Best time to start: {from} – {to}.", { when, from: at(remain - 3 * H), to: at(remain - 2 * H) });
+  if (remain >= 2 * H) return t("Next one: {when}. Now is a good time to start.", { when });
+  return t("Next one: {when}, less than 2 hours away. Starting now, your node will most likely join the one after it, about a day later.", { when });
+}
+function renderPocAdvice() {
+  const el = $("#poc-when");
+  if (!el) return;
+  const text = pocAdviceText();
+  if (el.textContent !== text) el.textContent = text;
+}
+
+RENDER.welcome = () => {
+  const req = S.K.requirements;
+  const nn = req.networkNode;
+  const link = (url, label) => `<a href="#" data-url="${esc(url)}">${esc(label)}</a>`;
   stage(`
     ${header("Step 1", "Become a Gonka host",
       "Step by step from a rented GPU server to an earning node. The wizard checks the server, fixes what's missing and starts everything for you.")}
@@ -324,17 +439,10 @@ RENDER.welcome = () => {
       <h3>${esc(t("What's supported right now"))}</h3>
       <span class="small">Checking the live network and repository…</span>
     </div>
-    <div class="card">
+    <div class="card" id="needs-card">
       <h3>${esc(t("What your server needs"))}</h3>
-      <div class="need-grid">
-        ${need("GPUs", `<span id="need-gpu-ex">…</span>`, t("or any other setup listed above"))}
-        ${need("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))}
-        ${need("Memory", `${nn.ramGB} GB+`, t("and at least 1.5 × your GPUs' memory"))}
-        ${need("CPU", `${nn.cpuCores}+`, t("CPU cores"))}
-        ${need("System", "Linux", t("with an NVIDIA driver, CUDA {range}", { range: `${req.cudaMin}–${req.cudaMax}` }))}
-        ${need("Access", "root", t("the SSH login your provider gives you"))}
-        ${need("Open ports", "8000 · 5000", t("8443 instead of 8000 for HTTPS"))}
-      </div>
+      <p class="need-for" id="need-for" hidden></p>
+      <div class="need-grid" id="need-grid">${needsTiles()}</div>
       <p class="need-note">${esc(t("Check this list before paying for anything — once you connect, the health check verifies every item automatically."))}</p>
       <details class="more"><summary>${esc(t("More about these"))}</summary><div class="more-body">
         <p>${esc(t("Ubuntu is the most common choice; Debian, Rocky and AlmaLinux work too. Windows and macOS cannot run a node. The wizard installs any missing software."))}</p>
@@ -348,6 +456,8 @@ RENDER.welcome = () => {
       <div class="card">
         <h3>${esc(t("What you'll need"))}</h3>
         <ul class="plain">
+          <li>${esc(t("Start 2–3 hours before the next Proof of Compute, so the model download and the setup finish in time."))}
+            <span class="poc-when" id="poc-when">${esc(pocAdviceText())}</span></li>
           <li>${t("About 30–60 minutes of your time. Model downloads run on their own and can take longer.")}</li>
           <li>${t("A pen and paper for your wallet recovery phrase. Seriously — paper.")}</li>
         </ul>
@@ -363,12 +473,20 @@ RENDER.welcome = () => {
           <p>${t("One thing it does add: the transactions your wallet signs here carry a public note, <b>Set up with GNOT</b>, so anyone can count the nodes this app has helped bring into the network. The note says nothing about you.")}</p>
           <p>${esc(t("And when the app opens, it tells our website so — a random number for this computer, the app's version and whether it is Windows or Mac, nothing else — so we can count exactly how many computers use it, instead of guessing from downloads."))}</p>
         </div></details>
+        <div class="check-links">${esc(t("Check it yourself:"))}
+          ${link(S.K.docs.sourceCode, t("Source code"))} ·
+          ${link(`${S.K.docs.sourceCode}#verifying-what-the-app-does`, t("How each download is verified"))} ·
+          ${link(`${S.K.docs.website}/nodes-added`, t("Every node set up with GNOT"))}</div>
       </div>
     </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
   $("#b-start").onclick = () => { markDone(); go(1); };
+  $("#stage").querySelectorAll(".check-links a").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
+  });
+  renderNeeds();
 
   // Offer to pick up an interrupted setup. The SSH session and any passphrase
   // can't be restored, so this restores the answers and sends them to Connect.
@@ -417,11 +535,15 @@ RENDER.welcome = () => {
   (async () => {
     const card = $("#right-now-card");
     try {
-      const [seed, rows] = await Promise.all([
+      const [seed, rows, hw] = await Promise.all([
         S.seed ? Promise.resolve(S.seed) : api("seed"),
-        api("repoGpuConfigs")
+        api("repoGpuConfigs"),
+        // What the network's machines run each model on (network.json); the
+        // page works without it, with less to say.
+        api("monitorHardwareSetups").catch(() => null)
       ]);
       S.seed = seed;
+      WELCOME.hw = hw;
       let models = [];
       try { models = await api("models", { seed }); } catch (_) {}
       // Who is actually earning on each model THIS epoch — the live
@@ -476,9 +598,34 @@ RENDER.welcome = () => {
       const notReady = models.filter((m) => !readyIds.has(m.id) && paysFor(m.id));
 
       // One row per model, its GPU setups as small boxes: what to rent, at a glance.
+      // Each box can be clicked to see exactly what that setup needs.
       const byModel = new Map();
       for (const r of ready) { if (!byModel.has(r.model)) byModel.set(r.model, []); byModel.get(r.model).push(r); }
-      const chip = (r) => `<span class="gpu-chip" dir="ltr">${r.gpuCount ? `${r.gpuCount} × ` : ""}${esc(r.gpuClass || "—")}${variantOf(r) ? `<span class="var">${esc(variantOf(r))}</span>` : ""}</span>`;
+      const chip = (r) => chipHtml({ model: r.model, gpu: r.gpuClass || "—", count: r.gpuCount || 0,
+        variant: variantOf(r), machines: r.gpuClass ? machinesOn(r.model, r.gpuClass) : 0 });
+      // A model with no ready-made setup: what the network's machines run it on
+      // (only setups with memory enough for the model — a few machine records
+      // list fewer GPUs than they have), or else what it fits on by memory alone.
+      const setupsFor = (m) => {
+        const need = Number(m.v_ram) || 0;
+        const seen = new Map();
+        for (const s of (hw && hw.models && hw.models[m.id]) || []) {
+          if (s.gpus.length !== 1) continue;
+          const g = s.gpus[0], gb = vramOf(g.kind) || 0;
+          if (need && g.count * gb < need * 0.9) continue;
+          const gpu = gpuShort(g.kind), key = `${g.count}|${gpu}`;
+          const was = seen.get(key);
+          seen.set(key, { count: g.count, gpu, kind: g.kind, machines: (was ? was.machines : 0) + s.machines });
+        }
+        if (seen.size) return { real: true, list: [...seen.values()].sort((a, b) => b.machines - a.machines).slice(0, 8) };
+        if (!need) return null;
+        const est = classIds().map((c) => {
+          const per = vramOf(c);
+          const n = per ? [1, 2, 4, 8].find((k) => k * per >= need) : null;
+          return n ? { count: n, gpu: c, kind: "", machines: 0 } : null;
+        }).filter(Boolean);
+        return est.length ? { real: false, list: est } : null;
+      };
       const split = (id) => { const i = String(id).indexOf("/"); return i > 0 ? [id.slice(i + 1), id.slice(0, i)] : [id, ""]; };
       const hostsBox = (id) => {
         const n = hostsOf(id);
@@ -500,7 +647,8 @@ RENDER.welcome = () => {
             </div>
             ${hostsBox(id)}
           </div>`;
-        }).join("")}</div>` :
+        }).join("")}</div>
+        <p class="small chip-hint">${esc(t("Click a GPU setup to see exactly what your server needs for it."))}</p>` :
           `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>`}
         ${inactive.length ? `<div class="warn-banner">⚠ ${ids(inactive.map((m) => m.id))} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : ""}
         <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
@@ -511,13 +659,21 @@ RENDER.welcome = () => {
         </div></details>
         ${notReady.length || unpaid.length ? `
         <details class="more"><summary>${esc(t("Why aren't other models here?"))}</summary><div class="more-body">
-          ${notReady.length ? `<p>${notReady.map((m) => `<code>${esc(m.id)}</code>${m.v_ram ? ` · ${m.v_ram} GB VRAM` : ""}${hostsOf(m.id) !== null ? ` · ${hostsOf(m.id)} ${esc(t("hosts now"))}` : ""}`).join("<br>")}</p>
+          ${notReady.length ? `${notReady.map((m) => {
+            const su = setupsFor(m);
+            return `<div class="why-model">
+              <div><code>${esc(m.id)}</code>${m.v_ram ? ` · <span dir="ltr">${m.v_ram} GB VRAM</span>` : ""}${hostsOf(m.id) !== null ? ` · ${hostsOf(m.id)} ${esc(t("hosts now"))}` : ""}</div>
+              ${su ? `<div class="chips-label">${esc(t(su.real ? "Hosts run it on now:" : "Fits, by memory alone:"))}</div>
+                <div class="gpu-chips">${su.list.map((s) => chipHtml({ model: m.id, gpu: s.gpu, kind: s.kind, count: s.count, custom: true, machines: s.machines })).join("")}</div>` : ""}
+            </div>`;
+          }).join("")}
             <p>${esc(t("Earning on the network, but Gonka has not published a ready-made setup for them yet. They appear above by themselves once it does. If you know vLLM, you can paste your own node-config.json in the Model & GPUs step."))}</p>` : ""}
           ${unpaid.length ? `<p>${ids(unpaid)}</p>
             <p>${esc(t("Approved, but the network pays nobody to run them this epoch, so a server rented for them would earn nothing. They come back by themselves when the network pays for them again."))}</p>` : ""}
         </div></details>` : ""}`;
-      const ex = $("#need-gpu-ex");
-      if (ex) ex.textContent = ready.length && ready[0].gpuCount ? `${ready[0].gpuCount} × ${ready[0].gpuClass}` : "—";
+      WELCOME.example = ready.length && ready[0].gpuCount ? `${ready[0].gpuCount} × ${ready[0].gpuClass}` : "—";
+      card.onclick = (e) => { const c = e.target.closest(".gpu-chip"); if (c) pickSetup(c); };
+      renderNeeds();
 
       // Can a normal (x86/amd64) server even run the current release? Gonka has
       // shipped releases built only for arm64, which makes joining impossible
@@ -537,8 +693,8 @@ RENDER.welcome = () => {
         <p class="small">Couldn't reach the network or GitHub from here (${esc(e.message)}). You'll see this again once
           you're connected — for now, the baseline is ${req.networkNode.cpuCores}+ CPU cores, ${req.networkNode.ramGB}+ GB RAM,
           ${req.networkNode.diskGB}+ GB disk, CUDA ${req.cudaMin}–${req.cudaMax}, on a supported NVIDIA GPU (A100/H100/H200/B200).</p>`;
-      const ex = $("#need-gpu-ex");
-      if (ex) ex.textContent = "A100 · H100 · H200 · B200";
+      WELCOME.example = "A100 · H100 · H200 · B200";
+      renderNeeds();
     }
   })();
 };

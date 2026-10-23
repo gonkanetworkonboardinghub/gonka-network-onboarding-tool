@@ -434,6 +434,17 @@ async function networkFile() {
 }
 
 /**
+ * What the network's working machines run each model on, and how much memory
+ * each kind of GPU has, as network.json carries them (scripts/network-snapshot.js).
+ * Host Setup's first step shows them. Null when the file has neither yet.
+ */
+async function hardwareSetups() {
+  const f = await networkFile();
+  if (!f || (!f.models && !f.vram)) return null;
+  return { asOf: f.asOf || null, models: f.models || {}, vram: f.vram || {} };
+}
+
+/**
  * The network page: where the epoch is, who is in it, what they run, what was
  * paid out, what exists, and how all of it moved over the recent epochs.
  */
@@ -615,7 +626,7 @@ function saveNodes(dir, nodes) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, network, networkOverview, summarise,
+  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,

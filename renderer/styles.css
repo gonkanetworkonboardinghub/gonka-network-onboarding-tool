@@ -861,6 +861,23 @@ details.more > summary:focus-visible { outline: 2px solid var(--focus); outline-
   border: 1px solid var(--line-strong); background: var(--wash); white-space: nowrap;
 }
 .gpu-chip .var { color: var(--muted); font-size: 10.5px; margin-left: 4px; }
+button.gpu-chip { color: var(--text); min-height: 0; line-height: 1.5; cursor: pointer; }
+button.gpu-chip:hover { border-color: var(--text); background: var(--wash-strong); }
+button.gpu-chip.sel { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+button.gpu-chip.sel .var { color: inherit; opacity: 0.75; }
+.chip-hint { margin: 10px 0 0; }
+.chips-label { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+.why-model { margin-bottom: 12px; }
+
+/* "What your server needs", once a setup is picked */
+.need-for { margin: -2px 0 10px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.need-for b { color: var(--text); }
+.need-for button { padding: 3px 10px; font-size: 12px; }
+.need-value .var { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 4px; }
+.need.picked { border-color: var(--accent); }
+.poc-when { display: block; margin-top: 4px; color: var(--text); }
+.check-links { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.check-links a { color: var(--text); }
 .model-hosts { flex: none; text-align: right; }
 .model-hosts b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
 .model-hosts span { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }

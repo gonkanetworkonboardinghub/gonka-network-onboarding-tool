@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld("gonka", {
   chainHeight: call("net:chainHeight"),
   monitorNetwork: call("monitor:network"),
   monitorNetworkOverview: call("monitor:networkOverview"),
+  monitorHardwareSetups: call("monitor:hardwareSetups"),
   monitorOverview: call("monitor:overview"),
   monitorNodes: call("monitor:nodes"),
   monitorSaveNodes: call("monitor:saveNodes"),

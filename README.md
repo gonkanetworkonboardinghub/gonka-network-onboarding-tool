@@ -46,11 +46,17 @@ The short version:
   signed locally and sent to Gonka network nodes.
 - **Everything the app runs on your server** goes over your SSH connection and
   appears in the Activity log.
-- **No accounts, analytics or tracking.** The app talks to Gonka network nodes,
-  GitHub (the update manifest, releases, and Gonka's official repository for
-  supported configurations), GitHub Container Registry (to check node images),
+- **No accounts and no tracking.** The app talks to Gonka network nodes,
+  GitHub (the update manifest, releases, Gonka's official repository for
+  supported configurations, and this repository's `data` branch for the
+  network's figures), GitHub Container Registry (to check node images),
   four public GNK price sources for "Mine it or buy it?" (GeckoTerminal,
-  DEX Screener, CoinGecko, CoinPaprika) and your own server.
+  DEX Screener, CoinGecko, CoinPaprika), your own server — and The Gonka
+  Network Onboarding Hub's website, at most once an hour while it is open, to
+  say it was opened: a random number made for that computer, the app's version
+  and whether it is Windows or Mac, nothing else (`src/services/usage.js`).
+  That is how the website counts the computers that use the app; the app says
+  so on its first screen.
 - **One public note on the chain.** The transactions your wallet signs in the
   app (the permission grant, and the registration or collateral deposit when
   the app sends them) carry the memo `Set up with GNOT v<version>`

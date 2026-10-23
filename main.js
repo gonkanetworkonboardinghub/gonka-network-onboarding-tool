@@ -308,6 +308,7 @@ async function seedForMonitor() {
 }
 ipcMain.handle("monitor:network", wrap(async () => monitor.network(await seedForMonitor())));
 ipcMain.handle("monitor:networkOverview", wrap(async () => monitor.networkOverview(await seedForMonitor())));
+ipcMain.handle("monitor:hardwareSetups", wrap(async () => monitor.hardwareSetups()));
 ipcMain.handle("monitor:overview", wrap(async ({ address, epochs }) => {
   if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
   return monitor.overview(await seedForMonitor(), String(address).trim(),
