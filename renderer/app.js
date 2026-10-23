@@ -345,7 +345,7 @@ function needsTiles() {
       <div class="need-value"><span dir="ltr">${value}</span></div>
       <div class="need-sub">${esc(sub)}</div>
     </div>`;
-  let gpuVal = esc(WELCOME.example), gpuSub = t("or any other setup listed above");
+  let gpuVal = esc(WELCOME.example), gpuSub = t("depending on the setup you pick above");
   let ramVal = `${nn.ramGB} GB+`, ramSub = t("and at least 1.5 × your GPUs' memory");
   if (p) {
     gpuVal = esc(`${p.count} × ${p.gpu}`) + (p.variant ? `<span class="var">${esc(p.variant)}</span>` : "");
@@ -362,7 +362,7 @@ function needsTiles() {
   }
   return tile("GPUs", gpuVal, gpuSub, !!p)
     + tile("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))
-    + tile("Memory", ramVal, ramSub, !!(p && ramVal !== `${nn.ramGB} GB+`))
+    + tile("Memory", ramVal, ramSub)
     + tile("CPU", `${nn.cpuCores}+`, t("CPU cores"))
     + tile("System", "Linux", t("with an NVIDIA driver, CUDA {range}", { range: `${req.cudaMin}–${req.cudaMax}` }))
     + tile("Access", "root", t("the SSH login your provider gives you"))
@@ -373,11 +373,13 @@ function renderNeeds() {
   if (!grid) return;
   grid.innerHTML = needsTiles();
   const p = WELCOME.pick;
-  line.hidden = !p;
+  // Always says which list this is: the general one, or the picked setup's.
+  line.classList.toggle("general", !p);
   line.innerHTML = p ? `<span>${t("For {setup} running {model}.", {
       setup: `<b dir="ltr">${esc(`${p.count} × ${p.gpu}`)}${p.variant ? " " + esc(p.variant) : ""}</b>`,
       model: `<b>${esc(p.model.split("/").pop())}</b>` })}</span>
-    <button type="button" id="need-clear">${esc(t("Show the general list"))}</button>` : "";
+    <button type="button" id="need-clear">${esc(t("Show the general list"))}</button>`
+    : `<span>${esc(t("General needs. Pick a setup above to see the exact ones."))}</span>`;
   if (p) $("#need-clear").onclick = () => pickSetup(null);
 }
 /** Pick a setup (or null for the general list); picking the same one again clears it. */
@@ -405,7 +407,7 @@ function chipHtml({ model, gpu, kind = "", count, variant = "", custom = false, 
   const sel = WELCOME.pick && WELCOME.pick.key === key;
   return `<button type="button" class="gpu-chip${sel ? " sel" : ""}" dir="ltr" aria-pressed="${sel ? "true" : "false"}"
     data-key="${esc(key)}" data-model="${esc(model)}" data-gpu="${esc(gpu)}" data-kind="${esc(kind)}" data-count="${count}"
-    data-variant="${esc(variant)}" data-custom="${custom ? "1" : ""}" data-machines="${machines}">${count ? `${count} × ` : ""}${esc(gpu)}${variant ? `<span class="var">${esc(variant)}</span>` : ""}</button>`;
+    data-variant="${esc(variant)}" data-custom="${custom ? "1" : ""}" data-machines="${machines}"><span class="tick" aria-hidden="true">✓</span>${count ? `${count} × ` : ""}${esc(gpu)}${variant ? `<span class="var">${esc(variant)}</span>` : ""}</button>`;
 }
 /** Start 2–3 hours before the next Proof of Compute: when that is, in words. */
 function pocAdviceText() {
@@ -436,12 +438,12 @@ RENDER.welcome = () => {
       "Step by step from a rented GPU server to an earning node. The wizard checks the server, fixes what's missing and starts everything for you.")}
     ${chainNotice()}
     <div class="card" id="right-now-card">
-      <h3>${esc(t("What's supported right now"))}</h3>
+      <h3>${esc(t("Choose a model and hardware"))}</h3>
       <span class="small">Checking the live network and repository…</span>
     </div>
     <div class="card" id="needs-card">
       <h3>${esc(t("What your server needs"))}</h3>
-      <p class="need-for" id="need-for" hidden></p>
+      <p class="need-for general" id="need-for"></p>
       <div class="need-grid" id="need-grid">${needsTiles()}</div>
       <p class="need-note">${esc(t("Check this list before paying for anything — once you connect, the health check verifies every item automatically."))}</p>
       <details class="more"><summary>${esc(t("More about these"))}</summary><div class="more-body">
@@ -458,7 +460,6 @@ RENDER.welcome = () => {
         <ul class="plain">
           <li>${esc(t("Start 2–3 hours before the next Proof of Compute, so the model download and the setup finish in time."))}
             <span class="poc-when" id="poc-when">${esc(pocAdviceText())}</span></li>
-          <li>${t("About 30–60 minutes of your time. Model downloads run on their own and can take longer.")}</li>
           <li>${t("A pen and paper for your wallet recovery phrase. Seriously — paper.")}</li>
         </ul>
       </div>
@@ -634,7 +635,8 @@ RENDER.welcome = () => {
       const ids = (list) => list.map((id) => `<code>${esc(id)}</code>`).join(", ");
       const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
       card.innerHTML = `
-        <h3>${esc(t("What's supported right now"))}</h3>
+        <h3>${esc(t(ready.length ? "Choose a model and hardware" : "What's supported right now"))}</h3>
+        ${ready.length ? `<p class="pick-lead">${esc(t("Pick one of the setups available now to see exactly what your server needs for it."))}</p>` : ""}
         <div id="arch-warn"></div>
         ${ready.length ? `<div class="model-list">${[...byModel].map(([id, rs]) => {
           const [name, org] = split(id);
@@ -647,8 +649,7 @@ RENDER.welcome = () => {
             </div>
             ${hostsBox(id)}
           </div>`;
-        }).join("")}</div>
-        <p class="small chip-hint">${esc(t("Click a GPU setup to see exactly what your server needs for it."))}</p>` :
+        }).join("")}</div>` :
           `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>`}
         ${inactive.length ? `<div class="warn-banner">⚠ ${ids(inactive.map((m) => m.id))} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : ""}
         <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
@@ -671,7 +672,10 @@ RENDER.welcome = () => {
           ${unpaid.length ? `<p>${ids(unpaid)}</p>
             <p>${esc(t("Approved, but the network pays nobody to run them this epoch, so a server rented for them would earn nothing. They come back by themselves when the network pays for them again."))}</p>` : ""}
         </div></details>` : ""}`;
-      WELCOME.example = ready.length && ready[0].gpuCount ? `${ready[0].gpuCount} × ${ready[0].gpuClass}` : "—";
+      // Before a pick, how many GPUs the setups on offer take, smallest to largest.
+      const counts = ready.map((r) => r.gpuCount).filter((n) => n > 0);
+      const lo = counts.length ? Math.min(...counts) : 0, hi = counts.length ? Math.max(...counts) : 0;
+      WELCOME.example = !lo ? "—" : lo === hi ? String(lo) : `${lo}–${hi}`;
       card.onclick = (e) => { const c = e.target.closest(".gpu-chip"); if (c) pickSetup(c); };
       renderNeeds();
 

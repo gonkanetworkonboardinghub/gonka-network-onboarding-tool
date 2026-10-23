@@ -861,11 +861,15 @@ details.more > summary:focus-visible { outline: 2px solid var(--focus); outline-
   border: 1px solid var(--line-strong); background: var(--wash); white-space: nowrap;
 }
 .gpu-chip .var { color: var(--muted); font-size: 10.5px; margin-left: 4px; }
-button.gpu-chip { color: var(--text); min-height: 0; line-height: 1.5; cursor: pointer; }
+/* GPU setups that can be picked: big enough to look like the buttons they are */
+button.gpu-chip { color: var(--text); min-height: 0; line-height: 1.5; cursor: pointer; font-size: 13px; padding: 6px 13px; }
 button.gpu-chip:hover { border-color: var(--text); background: var(--wash-strong); }
-button.gpu-chip.sel { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+button.gpu-chip .tick { display: none; margin-right: 5px; font-family: inherit; }
+button.gpu-chip.sel { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+button.gpu-chip.sel .tick { display: inline; }
 button.gpu-chip.sel .var { color: inherit; opacity: 0.75; }
-.chip-hint { margin: 10px 0 0; }
+.pick-lead { margin: -2px 0 6px; font-size: 13px; color: var(--muted); }
+.need-for.general { font-style: normal; }
 .chips-label { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
 .why-model { margin-bottom: 12px; }
 
