@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require("electron");
 const path = require("path");
+const fs = require("fs");
 
 // Keep user data where every earlier version kept it. The app was called
 // "Gonka Host Setup" until 1.1.0 and Electron names this folder after the app,
@@ -44,10 +45,34 @@ function log(line, stream = "stdout") {
 }
 const onData = (t, s) => log(t, s);
 
+/* How big the window opens, and how big everything in it is drawn. At a fixed
+   1120 × 760 and actual size the app looked small on an ordinary screen, so it
+   opens at most of the screen and draws everything a tenth larger — except on
+   a small laptop screen, where actual size leaves more room. Ctrl + / Ctrl − /
+   Ctrl 0 change it (the window has no menu, so nothing did before), and the
+   choice is kept in ui.json. */
+const uiFile = () => path.join(app.getPath("userData"), "ui.json");
+function readUi() { try { return JSON.parse(fs.readFileSync(uiFile(), "utf8")) || {}; } catch (_) { return {}; } }
+function saveUi(patch) { try { fs.writeFileSync(uiFile(), JSON.stringify({ ...readUi(), ...patch })); } catch (_) {} }
+const ZOOM_MIN = 0.8, ZOOM_MAX = 1.5;
+/** A tenth larger than actual size, unless the screen is small. */
+function defaultZoom() {
+  const wa = screen.getPrimaryDisplay().workAreaSize;
+  return wa.width >= 1500 && wa.height >= 860 ? 1.1 : 1;
+}
+function windowSize() {
+  const wa = screen.getPrimaryDisplay().workAreaSize;
+  const width = Math.min(wa.width, Math.max(980, Math.min(1440, Math.round(wa.width * 0.9))));
+  const height = Math.min(wa.height, Math.max(680, Math.min(960, Math.round(wa.height * 0.9))));
+  const saved = Number(readUi().zoom);
+  return { width, height, zoom: saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : defaultZoom() };
+}
+
 function createWindow() {
+  const size = windowSize();
   win = new BrowserWindow({
-    width: 1120,
-    height: 760,
+    width: size.width,
+    height: size.height,
     minWidth: 920,
     minHeight: 640,
     backgroundColor: "#0e131c",
@@ -55,10 +80,31 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      zoomFactor: size.zoom
     }
   });
   win.removeMenu?.();
+  // Bigger / smaller / back to the start, kept for next time.
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt) return;
+    const now = win.webContents.getZoomFactor();
+    if (input.key === "0") {
+      // Back to the size the app starts at on this screen; forget the choice.
+      e.preventDefault();
+      win.webContents.setZoomFactor(defaultZoom());
+      saveUi({ zoom: null });
+      return;
+    }
+    let next = null;
+    if (input.key === "=" || input.key === "+") next = now + 0.1;
+    else if (input.key === "-" || input.key === "_") next = now - 0.1;
+    if (next === null) return;
+    e.preventDefault();
+    next = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)) * 100) / 100;
+    win.webContents.setZoomFactor(next);
+    saveUi({ zoom: next });
+  });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
