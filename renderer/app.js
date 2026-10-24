@@ -272,6 +272,41 @@ function header(eyebrow, title, lede) {
   const eb = m ? `${t("Step")} ${m[1]}` : t(eyebrow);
   return `<div class="step-eyebrow">${esc(eb)}</div><h1>${esc(t(title))}</h1><p class="lede">${t(lede)}</p>`;
 }
+/* The look every step shares: one short line on screen, the rest folded away
+   under a plain question; figures as tiles, one each. */
+/** A plain question that folds its explanation away. `summary` is English, translated here. */
+function more(summary, body, { open = false, id = "" } = {}) {
+  return `<details class="more"${open ? " open" : ""}${id ? ` id="${id}"` : ""}><summary>${esc(t(summary))}</summary><div class="more-body">${body}</div></details>`;
+}
+/** Figures as tiles: [{ label (English), value (HTML), sub (text), on }]. */
+function tiles(list) {
+  // A long value (an address, a file name) is set smaller, so it fits the tile.
+  const long = (v) => String(v).replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/gi, "x").length > 16;
+  return `<div class="need-grid">${list.filter(Boolean).map((x) => `
+    <div class="need${x.on ? " picked" : ""}">
+      <div class="need-label">${esc(t(x.label))}</div>
+      <div class="need-value${long(x.value) ? " long" : ""}"><span dir="ltr">${x.value}</span></div>
+      ${x.sub ? `<div class="need-sub">${esc(x.sub)}</div>` : ""}
+    </div>`).join("")}</div>`;
+}
+/** A copyable value on its own line, big enough to read: an address, a key. */
+function copyLine(value, id) {
+  return `<div class="copy-line"><code id="${id}">${esc(value)}</code><button type="button" data-copy="${id}">${esc(t("Copy"))}</button></div>`;
+}
+/** Wire every copyLine on the page. */
+function wireCopy() {
+  document.querySelectorAll("#stage [data-copy]").forEach((b) => {
+    b.onclick = async () => {
+      const text = ($("#" + b.dataset.copy) || {}).textContent || "";
+      try { await navigator.clipboard.writeText(text); } catch (_) {
+        const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
+        ta.select(); document.execCommand("copy"); ta.remove();
+      }
+      b.textContent = "✓";
+      setTimeout(() => { b.textContent = t("Copy"); }, 1500);
+    };
+  });
+}
 async function api(fn, args) {
   const res = await window.gonka[fn](args);
   if (!res.ok) throw new Error(res.error);
@@ -769,18 +804,19 @@ RENDER.connect = () => {
       <label class="field" style="max-width:640px"><span class="lbl">${esc(t("Or paste the SSH command your provider shows — the fields below fill in automatically"))}</span>
         <input type="text" id="f-sshcmd" class="mono" placeholder="ssh -i key root@203.0.113.10"></label>
       <hr class="sep">
-      <label class="field"><span class="lbl">Server address (IP or hostname)</span>
-        <input type="text" id="f-host" class="mono" value="${esc(s.host)}" placeholder="e.g. 203.0.113.42"></label>
-      <label class="field"><span class="lbl">SSH port</span>
-        <input type="number" id="f-port" class="mono" value="${esc(s.port)}"></label>
-      <label class="field"><span class="lbl">Username</span>
-        <input type="text" id="f-user" class="mono" value="${esc(s.username)}"></label>
-      <label class="field"><span class="lbl">How do you log in?</span>
-        <select id="f-auth">
-          <option value="key" ${s.auth === "key" ? "selected" : ""}>SSH key file (recommended)</option>
-          <option value="password" ${s.auth === "password" ? "selected" : ""}>Password</option>
-          <option value="create" ${s.auth === "create" ? "selected" : ""}>I don't have an SSH key — create one for me</option>
-        </select></label>
+      <div class="field-row">
+        <label class="field"><span class="lbl">Server address (IP or hostname)</span>
+          <input type="text" id="f-host" class="mono" value="${esc(s.host)}" placeholder="e.g. 203.0.113.42"></label>
+        <label class="field"><span class="lbl">SSH port</span>
+          <input type="number" id="f-port" class="mono" value="${esc(s.port)}"></label>
+        <label class="field"><span class="lbl">Username</span>
+          <input type="text" id="f-user" class="mono" value="${esc(s.username)}"></label>
+      </div>
+      <div class="field"><span class="lbl">How do you log in?</span>
+        <div class="seg" role="radiogroup">
+          ${[["key", "SSH key file (recommended)"], ["password", "Password"], ["create", "I don't have an SSH key — create one for me"]].map(([v, l]) =>
+            `<button type="button" role="radio" aria-checked="${s.auth === v}" class="${s.auth === v ? "on" : ""}" data-auth="${v}">${esc(t(l))}</button>`).join("")}
+        </div></div>
       <div id="auth-key" style="display:${s.auth === "key" ? "block" : "none"}">
         <label class="field"><span class="lbl">Private key file</span>
           <input type="text" id="f-keypath" class="mono" value="${esc(s.privateKeyPath)}" placeholder="e.g. ~/.ssh/id_ed25519">
@@ -842,7 +878,15 @@ RENDER.connect = () => {
     }
     if (pp) { s.port = parseInt(pp[1], 10); $("#f-port").value = s.port; }
   };
-  $("#f-auth").onchange = (e) => { s.auth = e.target.value; RENDER.connect(); };
+  // Switching how to log in redraws the form; keep what was already typed.
+  document.querySelectorAll("[data-auth]").forEach((b) => {
+    b.onclick = () => {
+      s.host = $("#f-host").value.trim(); s.username = $("#f-user").value.trim();
+      s.port = parseInt($("#f-port").value, 10) || s.port;
+      if ($("#f-keypath")) s.privateKeyPath = $("#f-keypath").value.trim();
+      s.auth = b.dataset.auth; RENDER.connect();
+    };
+  });
   $("#b-pick") && ($("#b-pick").onclick = async () => {
     const p = await api("pickFile");
     if (p) { s.privateKeyPath = p; $("#f-keypath").value = p; }
@@ -946,7 +990,13 @@ RENDER.scan = () => {
   function paintScan() {
     const icons = { pass: "●", warn: "▲", fail: "✕" };
     if (!$("#scan-card")) return;   // screen changed under us — nothing to paint
-    $("#scan-card").innerHTML = S.scan.items.map((it, idx) => `
+    const count = (st) => S.scan.items.filter((it) => it.status === st).length;
+    // The answer first, in three figures; the list underneath says which is which.
+    $("#scan-card").innerHTML = `<div class="scan-sum">${tiles([
+        { label: "Passed", value: `<span class="ok-num">${count("pass")}</span>` },
+        { label: "Worth a look", value: `<span class="${count("warn") ? "warn-num" : ""}">${count("warn")}</span>` },
+        { label: "To fix", value: `<span class="${count("fail") ? "bad-num" : ""}">${count("fail")}</span>` }
+      ])}</div>` + S.scan.items.map((it, idx) => `
       <div class="check-item">
         <span class="check-icon ${it.status}">${icons[it.status]}</span>
         <div class="check-body">
@@ -1214,9 +1264,9 @@ RENDER.wallet = () => {
     stage(`
       ${header("Step 5", "Wallet ready", "Your Account Key is set up on this computer.")}
       <div class="card">
-        <div class="kv">address&nbsp; <b>${esc(w.address)}</b></div>
-        <div class="kv">pubkey&nbsp;&nbsp; <b>${esc(w.pubkey)}</b></div>
-        <p class="small">The pubkey goes into your server's configuration automatically. The key itself stays here.</p>
+        <h3>${esc(t("Your wallet address"))}</h3>
+        ${copyLine(w.address, "w-addr")}
+        ${more("Public key", `<p>${esc(t("The pubkey goes into your server's configuration automatically. The key itself stays here."))}</p>${copyLine(w.pubkey, "w-pub")}`)}
       </div>
       <div id="bal-area"><div class="info-banner">${esc(t("Checking your GNK balance…"))}</div></div>
       <div class="btn-row">
@@ -1224,6 +1274,7 @@ RENDER.wallet = () => {
         <button class="primary" id="b-next">Continue</button>
       </div>`);
     $("#b-back").onclick = () => { S.balPoll && clearInterval(S.balPoll); S.balPoll = null; RENDER.wallet(); };
+    wireCopy();
     $("#b-next").onclick = () => {
       S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
       // Wallet is unlocked, so a resumed session can now jump the rest of the
@@ -1240,23 +1291,31 @@ RENDER.wallet = () => {
     const feesButton = () => (S.K.docs.fees ? `<button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button>` : "");
     const wireFeesButton = () => { if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees }); };
 
+    // What the wallet needs, as two figures; how to get it and why, folded away.
     function fundingCard() {
+      const claim = fa.amount ? String(fa.amount).split("/")[0].trim() : "0.01 GNK";
       return `
         <div class="card">
           <h3>${esc(t("Fund this wallet"))}</h3>
-          <p class="small">${t("This wallet pays for two things. <b>Setting up:</b> one small transaction during launch, about 0.001 GNK, which one faucet claim ({amt}) covers many times over. <b>Taking part:</b> since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Gonka's guide suggests starting with about {start}, which the faucet does not give. Collateral is optional and separate.", { amt: fa.amount ? esc(fa.amount) : "0.01 GNK", start: `<b>${gnk(feeStart)}</b>` })}</p>
-          <div class="kv">${esc(t("Send GNK to"))}&nbsp; <b>${esc(w.address)}</b></div>
+          ${tiles([
+            { label: "To set up", value: "≈ 0.001 GNK", sub: t("one faucet claim ({amt}) covers it", { amt: claim }) },
+            { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("network fees for each Proof of Compute, by Gonka's guide") }
+          ])}
+          <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
+          ${copyLine(w.address, "fund-addr")}
           <div class="btn-row" style="margin-top:6px">
-            <button id="b-copy-addr">${esc(t("Copy address"))}</button>
             ${fa.url ? `<button id="b-faucet" class="primary">${esc(t("Open the Gonka faucet"))}</button>` : ""}
             ${feesButton()}
           </div>
-          <p class="hint" style="margin-top:10px">${t("The faucet sends GNK to a browser \"gg wallet,\" not directly here. Two ways to get it into this wallet:")}</p>
-          <ul class="plain small">
-            <li>${t("Easiest — when you set up the gg wallet, use its 24-word phrase: go Back, choose \"Restore from my 24-word recovery phrase,\" and this wallet becomes the funded one (no transfer).")}</li>
-            <li>${t("Or claim to the gg wallet, then send the GNK from it to the address above.")}</li>
-          </ul>
-          <div class="info-banner" id="bal-live">${esc(t("Watching this address for incoming GNK…"))}</div>
+          ${more("How do I get GNK from the faucet into this wallet?", `
+            <p>${t("The faucet sends GNK to a browser \"gg wallet,\" not directly here. Two ways to get it into this wallet:")}</p>
+            <ul>
+              <li>${t("Easiest — when you set up the gg wallet, use its 24-word phrase: go Back, choose \"Restore from my 24-word recovery phrase,\" and this wallet becomes the funded one (no transfer).")}</li>
+              <li>${t("Or claim to the gg wallet, then send the GNK from it to the address above.")}</li>
+            </ul>`)}
+          ${more("Why does this wallet need GNK?", `
+            <p>${esc(t("Setting up signs one or two small transactions (the node's permissions, and its registration if the network does not do it), about 0.001 GNK in all. Taking part costs more: since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Collateral is optional and separate."))}</p>`)}
+          <div class="info-banner" id="bal-live" style="margin-top:14px">${esc(t("Watching this address for incoming GNK…"))}</div>
         </div>`;
     }
 
@@ -1275,18 +1334,15 @@ RENDER.wallet = () => {
           // Enough to set up, not enough to keep taking part: say both, and keep
           // watching, because the rest can arrive at any moment.
           area.innerHTML = `<div class="info-banner"><span class="pill warn">${esc(t("SETUP ONLY"))}</span> ${t("Balance: {n}. Enough to set up. To take part in epochs the node also pays fees from this wallet; Gonka's guide suggests about {start} to start with. You can add it now or after launch: the Verify step shows whether your node has enough.", { n: `<b>${gnk(bal)}</b>`, start: `<b>${gnk(feeStart)}</b>` })}
-            <div class="kv" style="margin-top:8px">${esc(t("Send GNK to"))}&nbsp; <b>${esc(w.address)}</b></div>
+            <p class="lead-line" style="margin:10px 0 0">${esc(t("Send GNK to"))}</p>
+            ${copyLine(w.address, "more-addr")}
             <div class="btn-row" style="margin-top:6px">${feesButton()}</div></div>`;
-          wireFeesButton();
+          wireFeesButton(); wireCopy();
         } else {
           // Only (re)render the funding card once, then just refresh the live line.
           if (!$("#bal-live")) {
             area.innerHTML = fundingCard();
-            $("#b-copy-addr").onclick = async () => {
-              try { await navigator.clipboard.writeText(w.address); } catch (_) {}
-              $("#b-copy-addr").textContent = "✓";
-              setTimeout(() => { $("#b-copy-addr").textContent = t("Copy address"); }, 1500);
-            };
+            wireCopy();
             if ($("#b-faucet")) $("#b-faucet").onclick = () => api("openExternal", { url: fa.url });
             wireFeesButton();
           }
@@ -1325,12 +1381,9 @@ RENDER.network = () => {
   $("#c-https").onclick = () => { n.scheme = "https"; RENDER.network(); };
   $("#b-back").onclick = () => go(4);
 
-  const portsHelp = (ports) => `
-    <p class="small"><b>How to open ports ${ports}:</b> on a rented server this is done in your provider's
-      dashboard, not on the server itself — look for "port mappings", "firewall rules", or "security groups"
-      in the instance settings and allow TCP ${ports} from anywhere. On your own machine at home, it means
-      port-forwarding ${ports} on your router to this computer. You don't have to get this perfect now —
-      the <b>Verify</b> step at the end tests from the outside whether your node is actually reachable.</p>`;
+  const portsHelp = () => more("How do I open the ports?", `
+    <p>${esc(t("Ports are opened in your rental provider's dashboard (look for firewall, security group or port mapping), not on the server. Many providers leave them open already, and the Verify step at the end tests them from outside."))}</p>
+    <p>${esc(t("On your own machine at home, it means forwarding these ports on your router to this computer."))}</p>`);
 
   const form = $("#net-form");
   if (n.scheme === "http") {
@@ -1338,9 +1391,8 @@ RENDER.network = () => {
       <div class="card">
         <label class="field"><span class="lbl">Your server's public IP address</span>
           <input type="text" id="f-host" class="mono" value="${esc(n.host)}" placeholder="e.g. 203.0.113.42"></label>
-        <p class="small">Detected automatically during the health check when possible. Ports <b>8000</b> and <b>5000</b>
-          must be open to the internet — everything else stays private.</p>
-        ${portsHelp("8000 and 5000")}
+        <p class="small">${t("Filled in from the health check when it can be. Ports {ports} must be open to the internet; everything else stays private.", { ports: "<b>8000</b> · <b>5000</b>" })}</p>
+        ${portsHelp()}
       </div>`;
   } else {
     const prov = K.dnsProviders.find((p) => p.id === n.dnsProviderId) || K.dnsProviders[0];
@@ -1358,8 +1410,8 @@ RENDER.network = () => {
             <input type="${v.secret ? "password" : "text"}" class="mono" data-env="${esc(v.key)}"
                    value="${esc(n.dnsEnv[v.key] || "")}" ${v.hint ? `placeholder="${esc(v.hint)}"` : ""}></label>`).join("")}
         </div>
-        <p class="small">The wizard uses these to prove domain ownership and issue certificates automatically. Ports <b>8443</b> and <b>5000</b> must be open to the internet.</p>
-        ${portsHelp("8443 and 5000")}
+        <p class="small">${t("The wizard uses these to prove the domain is yours and get certificates automatically. Ports {ports} must be open to the internet.", { ports: "<b>8443</b> · <b>5000</b>" })}</p>
+        ${portsHelp()}
       </div>`;
     $("#f-dns").onchange = (e) => { n.dnsProviderId = e.target.value; RENDER.network(); };
   }
@@ -1385,9 +1437,8 @@ RENDER.network = () => {
 /* --- 6 Model & GPUs -------------------------------------------------- */
 RENDER.model = () => {
   stage(`
-    ${header("Step 7", "Pick your model configuration", `
-      Gonka ships a ready-made configuration for every approved model and common GPU class.
-      The wizard downloads the latest ones from the official repository and highlights the match for your GPUs.`)}
+    ${header("Step 7", "Pick your model configuration",
+      "Gonka's ready-made configurations, from its official repository. Pick the one for your server's GPUs.")}
     <div class="card" id="model-card"><span class="small">Fetching the Gonka repository and the live model list…</span></div>
     <div class="btn-row">
       <button id="b-back">Back</button>
@@ -1405,6 +1456,8 @@ RENDER.model = () => {
       S.nodeConfigFiles = files;
       if (!S.seed) S.seed = await api("seed");
       try { S.governance = await api("models", { seed: S.seed }); } catch (_) { S.governance = []; }
+      // Which models the network pays for this epoch, as on the first step.
+      try { S.paying = await api("payingModels", { seed: S.seed }); } catch (_) { S.paying = null; }
       let repoRows = [];
       try { repoRows = await api("repoGpuConfigs"); } catch (_) {}
       const ranked = await api("rankConfigs", { files });
@@ -1423,11 +1476,8 @@ RENDER.model = () => {
   function paint(ranked, repoRows) {
     const gpus = (S.scan && S.scan.facts.gpus) || [];
     const gpuLine = gpus.length
-      ? `Detected: <b>${gpus.length}× ${esc(gpus[0].name)}</b>`
-      : `<span class="pill warn">No GPU detected</span> — you can still prepare a config, but inference won't run.`;
-    const gov = S.governance.length
-      ? `<p class="small">Live governance-approved models right now: ${S.governance.map((m) => `<code>${esc(m.id)}</code>`).join(", ")}</p>`
-      : `<p class="small">Couldn't fetch the live model list — using the repository's reference configs.</p>`;
+      ? `<div class="info-banner">${t("Your server: {gpus}. Setups marked ● fit it.", { gpus: `<b dir="ltr">${gpus.length} × ${esc(gpus[0].name)}</b>` })}</div>`
+      : `<div class="warn-banner">${esc(t("No GPU found on this server. You can still prepare a configuration, but the node cannot run without one."))}</div>`;
 
     // Cross-check each file against the live approved-models list so a stale
     // config for a model the network no longer scores for PoC can't be picked
@@ -1438,8 +1488,12 @@ RENDER.model = () => {
       const m = fileModel.get(file);
       return m === undefined ? null : approvedIds.has(m); // null = couldn't cross-check
     };
-    const shown = S.governance.length ? ranked.filter((r) => knownApproved(r.file) !== false) : ranked;
+    // Approved but paid for by nobody this epoch (Kimi-K2.6 sat like that for
+    // weeks): a node set up for one earns nothing, so it is not offered either.
+    const unpaid = (file) => { const m = fileModel.get(file); return !!(m && S.paying && !S.paying.includes(m)); };
+    const shown = (S.governance.length ? ranked.filter((r) => knownApproved(r.file) !== false) : ranked).filter((r) => !unpaid(r.file));
     const stale = S.governance.length ? ranked.filter((r) => knownApproved(r.file) === false) : [];
+    const notPaid = ranked.filter((r) => knownApproved(r.file) !== false && unpaid(r.file));
 
     // Reference configs published only in the official docs (bundled in
     // knowledge.js) — offered alongside repo files, same approval filter,
@@ -1449,6 +1503,7 @@ RENDER.model = () => {
     const repoKeys = new Set(repoRows.map((r) => r.model + "|" + r.gpuClass));
     const curated = (S.K.curatedConfigs || [])
       .filter((c) => approvedIds.has(c.model) && !repoKeys.has(c.model + "|" + c.gpuClass))
+      .filter((c) => !S.paying || S.paying.includes(c.model))
       .map((c, i) => ({
         ...c, idx: i,
         classOk: !!gpuName && gpuName.includes(c.gpuClass),
@@ -1469,69 +1524,95 @@ RENDER.model = () => {
       return { ok: false, text: t("Needs {need}× {cls}, but this machine has {have} — won't run here", { need, cls, have: myCount }) };
     };
 
-    const item = (attr, key, matches, label, detail, extra = "") => {
-      const sel = S.chosenConfigFile === label;
-      return `
-      <div class="check-item ${sel ? "selected" : ""}" style="cursor:pointer" ${attr}="${esc(key)}">
-        <span class="check-icon ${sel ? "sel" : matches ? "pass" : ""}">${sel ? "●" : "○"}</span>
-        <div class="check-body">
-          <div class="c-label">${esc(label)}${sel ? ' <span class="sel-tag">✓ selected</span>' : ""}</div>
-          <div class="c-detail">${detail}${extra}</div>
-        </div>
-      </div>`;
+    // Every setup on offer, the way the first step shows them: one row per
+    // model, its GPU setups as boxes. A box is marked when it fits this server.
+    const variantOfFile = (file, cls) => {
+      const m = cls && new RegExp(`${cls}-(.+)\\.json$`, "i").exec(file || "");
+      return m ? m[1] : "";
     };
+    const entries = [
+      ...shown.map((r) => {
+        const gpu = fileClass.get(r.file) || r.gpuClass || "", count = fileCount.get(r.file) || 0;
+        return { key: r.file, kind: "file", file: r.file, model: fileModel.get(r.file) || "", gpu, count,
+          variant: variantOfFile(r.file, gpu), fit: fitDetail(gpu, count) };
+      }),
+      ...curated.map((c) => ({ key: c.label, kind: "curated", idx: c.idx, model: c.model, gpu: c.gpuClass, count: c.gpuCount,
+        variant: "", docs: true, fit: fitDetail(c.gpuClass, c.gpuCount), note: c.note }))
+    ];
+    const byModel = new Map();
+    for (const e of entries) { const m = e.model || t("Other"); if (!byModel.has(m)) byModel.set(m, []); byModel.get(m).push(e); }
+    const box = (e) => {
+      const sel = S.chosenConfigFile === e.key;
+      return `<button type="button" class="gpu-chip${sel ? " sel" : ""}${e.fit.ok ? " fits" : " nofit"}" dir="ltr" aria-pressed="${sel}"
+        data-entry="${esc(e.key)}" title="${esc(e.fit.text + (e.docs ? " · " + t("from the official Gonka docs") : ""))}"><span class="tick" aria-hidden="true">✓</span>${e.fit.ok && !sel ? `<span class="fit-dot" aria-hidden="true">●</span>` : ""}${e.count ? `${e.count} × ` : ""}${esc(e.gpu || "—")}${e.variant ? `<span class="var">${esc(e.variant)}</span>` : ""}</button>`;
+    };
+    const chosen = entries.find((e) => e.key === S.chosenConfigFile);
+
+    // The setup picked on the first step: chosen here for you when it fits this
+    // server, and if it does not, said plainly.
+    let fromWelcome = "";
+    const wp = WELCOME.pick && !WELCOME.pick.custom ? WELCOME.pick : null;
+    if (wp && !S.chosenConfigFile && !S.welcomePickTried) {
+      S.welcomePickTried = true;
+      const match = entries.find((e) => e.model === wp.model && e.gpu === wp.gpu && e.count === wp.count && (e.variant || "") === (wp.variant || ""));
+      if (match && match.fit.ok) { setTimeout(() => choose(match), 0); }
+      else if (match) {
+        fromWelcome = `<div class="warn-banner">${t("On the first step you picked {setup}. {fit}", {
+          setup: `<b dir="ltr">${esc(`${wp.count} × ${wp.gpu}${wp.variant ? " " + wp.variant : ""}`)}</b>`, fit: esc(match.fit.text) })}</div>`;
+      }
+    }
 
     $("#model-card").innerHTML = `
-      <p>${gpuLine}</p>${gov}
-      ${shown.length === 0 && curated.length === 0 ? `<div class="warn-banner">No reference configs for a currently approved model were found. You can paste a node-config.json manually below.</div>` : ""}
-      <div>${shown.map((r) => {
-        const fit = fitDetail(fileClass.get(r.file) || r.gpuClass, fileCount.get(r.file));
-        return item("data-cfg", r.file, fit.ok, r.file, fit.text);
-      }).join("")}
-      ${curated.map((c) => {
-        const fit = fitDetail(c.gpuClass, c.gpuCount);
-        return item("data-curated", String(c.idx), fit.ok, c.label,
-          `${fit.text} · ${t("from the official Gonka docs")}`);
-      }).join("")}
-      </div>
-      ${stale.length ? `
-        <hr class="sep">
-        <p class="small">Hidden from the list above — these reference a model that isn't on the current approved-models
-          list, so deploying them would run a model the network won't score for Proof of Compute:
-          ${stale.map((r) => `<code>${esc(r.file)}</code>`).join(", ")}.</p>` : ""}
-      <hr class="sep">
-      ${S.chosenConfigFile
-        ? `<div class="info-banner">Selected configuration: <b>${esc(S.chosenConfigFile)}</b></div>`
-        : `<p class="small">Nothing selected yet — click a configuration above.</p>`}
-      <h3>Configuration preview (editable)</h3>
-      <p class="hint">Advanced users can tweak vLLM arguments here. Most people should leave it as generated.</p>
-      <div id="cfg-note"></div>
-      <textarea id="f-nodecfg" class="mono" rows="14" spellcheck="false">${esc(S.nodeConfigText)}</textarea>`;
-    document.querySelectorAll("[data-cfg]").forEach((el) => {
-      el.onclick = async () => {
-        try {
+      ${gpuLine}
+      ${fromWelcome}
+      ${entries.length === 0 ? `<div class="warn-banner">${esc(t("No ready-made configuration was found for a model the network uses now. You can paste a node-config.json under \"Edit the configuration\" below."))}</div>` : ""}
+      <div class="model-list">${[...byModel].map(([id, list]) => {
+        const i = id.indexOf("/");
+        return `<div class="model-row"><div class="model-id">
+          <div class="model-name">${esc(i > 0 ? id.slice(i + 1) : id)}</div>
+          ${i > 0 ? `<div class="model-org">${esc(id.slice(0, i))}</div>` : ""}
+          <div class="gpu-chips">${list.map(box).join("")}</div>
+        </div></div>`;
+      }).join("")}</div>
+      ${chosen
+        ? `<div class="info-banner" style="margin-top:12px">${t("Selected: {setup} for {model}. {fit}", {
+            setup: `<b dir="ltr">${esc(`${chosen.count} × ${chosen.gpu}${chosen.variant ? " " + chosen.variant : ""}`)}</b>`,
+            model: `<b>${esc((chosen.model || "").split("/").pop())}</b>`, fit: esc(chosen.fit.text) })}</div>
+           ${chosen.note ? `<p class="small">${esc(chosen.note)}</p>` : ""}`
+        : S.chosenConfigFile
+          ? `<div class="info-banner" style="margin-top:12px">${t("Selected: {setup}", { setup: `<b>${esc(S.chosenConfigFile)}</b>` })}</div>`
+          : `<p class="small" style="margin-top:12px">${esc(t("Pick the setup your server has."))}</p>`}
+      ${stale.length || notPaid.length ? more("Why are some configurations not shown?", `
+        ${notPaid.length ? `<p><b>${[...new Set(notPaid.map((r) => fileModel.get(r.file)))].map((m) => esc(m.split("/").pop())).join(", ")}</b></p>
+          <p>${esc(t("Approved, but the network pays nobody to run them this epoch, so a server rented for them would earn nothing. They come back by themselves when the network pays for them again."))}</p>` : ""}
+        ${stale.length ? `<p>${esc(t("These are for a model the network no longer uses, so a node running one would not be scored:"))}</p>
+          <p>${stale.map((r) => `<code>${esc(r.file)}</code>`).join("<br>")}</p>` : ""}`) : ""}
+      ${more("Edit the configuration (advanced)", `
+        <p>${esc(t("Advanced users can change the vLLM arguments here. Most people should leave it as it is."))}</p>
+        <textarea id="f-nodecfg" class="mono" rows="14" spellcheck="false">${esc(S.nodeConfigText)}</textarea>`,
+        { open: S.chosenConfigFile === "(custom)" })}`;
+
+    async function choose(e) {
+      try {
+        if (e.kind === "file") {
           setBusy(true, "Loading config…");
-          const text = await api("readRepoFile", { rel: el.dataset.cfg });
-          S.chosenConfigFile = el.dataset.cfg;
+          const text = await api("readRepoFile", { rel: e.file });
           S.nodeConfigText = text;
           S.models = await api("modelsIn", { jsonText: text });
-          paint(ranked, repoRows);
-          $("#b-next").disabled = false;
-        } catch (e) { alert(e.message); }
-        finally { setBusy(false); }
-      };
-    });
-    document.querySelectorAll("[data-curated]").forEach((el) => {
-      el.onclick = async () => {
-        const c = curated.find((x) => String(x.idx) === el.dataset.curated);
-        if (!c) return;
-        S.chosenConfigFile = c.label;
-        S.nodeConfigText = JSON.stringify(c.nodeConfig, null, 4);
-        try { S.models = await api("modelsIn", { jsonText: S.nodeConfigText }); } catch (_) { S.models = [c.model]; }
-        paint(ranked, repoRows);
-        if (c.note) $("#cfg-note").innerHTML = `<div class="info-banner">${esc(c.note)}</div>`;
-        $("#b-next").disabled = false;
-      };
+        } else {
+          const c = curated.find((x) => x.idx === e.idx);
+          if (!c) return;
+          S.nodeConfigText = JSON.stringify(c.nodeConfig, null, 4);
+          try { S.models = await api("modelsIn", { jsonText: S.nodeConfigText }); } catch (_) { S.models = [c.model]; }
+        }
+        S.chosenConfigFile = e.key;
+        if ($("#model-card")) paint(ranked, repoRows);
+        if ($("#b-next")) $("#b-next").disabled = false;
+      } catch (err) { alert(err.message); }
+      finally { setBusy(false); }
+    }
+    document.querySelectorAll("#model-card [data-entry]").forEach((el) => {
+      el.onclick = () => { const e = entries.find((x) => x.key === el.dataset.entry); if (e) choose(e); };
     });
     const ta = $("#f-nodecfg");
     ta.onchange = async () => {
@@ -1549,9 +1630,21 @@ RENDER.review = () => {
     ${header("Step 8", "Review and write the configuration", `
       This is exactly what the wizard will place on your server. The security hardening
       (locking internal ports to localhost) is applied automatically.`)}
-    <div class="card"><h3>config.env</h3><pre class="preview mono" id="pv-env">generating…</pre></div>
-    <div class="card"><h3>node-config.json</h3><pre class="preview mono" id="pv-node">${esc(S.nodeConfigText)}</pre>
-      <p class="small">Models in this config: ${S.models.map((m) => `<code>${esc(m)}</code>`).join(", ") || "—"}</p></div>
+    <div class="card">
+      ${tiles([
+        { label: "Model", value: esc(S.models.map((m) => m.split("/").pop()).join(", ") || "—") },
+        { label: "Your node's address", value: esc(S.net.host ? `${S.net.scheme === "https" ? "https" : "http"}://${S.net.host}:${S.net.scheme === "https" ? 8443 : 8000}` : "—") },
+        { label: "Setup", value: esc((() => {
+          // "2 × B200 nvfp4" rather than the file's name, when the first step knows the file.
+          const f = S.chosenConfigFile || "";
+          const r = (S.readyRows || []).find((x) => x.file === f);
+          if (r && r.gpuCount) { const v = new RegExp(`${r.gpuClass}-(.+)\\.json$`, "i").exec(f); return `${r.gpuCount} × ${r.gpuClass}${v ? " " + v[1] : ""}`; }
+          return f.replace(/^node-config-|\.json$/g, "") || "—";
+        })()) }
+      ])}
+      ${more("The settings file (config.env)", `<pre class="preview mono" id="pv-env">generating…</pre>`)}
+      ${more("The model settings (node-config.json)", `<pre class="preview mono" id="pv-node">${esc(S.nodeConfigText)}</pre>`)}
+    </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
       <button class="primary" id="b-write">Write to server & continue</button>
@@ -1827,26 +1920,24 @@ RENDER.verify = () => {
     <div class="card">
       <h3>${t("This is you on the network")}</h3>
       <p class="small">${t("Your wallet address is your identity everywhere on Gonka. On every dashboard and list, this is the name to look for:")}</p>
-      <pre class="preview mono" style="user-select:text; word-break:break-all; font-size:15px">${esc(S.wallet.address || "—")}</pre>
-      <div class="btn-row">
-        <button id="b-copy-addr">${t("Copy address")}</button>
+      ${copyLine(S.wallet.address || "—", "v-addr")}
+      <div class="btn-row" style="margin-top:6px">
         <button id="b-dash-gg">${t("gonka.gg dashboard")}</button>
         <button id="b-dash-orig">${t("original network dashboard")}</button>
       </div>
-      <p class="small">${t("Both dashboards list every participant — search for your address there. gonka.gg is community-run and usually the quickest to update; the original dashboard is the network's own.")}</p>
+      ${more("Which dashboard?", `<p>${t("Both dashboards list every participant — search for your address there. gonka.gg is community-run and usually the quickest to update; the original dashboard is the network's own.")}</p>`)}
     </div>
     <div class="card" id="v-card"><span class="small">${t("Checking…")}</span></div>
     <div class="card" id="fee-card"><span class="small">${t("Checking…")}</span></div>
     <div class="card">
-      <h3>${t("What each line above means")}</h3>
-      <ul class="plain">
+      <p class="need-note" style="margin-top:0">${t("Keep the server switched on. If you stop it, your node drops out and has to catch up again — and it earns nothing while it is off.")}</p>
+      ${more("What each line means", `<ul>
         <li><b>${t("Network snapshot")}</b> — ${t("your node copies a recent picture of the blockchain instead of replaying years of history. The slowest part, and it pauses near the end while it saves everything to disk. That pause is normal.")}</li>
         <li><b>${t("Catching up")}</b> — ${t("replaying the last few thousand blocks to reach the network's current position. Usually a minute or two.")}</li>
         <li><b>${t("Registered")}</b> — ${t("your wallet address is recorded on the chain as this server. Already done.")}</li>
         <li><b>${t("Proof of Compute")}</b> — ${t("about every 24 hours the network asks every node to prove its GPUs work. This is what earns your weight. The countdown at the top of the window shows when the next one starts.")}</li>
         <li><b>${t("Earning")}</b> — ${t("once a round is passed your node joins the active list and is paid for the work it does. Rewards are settled at the end of each roughly 24-hour epoch.")}</li>
-      </ul>
-      <p class="small">${t("Keep the server switched on. If you stop it, your node drops out and has to catch up again — and it earns nothing while it is off.")}</p>
+      </ul>`)}
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
@@ -1857,7 +1948,7 @@ RENDER.verify = () => {
   $("#b-back").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } go(10); };
   $("#b-next").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(); go(12); };
   $("#b-re").onclick = check;
-  $("#b-copy-addr").onclick = () => { navigator.clipboard.writeText(S.wallet.address || ""); toast(t("Address copied.")); };
+  wireCopy();
   $("#b-dash-gg").onclick = () => api("openExternal", { url: S.K.docs.communityDashboard });
   $("#b-dash-orig").onclick = () => api("openExternal", { url: (S.seed || S.K.seedNodes[0]) + "/dashboard/gonka/validator" });
   check();
@@ -2115,14 +2206,14 @@ RENDER.verify = () => {
         card.innerHTML = `
           <p><span class="pill ok">REGISTERED</span> <span class="small">${t("Your address is on the chain — the dashboards above will show it.")}</span></p>
           ${reachHtml}
-          <div class="kv">address&nbsp;&nbsp;&nbsp;&nbsp; <b>${esc(pd.address || S.wallet.address)}</b></div>
-          <div class="kv">inference url <b>${esc(pd.inferenceUrl || pd.inference_url || "—")}</b></div>
-          <div class="kv">status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>${esc(pd.status || "—")}</b></div>
+          ${tiles([
+            { label: "Address on the network", value: esc(pd.inferenceUrl || pd.inference_url || "—") },
+            { label: "Status", value: esc(pd.status || "—") }
+          ])}
           <hr class="sep">
           <p class="small">${t("Registering no longer waits for the node to finish syncing, so keep watching this until every line is ticked — your node can only take part in Proof of Compute once it's caught up.")}</p>
           <div id="sync-meter"><span class="small">${t("Reading your node's sync state…")}</span></div>
-          <p class="small" style="margin-top:12px">Containers on the server:</p>
-          <pre class="preview mono" style="max-height:140px">${esc(containers || "(couldn't read)")}</pre>`;
+          ${more("Containers on the server", `<pre class="preview mono" style="max-height:180px">${esc(containers || "(couldn't read)")}</pre>`)}`;
         markDone();
         // Registration can now land BEFORE the node is synced (the wizard signs
         // it with the cold wallet, which needs no local node). So the progress
@@ -2178,11 +2269,15 @@ RENDER.verify = () => {
     }
     el.innerHTML = `
       <h3>${esc(t("Fees your node pays"))}</h3>
-      <p class="small">${t("Since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of the wallet above. A node that cannot pay stays registered but is left out of the epoch and earns nothing.")}</p>
-      <div class="kv">${esc(t("In your wallet now"))}&nbsp; <b>${bal === null ? "—" : gnk(bal)}</b></div>
-      ${verdict}
+      ${tiles([
+        { label: "In your wallet now", value: bal === null ? "—" : esc(gnk(bal)) },
+        fb ? { label: "This epoch may need", value: esc(gnk(fb.budget)), sub: fb.known ? "" : t("a first guess") } : null,
+        fb ? { label: "Your node can spend", value: esc(gnk(fb.spendable)) } : null
+      ])}
+      <div style="margin-top:12px">${verdict}</div>
       ${fb && !fb.known ? `<p class="small">${t("The node's figure is a first guess until it has taken part in a Proof of Compute.")}</p>` : ""}
-      ${S.K.docs.fees ? `<div class="btn-row"><button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button></div>` : ""}`;
+      ${S.K.docs.fees ? `<div class="btn-row" style="margin-top:8px"><button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button></div>` : ""}
+      ${more("Why does my node pay fees?", `<p>${t("Since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of the wallet above. A node that cannot pay stays registered but is left out of the epoch and earns nothing.")}</p>`)}`;
     if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees });
   }
 };
@@ -2190,13 +2285,17 @@ RENDER.verify = () => {
 /* --- 11 Collateral ---------------------------------------------------- */
 RENDER.collateral = () => {
   stage(`
-    ${header("Step 11", "Collateral — unlock full rewards", `
-      Collateral is GNK you lock up as a stake to unlock your node's full earning power.
-      It's held in your name and withdrawable later — but it can be slashed if your node misbehaves.
-      Read how it works below before deciding.`)}
+    ${header("Step 11", "Collateral — unlock full rewards",
+      "GNK you lock up to unlock your node's full earning power. It stays yours. Check the figures below before deciding.")}
     <div class="card">
-      <h3>${esc(t("How collateral works"))}</h3>
-      <ul class="plain small">
+      ${tiles([
+        { label: "Without collateral", value: "20%", sub: t("of the weight your GPUs earn") },
+        { label: "With full collateral", value: "100%", sub: t("up to 5× the rewards, same GPUs") },
+        { label: "Your deposit", value: esc(t("Locked")), sub: t("not spent, and you can withdraw it later") },
+        { label: "Can be slashed", value: "10–20%", sub: t("for downtime or for invalid work") }
+      ])}
+      ${more("How collateral works", `
+      <ul>
         <li>${t("Your Proof of Compute earns your node a <b>weight</b> (based on your GPUs' work). Without collateral, the network only counts <b>20%</b> of that weight — so you collect about a fifth of what your hardware actually earned.")}</li>
         <li>${t("Depositing collateral unlocks the other <b>80%</b>, scaling you up toward the full 100%. Same GPUs, up to 5× the rewards.")}</li>
         <li>${t("The rate is <b>4.2 ngonka per unit of weight</b> — and a ngonka is a billionth of a GNK, so the amounts involved are tiny. A node earning several hundred weight needs a few thousand ngonka, i.e. small fractions of one GNK. The exact figure is calculated for you below.")}</li>
@@ -2204,7 +2303,7 @@ RENDER.collateral = () => {
         <li>${t("<b>Partial deposits work.</b> You don't have to unlock everything at once — the network scales your weight in proportion to what you stake. Deposit half of the full amount and you land around 60% of your potential; deposit a third and you're near 47%. You can add more later at any time. (Staking beyond the full-unlock amount does nothing extra for weight.)")}</li>
         <li>${t("<b>But it can be slashed:</b> the network takes <b>20%</b> of your collateral if your node submits invalid inference work, and <b>10%</b> for excessive downtime. A healthy, honest, reliably-online node keeps it all; a flaky or cheating one loses a chunk. So only stake what you're comfortable backing your node's good behavior with.")}</li>
       </ul>
-      <div class="info-banner">${t("<b>Simple example:</b> say your node would earn 100 GNK/day at full weight. With no collateral you'd get ~20 GNK/day. Stake enough collateral to unlock 100%, and you'd get ~100 GNK/day — 5× more — while your stake sits locked and refundable. Run it reliably and honestly, and you never lose the stake; the extra ~80 GNK/day is pure upside.")}</div>
+      <p>${t("<b>Simple example:</b> say your node would earn 100 GNK/day at full weight. With no collateral you'd get ~20 GNK/day. Stake enough collateral to unlock 100%, and you'd get ~100 GNK/day — 5× more — while your stake sits locked and refundable. Run it reliably and honestly, and you never lose the stake; the extra ~80 GNK/day is pure upside.")}</p>`)}
     </div>
     <div id="col-body" style="margin-top:16px"></div>
     <p class="small" style="margin-top:14px">${t("Would rather wait and stake the exact amount for your real weight? {link} — you'd spend your first epoch at 20% and can come back tomorrow.",
@@ -2251,8 +2350,11 @@ RENDER.collateral = () => {
           <h3>${t("Unlock your full rewards")}</h3>
           <div class="info-banner">${t("This deposit is <b>{amt}</b> and it multiplies what your node earns by up to <b>5×</b>. It stays yours — locked, not spent — and you can withdraw it later. There is no sensible reason to skip it.",
             { amt: gnk(rec.depositNgonka) })}</div>
-          <div class="kv">deposit <b>${gnk(rec.depositNgonka)}</b> <span class="small">(${rec.depositNgonka.toLocaleString()} ngonka)</span></div>
-          <div class="kv">your balance <b>${bal === null ? "unknown" : gnk(bal)}</b>${bal !== null && bal > rec.depositNgonka ? ` <span class="small">${t("— {x}× more than you need", { x: Math.floor(bal / Math.max(1, rec.depositNgonka)).toLocaleString() })}</span>` : ""}</div>
+          ${tiles([
+            { label: "Deposit", value: esc(gnk(rec.depositNgonka)), sub: `${rec.depositNgonka.toLocaleString()} ngonka` },
+            { label: "Your balance", value: bal === null ? "—" : esc(gnk(bal)),
+              sub: bal !== null && bal > rec.depositNgonka ? t("— {x}× more than you need", { x: Math.floor(bal / Math.max(1, rec.depositNgonka)).toLocaleString() }).replace(/^—\s*/, "") : "" }
+          ])}
           <p class="small">${t("Sized from {basis} ({w}) at the chain's live collateral rate, with a {b}× safety buffer.",
             { basis: myWeight ? t("your own measured weight") : t("the network's current maximum weight"),
               w: rec.weightUsed.toLocaleString(), b: rec.buffer })}</p>
@@ -2325,13 +2427,14 @@ RENDER.done = () => {
       <p class="small">${t("Check on it any time:")} <a href="#" id="d-part">${t("your participant page")}</a> · <a href="#" id="d-dash">${t("network dashboard")}</a>.</p>
     </div>
     <div class="card">
-      <h3>Useful commands (on the server, in <code>gonka/deploy/join</code>)</h3>
+      ${more("Useful commands on the server", `
+      <p>${t("Run them in the {dir} folder on your server.", { dir: "<code>gonka/deploy/join</code>" })}</p>
       <pre class="preview mono"># watch logs
 source config.env && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml logs -f
 
 # stop everything (read the "stopping your node" guide first!)
 docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
-      <p class="small">Before stopping for good, follow the graceful shutdown guide so you don't lose rewards or reputation — see the <a href="#" id="d-doc">official docs</a>.</p>
+      <p>${t("Before stopping for good, follow the graceful shutdown guide so you don't lose rewards or reputation — see the {link}.", { link: `<a href="#" id="d-doc">${esc(t("official docs"))}</a>` })}</p>`)}
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>

@@ -870,6 +870,9 @@ button.gpu-chip.sel .tick { display: inline; }
 button.gpu-chip.sel .var { color: inherit; opacity: 0.75; }
 .pick-lead { margin: -2px 0 6px; font-size: 13px; color: var(--muted); }
 .need-for.general { font-style: normal; }
+button.gpu-chip.nofit:not(.sel) { opacity: 0.5; }
+button.gpu-chip.nofit:not(.sel):hover { opacity: 1; }
+button.gpu-chip .fit-dot { color: var(--green); margin-right: 5px; font-size: 9px; vertical-align: 1px; }
 .chips-label { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
 .why-model { margin-bottom: 12px; }
 
@@ -894,6 +897,33 @@ button.gpu-chip.sel .var { color: inherit; opacity: 0.75; }
 .need-value { font-size: 18px; font-weight: 700; margin: 6px 0 3px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .need-sub { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
 .need-note { margin: 12px 0 0; font-size: 12.5px; color: var(--text); }
+
+/* Fields side by side (address, port, user), and a choice of a few options */
+.field-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 0.8fr) minmax(0, 1fr); gap: 12px; max-width: 760px; }
+.field-row label.field { max-width: none; }
+@media (max-width: 1000px) { .field-row { grid-template-columns: 1fr; } }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg button { padding: 8px 14px; font-size: 13px; }
+.seg button.on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+div.field { margin-bottom: 14px; }
+div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
+
+/* A value worth copying, on its own line */
+.copy-line { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.copy-line code {
+  flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 14px; padding: 9px 12px;
+  background: var(--inset); border: 1px solid var(--line); border-radius: 7px; overflow-wrap: anywhere; user-select: text;
+}
+.copy-line button { flex: none; }
+.card .need-grid + .btn-row, .card .need-grid + .copy-line { margin-top: 14px; }
+.lead-line { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.need-value.long { font-size: 13.5px; font-family: var(--mono); font-weight: 600; line-height: 1.45; }
+.need:has(.need-value.long) { grid-column: span 2; }
+.scan-sum { margin-bottom: 12px; }
+.scan-sum .need-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ok-num { color: var(--green); }
+.warn-num { color: var(--amber, #d9a441); }
+.bad-num { color: var(--red); }
 
 /* Two short cards side by side */
 .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
