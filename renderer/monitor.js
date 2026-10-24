@@ -141,13 +141,19 @@ function monRenderRail() {
     ${item("proposals", t("Proposals"))}
     <div class="mon-rail-label">${esc(t("Your nodes"))}</div>
     ${MON.nodes.map((n) => `
-      <button class="mon-node ${MON.view === "node" && n.address === MON.address ? "on" : ""}" data-addr="${esc(n.address)}">
-        <span class="mon-node-name">${esc(monName(n))}</span>
-        ${n.name ? `<span class="mon-node-addr">${esc(monShort(n.address))}</span>` : ""}
-      </button>`).join("")}
+      <div class="mon-node-row">
+        <button class="mon-node ${MON.view === "node" && n.address === MON.address ? "on" : ""}" data-addr="${esc(n.address)}">
+          <span class="mon-node-name">${esc(monName(n))}</span>
+          ${n.name ? `<span class="mon-node-addr">${esc(monShort(n.address))}</span>` : ""}
+        </button>
+        <button class="mon-node-x" data-forget="${esc(n.address)}" title="${esc(t("Remove from your nodes"))}" aria-label="${esc(t("Remove from your nodes"))}: ${esc(monName(n))}">×</button>
+      </div>`).join("")}
+    ${MON.undo ? `<div class="mon-undo">${esc(t("Removed {name}.", { name: monName(MON.undo.node) }))} <button id="mon-undo">${esc(t("Undo"))}</button></div>` : ""}
     <button class="mon-add ${MON.view === "add" ? "on" : ""}" id="mon-add">+ ${esc(t("Add a node"))}</button>`;
   body.querySelectorAll("[data-view]").forEach((b) => { b.onclick = () => monGo(b.dataset.view); });
   body.querySelectorAll("[data-addr]").forEach((b) => { b.onclick = () => monGo("node", b.dataset.addr); });
+  body.querySelectorAll("[data-forget]").forEach((b) => { b.onclick = () => monForget(b.dataset.forget); });
+  if ($("#mon-undo")) $("#mon-undo").onclick = monUndoForget;
   $("#mon-add").onclick = () => monGo("add");
   $("#mon-foot").innerHTML = `<div>${esc(t("Public information from the Gonka network. No key, no password."))}</div>`;
 }
@@ -157,6 +163,28 @@ async function monSave() {
 }
 async function monKeep(address, name) {
   if (!monKept(address)) { MON.nodes.push({ address, name: String(name || "").trim() }); await monSave(); }
+}
+/** Take a node off the list, with a few seconds to change one's mind. */
+async function monForget(address) {
+  const index = MON.nodes.findIndex((n) => n.address === address);
+  if (index < 0) return;
+  MON.undo = { node: MON.nodes[index], index };
+  MON.nodes.splice(index, 1);
+  await monSave();
+  clearTimeout(MON.undoTimer);
+  MON.undoTimer = setTimeout(() => { MON.undo = null; monRenderRail(); }, 10000);
+  monRenderRail();
+  // Its page stays open, now offering "Add to your nodes" again.
+  if (MON.view === "node" && MON.address === address) monRenderMain();
+}
+async function monUndoForget() {
+  const u = MON.undo;
+  if (!u) return;
+  clearTimeout(MON.undoTimer); MON.undo = null;
+  if (!monKept(u.node.address)) MON.nodes.splice(Math.min(u.index, MON.nodes.length), 0, u.node);
+  await monSave();
+  monRenderRail();
+  if (MON.view === "node" && MON.address === u.node.address) monRenderMain();
 }
 
 /* ---- reading ----------------------------------------------------------- */
@@ -386,11 +414,7 @@ function monWireNode() {
   const node = MON.nodes.find((n) => n.address === MON.address) || { address: MON.address, name: "" };
   $("#mon-copy").onclick = async () => { try { await navigator.clipboard.writeText(node.address); $("#mon-copy").classList.add("copied"); setTimeout(() => $("#mon-copy") && $("#mon-copy").classList.remove("copied"), 1200); } catch (_) {} };
   if ($("#mon-keep")) $("#mon-keep").onclick = async () => { await monKeep(MON.address, ""); monRenderRail(); monRenderMain(); };
-  if ($("#mon-remove")) $("#mon-remove").onclick = async () => {
-    MON.nodes = MON.nodes.filter((n) => n.address !== MON.address);
-    await monSave();
-    monRenderRail(); monRenderMain();
-  };
+  if ($("#mon-remove")) $("#mon-remove").onclick = () => monForget(MON.address);
   if ($("#mon-rename")) $("#mon-rename").onclick = () => monRename(node);
 }
 
