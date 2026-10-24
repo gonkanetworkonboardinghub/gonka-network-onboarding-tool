@@ -47,23 +47,26 @@ const onData = (t, s) => log(t, s);
 
 /* How big the window opens, and how big everything in it is drawn. At a fixed
    1120 × 760 and actual size the app looked small on an ordinary screen, so it
-   opens at most of the screen and draws everything a tenth larger — except on
-   a small laptop screen, where actual size leaves more room. Ctrl + / Ctrl − /
+   opens at most of the screen and draws everything a quarter larger on a
+   full-size screen (a little less on a smaller one, actual size on a small
+   laptop screen, where that leaves more room). Ctrl + / Ctrl − /
    Ctrl 0 change it (the window has no menu, so nothing did before), and the
    choice is kept in ui.json. */
 const uiFile = () => path.join(app.getPath("userData"), "ui.json");
 function readUi() { try { return JSON.parse(fs.readFileSync(uiFile(), "utf8")) || {}; } catch (_) { return {}; } }
 function saveUi(patch) { try { fs.writeFileSync(uiFile(), JSON.stringify({ ...readUi(), ...patch })); } catch (_) {} }
 const ZOOM_MIN = 0.8, ZOOM_MAX = 1.5;
-/** A tenth larger than actual size, unless the screen is small. */
+/** A quarter larger than actual size on a full-size screen, less on a smaller one. */
 function defaultZoom() {
   const wa = screen.getPrimaryDisplay().workAreaSize;
-  return wa.width >= 1500 && wa.height >= 860 ? 1.1 : 1;
+  if (wa.width >= 1800 && wa.height >= 1000) return 1.25;
+  if (wa.width >= 1500 && wa.height >= 860) return 1.15;
+  return 1;
 }
 function windowSize() {
   const wa = screen.getPrimaryDisplay().workAreaSize;
-  const width = Math.min(wa.width, Math.max(980, Math.min(1440, Math.round(wa.width * 0.9))));
-  const height = Math.min(wa.height, Math.max(680, Math.min(960, Math.round(wa.height * 0.9))));
+  const width = Math.min(wa.width, Math.max(980, Math.min(1600, Math.round(wa.width * 0.9))));
+  const height = Math.min(wa.height, Math.max(680, Math.min(1000, Math.round(wa.height * 0.9))));
   const saved = Number(readUi().zoom);
   return { width, height, zoom: saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : defaultZoom() };
 }
@@ -85,6 +88,11 @@ function createWindow() {
     }
   });
   win.removeMenu?.();
+  // Chromium also remembers a zoom per page on its own and puts it back on
+  // load, over the one asked for above; set it on every load, so ui.json (or
+  // the default for this screen) is what counts.
+  let zoomNow = size.zoom;
+  win.webContents.on("did-finish-load", () => win.webContents.setZoomFactor(zoomNow));
   // Bigger / smaller / back to the start, kept for next time.
   win.webContents.on("before-input-event", (e, input) => {
     if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt) return;
@@ -92,7 +100,8 @@ function createWindow() {
     if (input.key === "0") {
       // Back to the size the app starts at on this screen; forget the choice.
       e.preventDefault();
-      win.webContents.setZoomFactor(defaultZoom());
+      zoomNow = defaultZoom();
+      win.webContents.setZoomFactor(zoomNow);
       saveUi({ zoom: null });
       return;
     }
@@ -102,6 +111,7 @@ function createWindow() {
     if (next === null) return;
     e.preventDefault();
     next = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)) * 100) / 100;
+    zoomNow = next;
     win.webContents.setZoomFactor(next);
     saveUi({ zoom: next });
   });
