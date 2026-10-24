@@ -448,7 +448,7 @@ function monNodeHtml(d) {
         <div class="mon-tile-sub">${esc([monUsd(d.now.estimate), t("the network's own estimate")].filter(Boolean).join(" · "))}</div></div>` : `
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
-        <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t("{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div></div>`}
+        <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t("{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Next Proof of Compute"))}</div>
         <div class="mon-tile-num">${esc(monSpan(ep.secondsToNextPoc))}</div>
         <div class="mon-tile-sub">${esc(t("epoch {n} is {pct} through", { n: ep.index, pct: monPct(ep.progress, 0) }))}</div></div>
@@ -558,7 +558,7 @@ function monMoneyCard(d) {
       <div class="mon-kv">${esc(t("In the node's wallet"))} <b>${esc(monGnk(m.balance))}</b></div>
       ${m.allowance
         ? `<div class="mon-kv">${esc(t("Left for fees"))} <b>${m.allowance.limited ? esc(monGnk(m.allowance.left)) : esc(t("no limit"))}</b>${m.allowance.expires ? ` <span class="small">${esc(t("until {date}", { date: monDate(m.allowance.expires) }))}</span>` : ""}</div>
-           <p class="small">${esc(t("Since Gonka v0.2.16 the node pays network fees out of the wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."))}</p>`
+           ${more("How does the fee allowance work?", `<p>${esc(t("Since Gonka v0.2.16 the node pays network fees out of the wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."))}</p>`)}`
         : (d.standing.known ? `<div class="warn-banner">${esc(t("No fee allowance was found for this wallet. Since Gonka v0.2.16 a node needs one to pay its fees, or it is left out of the epoch."))}</div>` : "")}
       <div class="mon-kv">${esc(t("Collateral"))} <b>${esc(monGnk(m.collateral))}</b></div>
       ${m.unbonding.length ? `<div class="mon-kv">${esc(t("Being withdrawn"))} <b>${esc(monGnk(m.unbonding.reduce((a, u) => a + u.amount, 0)))}</b></div>` : ""}
@@ -570,7 +570,7 @@ function monMoneyCard(d) {
         <div class="mon-kv">${esc(t("In the next 7 epochs"))} <b>${esc(monGnk(v.next7))}</b></div>
         <div class="mon-kv">${esc(t("In the next 30 epochs"))} <b>${esc(monGnk(v.next30))}</b></div>
         ${chart}
-        <p class="small">${esc(t("Rewards are released a slice each epoch. This is what is already earned and still on its way, over the next {n} epochs{where}.", { n: v.epochs, where: m.paidElsewhere ? t(", at the address the rewards are paid to") : "" }))}</p>`
+        ${more("When do the rewards arrive?", `<p>${esc(t("Rewards are released a slice each epoch. This is what is already earned and still on its way, over the next {n} epochs{where}.", { n: v.epochs, where: m.paidElsewhere ? t(", at the address the rewards are paid to") : "" }))}</p>`)}`
         : `<p class="small">${esc(t("Nothing is waiting to be released."))}</p>`}
     </div>`;
 }
@@ -679,7 +679,8 @@ function monProposalsHtml() {
   };
 
   return `
-    <p class="lede">${esc(t("What the network is deciding. A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>
+    <p class="lede">${esc(t("What the network is deciding."))}</p>
+    ${more("How does voting work?", `<p>${esc(t("A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>`)}
     ${live.length ? live.map((p) => card(p, true)).join("") : `<div class="info-banner">${esc(t("Nothing is being voted on right now."))}</div>`}
     <h2 class="mon-h2">${esc(t("Recent proposals"))}</h2>
     ${past.map((p) => card(p, false)).join("")}`;
