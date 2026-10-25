@@ -15,6 +15,9 @@
 #   network.json    - each host's GPUs and the network's totals, supply and
 #                     community pool, for GNOT's network page
 #                     (scripts/network-snapshot.js)
+#   governance.json - where the shared money is (community pool, governance
+#                     account, community sale) and what every passed proposal
+#                     paid, for the Votes page (scripts/governance-snapshot.js)
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -67,7 +70,7 @@ jobs:
       - name: Fetch what was published last time
         run: |
           git fetch origin data --depth=1 || true
-          for f in earnings onboarded stats compat epochs network; do
+          for f in earnings onboarded stats compat epochs network governance; do
             git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
           done
 
@@ -126,10 +129,16 @@ jobs:
           node scripts/network-snapshot.js "$RUNNER_TEMP/network.json" \
             || { rm -f "$RUNNER_TEMP/network.json"; exit 1; }
 
+      - name: Add up what the proposals paid, and what the treasuries hold
+        id: governance
+        continue-on-error: true
+        run: |
+          node scripts/governance-snapshot.js "$RUNNER_TEMP/governance.json"             || { rm -f "$RUNNER_TEMP/governance.json"; exit 1; }
+
       - name: Publish them on the data branch
         run: |
           kept=""
-          for f in earnings onboarded stats compat epochs network; do
+          for f in earnings onboarded stats compat epochs network governance; do
             if [ -s "$RUNNER_TEMP/$f.json" ] && node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$RUNNER_TEMP/$f.json"; then
               cp "$RUNNER_TEMP/$f.json" "$RUNNER_TEMP/out-$f.json"
             else
@@ -146,8 +155,8 @@ jobs:
             git checkout --orphan data
             git rm -rf . >/dev/null 2>&1 || true
           fi
-          for f in earnings onboarded stats compat epochs network; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
-          git add earnings.json onboarded.json stats.json compat.json epochs.json network.json
+          for f in earnings onboarded stats compat epochs network governance; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
+          git add earnings.json onboarded.json stats.json compat.json epochs.json network.json governance.json
           # services.json listed Use Gonka's services; nothing reads it since 1.5.0.
           git rm -q --ignore-unmatch services.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }
