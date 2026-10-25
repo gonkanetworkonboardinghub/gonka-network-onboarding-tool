@@ -2665,7 +2665,9 @@ function renderEarnBody(d) {
     </ul>
     <div class="earn-src">
       ${esc(t("Epoch {epoch}: {gnk} GNK shared between {hosts} hosts over {hours} hours.", {
-        epoch: d.epoch.index, gnk: fmtGnk(d.epoch.mintedGnk), hosts: d.epoch.participants, hours: d.epoch.hours.toFixed(1)
+        // What the hosts were paid, not what was minted (a part never reaches them).
+        epoch: d.epoch.paidEpoch || d.epoch.index, gnk: fmtGnk(d.epoch.paidGnk || d.epoch.mintedGnk),
+        hosts: d.epoch.paidHosts || d.epoch.participants, hours: d.epoch.hours.toFixed(1)
       }))}
       ${d.price.usd ? esc(t("GNK price {price}, the middle of {n} sources: {list}.", {
         price: fmtPrice(d.price.usd), n: d.price.sources.length, list: d.price.sources.map((s) => s.name).join(", ")

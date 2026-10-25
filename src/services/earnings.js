@@ -180,6 +180,32 @@ async function chainFacts(seed) {
 }
 
 /**
+ * What the hosts were actually paid in the last finished epoch, from the
+ * record of every host's rewarded coins that the data job publishes
+ * (epochs.json). The chain mints an epoch's whole reward, but only part of it
+ * reaches the hosts — between 59% and 89% of it in October 2026 — so sharing
+ * out what was minted overstated what a rig earns. A host on Discord asked how
+ * the weight was turned into GNK, and that is how this was found. Null when the
+ * record cannot be read or does not add up, and the minted amount is used.
+ */
+async function lastPaid(currentEpoch, mintedGnk) {
+  const url = K.get().epochsUrl;
+  if (!url) return null;
+  try {
+    const file = await getJson(url, 20000);
+    const done = (file.epochs || [])
+      .filter((e) => e.e < currentEpoch && (e.r || []).some((r) => Number(r[1]) > 0))
+      .sort((a, b) => b.e - a.e)[0];
+    if (!done) return null;
+    const gnk = done.r.reduce((a, r) => a + Number(r[1] || 0), 0) / 1e9;
+    const share = mintedGnk ? gnk / mintedGnk : 0;
+    // A share outside this range means a half-collected epoch or a misread file.
+    if (!(share > 0.2 && share < 1.05)) return null;
+    return { epoch: done.e, gnk, share, hosts: done.r.filter((r) => Number(r[1]) > 0).length };
+  } catch (_) { return null; }
+}
+
+/**
  * Per deployable configuration: the models and GPU counts the wizard's first
  * step offers, priced with what that class of GPU is earning today.
  */
@@ -195,6 +221,10 @@ async function estimate(seed, { force = false } = {}) {
   const rows = repoRows.concat(
     (K.get().curatedConfigs || []).filter((c) => !repoKeys.has(c.model + "|" + c.gpuClass)));
   const perDay = facts.epochHours ? 24 / facts.epochHours : 0;
+  // A rig's share of the network's weight now, times what the network paid its
+  // hosts last epoch: GNK per unit of weight is the amount paid, not minted.
+  const paid = await lastPaid(facts.epochIndex, facts.mintedGnk);
+  if (paid && facts.totalWeight) facts.gnkPerWeight = paid.gnk / facts.totalWeight;
 
   const median = (a) => {
     const v = [...a].sort((x, y) => x - y);
@@ -272,10 +302,18 @@ async function estimate(seed, { force = false } = {}) {
       index: facts.epochIndex,
       hours: facts.epochHours,
       mintedGnk: facts.mintedGnk,
+      // What the hosts were paid, and in which epoch: the amount shared out.
+      // "minted" when the payout record could not be read (then the figures
+      // run high, by as much as the part that does not reach the hosts).
+      basis: paid ? "paid" : "minted",
+      paidGnk: paid ? paid.gnk : null,
+      paidEpoch: paid ? paid.epoch : null,
+      paidHosts: paid ? paid.hosts : null,
+      paidShare: paid ? paid.share : null,
       totalWeight: facts.totalWeight,
       participants: facts.participants,
       gnkPerWeight: facts.gnkPerWeight,
-      networkGnkPerDay: facts.mintedGnk * perDay
+      networkGnkPerDay: (paid ? paid.gnk : facts.mintedGnk) * perDay
     },
     price,
     contract: WGNK,
