@@ -107,6 +107,9 @@ const overridable = {
   // Each host's GPUs and the network's totals (supply, community pool), kept by
   // the same job (scripts/network-snapshot.js) for the network page.
   networkUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/network.json",
+  // Where the shared money is and what each passed proposal paid
+  // (scripts/governance-snapshot.js), for Monitor/Vote's Votes page.
+  governanceUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/governance.json",
 
   // API paths (relative to a node base URL)
   api: {

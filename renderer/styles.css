@@ -630,6 +630,53 @@ body.on-home #monitor { display: none; }
 .mon-node.on { background: var(--wash-strong); border-color: var(--line-strong); }
 .mon-node-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-node-addr { font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+/* The menu: My nodes with its nodes under it, then The network, then Votes */
+.mon-subnav { margin: 2px 0 12px 14px; padding-left: 8px; border-left: 1px solid var(--line); }
+.mon-subnav .mon-add { margin-top: 4px; }
+/* a figure that is also a way in (Open votes) */
+button.mon-tile-link { text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.mon-tile-link:hover { border-color: var(--line-strong); background: var(--wash-strong); }
+/* My nodes before there is one: what it will hold, locked */
+.mon-locked { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 6px 0 16px; }
+.mon-lock-tile { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--wash); color: var(--muted); }
+.mon-lock-tile b { color: var(--text); font-size: 15px; }
+.mon-lock-tile span { font-size: 12.5px; line-height: 1.45; }
+.mon-lock { position: absolute; top: 12px; right: 12px; font-size: 14px; opacity: 0.6; }
+/* where the shared money went */
+.mon-pay { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mon-pay:last-of-type { border-bottom: none; }
+.mon-pay-what { flex: 1 1 auto; min-width: 0; font-size: 13.5px; }
+.mon-pay-how { flex: none; text-align: right; font-size: 13px; line-height: 1.5; }
+.mon-pay-how b { font-variant-numeric: tabular-nums; }
+.mon-pay-how span { color: var(--muted); }
+/* a proposal folds to one line; click to open */
+.mon-prop:not(.live) { cursor: pointer; transition: border-color 0.12s ease; }
+.mon-prop:not(.live):hover { border-color: var(--line-strong); }
+.mon-prop:not(.live):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mon-prop .mon-prop-more { display: none; margin-top: 12px; }
+.mon-prop.open .mon-prop-more, .mon-prop.live .mon-prop-more { display: block; }
+.mon-prop-chev { margin-left: auto; font-size: 18px; color: var(--muted); transition: transform 0.15s ease; line-height: 1; }
+.mon-prop.open .mon-prop-chev { transform: rotate(90deg); }
+.mon-prop-money { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mon-prop-money.asked { color: var(--muted); font-weight: 500; }
+.mon-prop-top .mon-prop-money + .mon-prop-chev, .mon-prop-top .mon-prop-money:last-child { margin-left: auto; }
+.mon-prop-top .mon-prop-money { margin-left: auto; }
+.mon-prop-top .mon-prop-money + .mon-prop-chev { margin-left: 8px; }
+.mon-w-table { max-width: 480px; margin: 4px 0 10px; }
+.mon-w-row { display: grid; grid-template-columns: 1.3fr 1fr 0.9fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; align-items: center; }
+.mon-w-row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.mon-w-row span:last-child { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mon-w-row i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 8px; }
+.mon-w-row i.yes { background: var(--green); }
+.mon-w-row i.no { background: var(--red); }
+.mon-w-row i.veto { background: var(--red); opacity: 0.6; }
+.mon-w-row i.abs { background: var(--muted); opacity: 0.5; }
+.mon-w-head { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.mon-w-head b { font-weight: 500; }
+.mon-w-total { border-bottom: none; font-weight: 600; }
+.mon-prop-pays { margin: 8px 0 10px; padding: 10px 12px; border-radius: 8px; background: var(--wash); font-size: 13.5px; line-height: 1.6; }
+@media (prefers-reduced-motion: reduce) { .mon-prop-chev, .mon-prop:not(.live) { transition: none; } }
+
 /* each saved node with its × to take it off the list */
 .mon-node-row { position: relative; }
 .mon-node-row .mon-node { padding-right: 36px; }

@@ -546,7 +546,52 @@ function askedIn(messages) {
   })(messages);
   return total;
 }
-function tidyProposal(p, { totalWeight, quorum, threshold, liveTally }) {
+/**
+ * What a proposal pays, and from where, read from its messages the same way
+ * scripts/governance-snapshot.js does: from the community pool, into the
+ * community sale, from the governance account (in coins that unlock over
+ * time), or in USDT from the community sale. `ctx` names the governance
+ * account, the sale contracts and the USDT token (from governance.json).
+ */
+function payoutsIn(messages, ctx = {}) {
+  const coinsOf = (list) => (list || []).reduce((a, c) => (/^ngonka$/i.test(c.denom) ? a + num(c.amount) : a), 0);
+  const sale = new Set(ctx.sale || []);
+  const out = { pool: 0, toSale: 0, gov: 0, usdt: 0, recipients: 0 };
+  const to = new Set();
+  for (const m of messages || []) {
+    const type = String(m["@type"] || "").split(".").pop();
+    if (type === "MsgCommunityPoolSpend") {
+      const a = coinsOf(m.amount);
+      if (sale.has(m.recipient)) out.toSale += a; else { out.pool += a; to.add(m.recipient); }
+    } else if (type === "MsgBatchTransferWithVesting" && (!ctx.gov || m.sender === ctx.gov)) {
+      for (const o of m.outputs || []) { out.gov += coinsOf(o.amount); to.add(o.recipient); }
+    } else if (type === "MsgTransferWithVesting" && (!ctx.gov || m.sender === ctx.gov || m.from_address === ctx.gov)) {
+      out.gov += coinsOf(m.amount); to.add(m.recipient || m.to_address);
+    } else if (type === "MsgMultiSend" && (!ctx.gov || (m.inputs || []).some((i) => i.address === ctx.gov))) {
+      for (const o of m.outputs || []) { out.gov += coinsOf(o.coins); to.add(o.address); }
+    } else if (type === "MsgExecuteContract" && m.msg && m.msg.withdraw_ibc && (!ctx.usdtDenom || m.msg.withdraw_ibc.denom === ctx.usdtDenom)) {
+      out.usdt += num(m.msg.withdraw_ibc.amount); to.add(m.msg.withdraw_ibc.recipient);
+    }
+  }
+  to.delete(undefined);
+  out.recipients = to.size;
+  return out;
+}
+
+/** governance.json from the data branch: the shared money and every payout. */
+let govFile = { at: 0, data: null };
+async function governanceFile() {
+  const url = K.get().governanceUrl;
+  if (!url) return null;
+  if (govFile.data && Date.now() - govFile.at < 10 * 60 * 1000) return govFile.data;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) govFile = { at: Date.now(), data: await res.json() };
+  } catch (_) { /* keep whatever was read before */ }
+  return govFile.data;
+}
+
+function tidyProposal(p, { totalWeight, quorum, threshold, liveTally, ctx }) {
   const t = liveTally || p.final_tally_result || {};
   const yes = num(t.yes_count), no = num(t.no_count), veto = num(t.no_with_veto_count), abstain = num(t.abstain_count);
   const voted = yes + no + veto + abstain;
@@ -562,6 +607,7 @@ function tidyProposal(p, { totalWeight, quorum, threshold, liveTally }) {
     does: [...new Set(kinds.map((k) => WHAT_IT_DOES[k] || "other"))],
     kinds,
     asked: askedIn(p.messages),
+    pays: payoutsIn(p.messages, ctx),
     upgradeTo: upgrade && upgrade.plan ? { name: upgrade.plan.name, height: num(upgrade.plan.height) } : null,
     tally: { yes, no, veto, abstain, voted },
     // Of those who voted yes or no; abstaining counts toward turnout only.
@@ -573,11 +619,13 @@ function tidyProposal(p, { totalWeight, quorum, threshold, liveTally }) {
 
 /** The newest proposals, live ones first, with how the vote stands. */
 async function proposals(seeds, { limit = 25 } = {}) {
-  const [list, params, mem] = await Promise.all([
+  const [list, params, mem, money] = await Promise.all([
     ask(seeds, `/chain-api/cosmos/gov/v1/proposals?pagination.reverse=true&pagination.limit=${limit}`, 40000),
     soft(ask(seeds, "/chain-api/cosmos/gov/v1/params/tallying")),
-    soft(members(seeds))
+    soft(members(seeds)),
+    governanceFile()
   ]);
+  const ctx = money ? { gov: money.govAccount && money.govAccount.address, sale: (money.sale || []).map((s) => s.address), usdtDenom: money.usdt && money.usdt.denom } : {};
   const totalWeight = mem ? mem.hosts.reduce((a, h) => a + h.weight, 0) : 0;
   const tp = (params && params.params) || {};
   const rules = { quorum: num(tp.quorum), threshold: num(tp.threshold), veto: num(tp.veto_threshold) };
@@ -586,10 +634,10 @@ async function proposals(seeds, { limit = 25 } = {}) {
   for (const p of raw) {
     const live = /VOTING_PERIOD/.test(String(p.status));
     const tally = live ? await soft(ask(seeds, `/chain-api/cosmos/gov/v1/proposals/${p.id}/tally`)) : null;
-    out.push(tidyProposal(p, { totalWeight, quorum: rules.quorum, threshold: rules.threshold, liveTally: tally && tally.tally }));
+    out.push(tidyProposal(p, { totalWeight, quorum: rules.quorum, threshold: rules.threshold, liveTally: tally && tally.tally, ctx }));
   }
   out.sort((a, b) => (Number(b.status === "VOTING_PERIOD") - Number(a.status === "VOTING_PERIOD")) || (b.id - a.id));
-  return { rules, totalWeight, hosts: mem ? mem.hosts.length : 0, proposals: out };
+  return { rules, totalWeight, hosts: mem ? mem.hosts.length : 0, proposals: out, money: money || null };
 }
 
 /** How one address voted on a proposal that is still open (the chain forgets votes afterwards). */
@@ -630,5 +678,5 @@ module.exports = {
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
-  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, ask, clearlyMore, unpackEpochs }
+  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, unpackEpochs }
 };

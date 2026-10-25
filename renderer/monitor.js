@@ -1,7 +1,9 @@
 /* monitor.js — GNOT's "Gonka Host Monitor/Vote".
 
-   Four places, one menu: the network as a whole, everyone on it, the
-   proposals being voted on, and the nodes this person keeps an eye on. Point
+   Three places, one menu: My nodes (the nodes this person follows, locked
+   until there is one), The network (everyone on it, with every host listed
+   underneath), and Votes (what the network is deciding, and where its shared
+   money is and went). Point
    it at any node and it shows what the network itself says about it: whether
    it is in the epoch, what it earned, how well it worked next to the other
    hosts, what its wallet holds for fees, its hardware. Everything here is
@@ -13,7 +15,10 @@
    "mon" or "MON": the renderer scripts share one global scope. */
 
 const MON = {
-  view: "network",    // "network" | "hosts" | "proposals" | "node" | "add"
+  view: "network",    // "mine" | "network" | "votes" | "node" | "add"
+  opened: false,      // the first visit lands on the first node kept, if any
+  open: new Set(),    // proposals unfolded on the Votes page
+  allPayouts: false,  // "Where it went" shows every payout
   nodes: [],          // [{ address, name }] — the nodes this person keeps an eye on
   address: null,      // the node on screen
   data: null,         // what the network says about it
@@ -96,7 +101,8 @@ async function showMonitor() {
   $("#mon-home").onclick = (e) => { e.preventDefault(); leaveMonitor(); };
   try { MON.nodes = await api("monitorNodes"); } catch (_) { MON.nodes = []; }
   api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; monRenderMain(); }).catch(() => {});
-  monGo(MON.view === "add" ? "network" : MON.view, MON.address);
+  if (!MON.opened && MON.nodes.length) { MON.opened = true; monGo("node", MON.nodes[0].address); }
+  else { MON.opened = true; monGo(MON.view === "add" ? "network" : MON.view, MON.address); }
   if (!MON.timer) MON.timer = setInterval(monRefresh, MON_REFRESH_MS);
 }
 
@@ -108,6 +114,8 @@ function leaveMonitor() {
 
 /** Every move inside the tool goes through here. */
 function monGo(view, address) {
+  // "My nodes" is the first node kept, or the locked page when there is none.
+  if (view === "mine" && MON.nodes.length) { view = "node"; address = address || MON.nodes[0].address; }
   MON.view = view;
   if (view === "node") {
     if (address !== MON.address) { MON.data = null; MON.error = null; }
@@ -117,15 +125,16 @@ function monGo(view, address) {
   monRenderMain();
   const main = $("#mon-main");
   if (main) main.scrollTop = 0;
-  if ((view === "network" || view === "hosts") && (!MON.overview || Date.now() - MON.overviewAt > MON_REFRESH_MS)) monLoadOverview();
-  if (view === "proposals" && !MON.gov) monLoadProposals();
+  if (view === "network" && (!MON.overview || Date.now() - MON.overviewAt > MON_REFRESH_MS)) monLoadOverview();
+  // The network page counts the open votes, so the proposals are read there too.
+  if ((view === "votes" || view === "network") && !MON.gov) monLoadProposals();
   if (view === "node" && !MON.data) monLoad();
 }
 
 function monRefresh() {
   if (!document.body.classList.contains("on-monitor")) return;
-  if (MON.view === "network" || MON.view === "hosts") monLoadOverview(true);
-  else if (MON.view === "proposals") monLoadProposals();
+  if (MON.view === "network") monLoadOverview(true);
+  else if (MON.view === "votes") monLoadProposals();
   else if (MON.view === "node") monLoad(true);
 }
 
@@ -134,12 +143,12 @@ function monRefresh() {
 function monRenderRail() {
   const body = $("#mon-rail");
   if (!body) return;
-  const item = (view, label) => `<button class="mon-nav ${MON.view === view ? "on" : ""}" data-view="${view}">${esc(label)}</button>`;
+  const item = (view, label, on) => `<button class="mon-nav ${on ? "on" : ""}" data-view="${view}">${esc(label)}</button>`;
+  // A kept node's page belongs under My nodes; any other host's under The network.
+  const mineOn = MON.view === "mine" || MON.view === "add" || (MON.view === "node" && monKept(MON.address));
   body.innerHTML = `
-    ${item("network", t("The network"))}
-    ${item("hosts", t("Every host"))}
-    ${item("proposals", t("Proposals"))}
-    <div class="mon-rail-label">${esc(t("Your nodes"))}</div>
+    ${item("mine", t("My nodes"), mineOn)}
+    <div class="mon-subnav">
     ${MON.nodes.map((n) => `
       <div class="mon-node-row">
         <button class="mon-node ${MON.view === "node" && n.address === MON.address ? "on" : ""}" data-addr="${esc(n.address)}">
@@ -149,7 +158,10 @@ function monRenderRail() {
         <button class="mon-node-x" data-forget="${esc(n.address)}" title="${esc(t("Remove from your nodes"))}" aria-label="${esc(t("Remove from your nodes"))}: ${esc(monName(n))}">×</button>
       </div>`).join("")}
     ${MON.undo ? `<div class="mon-undo">${esc(t("Removed {name}.", { name: monName(MON.undo.node) }))} <button id="mon-undo">${esc(t("Undo"))}</button></div>` : ""}
-    <button class="mon-add ${MON.view === "add" ? "on" : ""}" id="mon-add">+ ${esc(t("Add a node"))}</button>`;
+    <button class="mon-add ${MON.view === "add" ? "on" : ""}" id="mon-add">+ ${esc(t("Add a node"))}</button>
+    </div>
+    ${item("network", t("The network"), MON.view === "network" || (MON.view === "node" && !mineOn))}
+    ${item("votes", t("Votes"), MON.view === "votes")}`;
   body.querySelectorAll("[data-view]").forEach((b) => { b.onclick = () => monGo(b.dataset.view); });
   body.querySelectorAll("[data-addr]").forEach((b) => { b.onclick = () => monGo("node", b.dataset.addr); });
   body.querySelectorAll("[data-forget]").forEach((b) => { b.onclick = () => monForget(b.dataset.forget); });
@@ -213,7 +225,7 @@ async function monLoadOverview(quiet) {
   try { MON.overview = await api("monitorNetworkOverview"); MON.overviewAt = Date.now(); MON.overviewError = null; }
   catch (e) { MON.overviewError = e.message; }
   finally { MON.overviewBusy = false; }
-  if (MON.view === "network" || MON.view === "hosts") monRenderMain();
+  if (MON.view === "network") monRenderMain();
 }
 
 async function monLoadProposals() {
@@ -227,7 +239,8 @@ async function monLoadProposals() {
       }
     }
   } catch (e) { MON.gov = { error: e.message, proposals: [] }; }
-  if (MON.view === "proposals") monRenderMain();
+  // The network page counts the open votes; the Votes page is all of it.
+  if (MON.view === "votes" || MON.view === "network") monRenderMain();
 }
 
 /* ---- pages ------------------------------------------------------------- */
@@ -237,18 +250,25 @@ function monRenderMain() {
   if (!main || !document.body.classList.contains("on-monitor")) return;
   let html;
   if (MON.view === "network") html = monNetworkHtml();
-  else if (MON.view === "hosts") html = monHostsHtml();
-  else if (MON.view === "proposals") html = `<div class="mon-title-row"><h1>${esc(t("Proposals"))}</h1></div>` + monProposalsHtml();
+  else if (MON.view === "votes") html = monVotesHtml();
+  else if (MON.view === "mine") html = monMineHtml();
   else if (MON.view === "add") html = monAddHtml();
   else html = monNodePageHtml();
+  // Keep the place on the page when it redraws itself (a refresh, a filter).
+  const keep = main.scrollTop;
   main.innerHTML = `<div class="mon-page">${html}</div>`;
+  main.scrollTop = keep;
   monWire(main);
 }
 
 /** The buttons and links a page carries; wired after every render. */
 function monWire(main) {
   main.querySelectorAll("[data-go-node]").forEach((b) => { b.onclick = () => monGo("node", b.dataset.goNode); });
-  main.querySelectorAll("[data-go]").forEach((b) => { b.onclick = () => monGo(b.dataset.go); });
+  main.querySelectorAll("[data-go]").forEach((b) => { b.onclick = (e) => { e.preventDefault(); monGo(b.dataset.go); }; });
+  // "Every host" is the lower half of the network page.
+  main.querySelectorAll("[data-go-hosts]").forEach((b) => {
+    b.onclick = (e) => { e.preventDefault(); monGo("network"); setTimeout(() => { const h = $("#mon-hosts"); if (h) h.scrollIntoView({ block: "start" }); }, 50); };
+  });
   main.querySelectorAll("[data-open]").forEach((a) => { a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.open }); }; });
   const f = $("#mon-filter");
   if (f) {
@@ -256,8 +276,9 @@ function monWire(main) {
   }
   if (MON.view === "add") monWireAdd();
   if (MON.view === "node") monWireNode();
+  if (MON.view === "votes") monWireVotes(main);
   const r = $("#mon-refresh");
-  if (r) r.onclick = () => { if (MON.view === "node") monLoad(); else if (MON.view === "proposals") { MON.gov = null; monRenderMain(); monLoadProposals(); } else monLoadOverview(); };
+  if (r) r.onclick = () => { if (MON.view === "node") monLoad(); else if (MON.view === "votes") { MON.gov = null; monRenderMain(); monLoadProposals(); } else monLoadOverview(); };
 }
 
 /* ---- the network ------------------------------------------------------- */
@@ -288,7 +309,13 @@ function monNetworkHtml() {
       ${monTile(t("Paid out last epoch"), l ? monGnkShort(l.rewards) : "—", l ? [monUsd(l.rewards), t("epoch {n}", { n: l.epoch })].filter(Boolean).join(" · ") : "")}
       ${monTile(t("Per GPU, last epoch"), l && l.perGpu ? monGnk(l.perGpu) : "—", l && l.perGpu ? monUsd(l.perGpu) : "")}
       ${monTile(t("GNK in existence"), o.supply ? monGnkShort(o.supply) : "—", o.supply ? monUsd(o.supply) : "")}
-      ${monTile(t("Community pool"), o.communityPool ? monGnkShort(o.communityPool) : "—", o.communityPool ? monUsd(o.communityPool) : "")}
+      ${(() => {
+        // The community pool lives on the Votes page now, with where its money went.
+        const open = MON.gov && MON.gov.proposals ? MON.gov.proposals.filter((p) => p.status === "VOTING_PERIOD").length : null;
+        return `<button class="mon-tile mon-tile-link" data-go="votes"><div class="mon-tile-label">${esc(t("Open votes"))}</div>
+          <div class="mon-tile-num">${open === null ? "—" : esc(monNum(open))}</div>
+          <div class="mon-tile-sub">${esc(t("See them under Votes →"))}</div></button>`;
+      })()}
     </div>`;
   const past = o.past;
   const charts = past.length ? `
@@ -316,11 +343,16 @@ function monNetworkHtml() {
         ${g ? `<p class="small">${esc(t("GPUs counted machine by machine at {when}.", { when: monDate(g.countedAt) }))}</p>` : ""}</div>
       <div class="card"><h3>${esc(t("Models served"))}</h3>${bars(o.models.map((m) => ({ label: monModel(m.model), n: m.hosts, text: t("{n} hosts", { n: m.hosts }) })))}</div>
     </div>`;
-  const top = o.hosts.slice(0, 5);
-  const biggest = `
-    <div class="card"><div class="mon-card-head"><h3>${esc(t("The biggest hosts"))}</h3><button class="mon-quiet" data-go="hosts">${esc(t("See all {n} →", { n: o.hosts.length }))}</button></div>
-      ${monHostRows(top)}</div>`;
-  return head + tiles + charts + runs + biggest;
+  // Every host, underneath the figures: one page for the whole network.
+  const q = MON.hostFilter.trim().toLowerCase();
+  const rows = q ? o.hosts.filter((h) => h.address.toLowerCase().includes(q) || h.models.join(" ").toLowerCase().includes(q) || (MON.nodes.find((n) => n.address === h.address && n.name.toLowerCase().includes(q)))) : o.hosts;
+  const hosts = `
+    <div class="card" id="mon-hosts">
+      <div class="mon-card-head"><h3>${esc(t("Every host"))}</h3><span class="small">${esc(t("{n} hosts in epoch {e}. Click one to see everything about it.", { n: o.hosts.length, e: o.epoch.index }))}</span></div>
+      <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
+      ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
+    </div>`;
+  return head + tiles + charts + runs + hosts;
 }
 
 /* ---- every host -------------------------------------------------------- */
@@ -346,17 +378,29 @@ function monHostRows(rows) {
     </div>`;
 }
 
-function monHostsHtml() {
-  const o = MON.overview;
-  const head = `<div class="mon-title-row"><h1>${esc(t("Every host"))}</h1>
-    ${o ? `<span class="mon-title-sub">${esc(t("{n} hosts in epoch {e}. Click one to see everything about it.", { n: o.hosts.length, e: o.epoch.index }))}</span>` : ""}
-    <button id="mon-refresh" class="mon-quiet">${esc(t("Refresh"))}</button></div>`;
-  if (!o) return head + `<div class="info-banner">${esc(t("Reading the network…"))}</div>`;
-  const q = MON.hostFilter.trim().toLowerCase();
-  const rows = q ? o.hosts.filter((h) => h.address.toLowerCase().includes(q) || h.models.join(" ").toLowerCase().includes(q) || (MON.nodes.find((n) => n.address === h.address && n.name.toLowerCase().includes(q)))) : o.hosts;
-  return head + `
-    <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
-    ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}`;
+/* ---- My nodes, before there is one -------------------------------------- */
+
+/** What My nodes holds, shown locked until a node is added. */
+function monMineHtml() {
+  const what = [
+    [t("Status"), t("whether it is in the epoch, and why not when it is not")],
+    [t("Earnings"), t("what it earned, next to a typical host")],
+    [t("Fees and collateral"), t("what is left for fees, and what is staked")],
+    [t("Vote"), t("on the network's proposals, with your node")],
+    [t("Your server"), t("a terminal to your server, from here")],
+    [t("Shut down safely"), t("Gonka's steps for leaving, done for you")]
+  ];
+  return `
+    <div class="mon-title-row"><h1>${esc(t("My nodes"))}</h1></div>
+    <p class="lede">${esc(t("Add your node to follow it here, and to act on it."))}</p>
+    <div class="mon-locked">
+      ${what.map(([a, b]) => `<div class="mon-lock-tile"><span class="mon-lock" aria-hidden="true">🔒</span><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join("")}
+    </div>
+    <div class="btn-row">
+      <button class="primary" data-go="add">${esc(t("Add your node"))}</button>
+      <button data-go-hosts="1">${esc(t("Find it among every host"))}</button>
+    </div>
+    <p class="small" style="margin-top:12px">${esc(t("Voting and shutting down sign with your node's wallet, so they work for nodes set up with GNOT on this computer."))}</p>`;
 }
 
 /* ---- adding a node ----------------------------------------------------- */
@@ -371,7 +415,7 @@ function monAddHtml() {
         <input type="text" id="mon-name" maxlength="40" placeholder="${esc(t("My first node"))}"></label>
       <div class="btn-row"><button class="primary" id="mon-watch">${esc(t("Add"))}</button></div>
       <p class="small" id="mon-add-err" style="color:var(--red)"></p>
-      <p class="small">${esc(t("The address starts with gonka1. Any node works, however it was set up."))} <a href="#" data-go="hosts">${esc(t("Or pick one from every host on the network."))}</a></p>
+      <p class="small">${esc(t("The address starts with gonka1. Any node works, however it was set up."))} <a href="#" data-go-hosts="1">${esc(t("Or pick one from every host on the network."))}</a></p>
     </div>`;
 }
 function monWireAdd() {
@@ -656,56 +700,166 @@ function monDoes(p) {
   return p.does.map((k) => words[k] || k).join(" · ");
 }
 
-function monProposalsHtml() {
+/* ---- votes and the shared money -------------------------------------------- */
+
+/** USDT in its smallest unit, as "1.3M USDT" (short) or "1,295,000 USDT". */
+function monUsdt(units, short = true) {
+  const dec = (MON.gov && MON.gov.money && MON.gov.money.usdt && MON.gov.money.usdt.decimals) || 6;
+  const v = Number(units) / 10 ** dec;
+  return (short ? monShortNum(v) : monNum(v, v < 100 ? 2 : 0)) + " USDT";
+}
+
+/** What a proposal pays and from where, in plain lines; "would pay" until it has passed. */
+function monPays(p) {
+  const x = p.pays || {};
+  const did = p.status === "PASSED";
+  const lines = [];
+  if (x.toSale) lines.push(t(did ? "Moves {amount} from the community pool into the community sale" : "Would move {amount} from the community pool into the community sale", { amount: monGnk(x.toSale) }));
+  if (x.pool) lines.push(t(did ? "Pays {amount} from the community pool" : "Would pay {amount} from the community pool", { amount: monGnk(x.pool) }));
+  if (x.gov) lines.push(t(did ? "Pays {amount} from the governance account, unlocking over time" : "Would pay {amount} from the governance account, unlocking over time", { amount: monGnk(x.gov) }));
+  if (x.usdt) lines.push(t(did ? "Pays {amount} from the community sale" : "Would pay {amount} from the community sale", { amount: monUsdt(x.usdt, false) }));
+  return lines;
+}
+
+/** The money a proposal moves, as one short figure for its folded line ("asked" until it has passed). */
+function monPaysShort(p) {
+  const x = p.pays || {};
+  const parts = [];
+  if (x.usdt) parts.push(monUsdt(x.usdt));
+  if (x.pool || x.gov) parts.push(monGnkShort((x.pool || 0) + (x.gov || 0)));
+  if (x.toSale) parts.push(monGnkShort(x.toSale));
+  if (!parts.length) return "";
+  return p.status === "PASSED" ? parts.join(" + ") : t("asked {amount}", { amount: parts.join(" + ") });
+}
+
+/** Where the network's shared money is, and where the proposals sent it. */
+function monMoneyHtml() {
+  const m = MON.gov && MON.gov.money;
+  if (!m) return "";
+  const sale = (m.sale || [])[0] || null;
+  const paidGnk = (m.paid.fromPool || 0) + (m.paid.fromGov || 0);
+  const tiles = `
+    <div class="mon-tiles">
+      ${monTile(t("Community pool"), monGnkShort(m.pool.ngonka), monUsd(m.pool.ngonka))}
+      ${sale ? monTile(t("Community sale"), monGnkShort(sale.ngonka), t("left to sell · {usdt} in hand", { usdt: monUsdt(sale.usdt) })) : ""}
+      ${monTile(t("Governance account"), monGnkShort(m.govAccount.ngonka), monUsd(m.govAccount.ngonka))}
+      ${monTile(t("Paid out by proposals"), monUsdt(m.paid.usdt), t("and {gnk}", { gnk: monGnkShort(paidGnk) }))}
+    </div>`;
+  const all = m.payouts || [];
+  const shown = MON.allPayouts ? all : all.slice(0, 8);
+  const into = all.find((r) => r.toSale);
+  const row = (r) => {
+    const parts = [];
+    if (r.usdt) parts.push(`<b>${esc(monUsdt(r.usdt, false))}</b> <span>${esc(t("from the community sale"))}</span>`);
+    if (r.fromPool) parts.push(`<b>${esc(monGnk(r.fromPool))}</b> <span>${esc(t("from the community pool"))}</span>`);
+    if (r.fromGov) parts.push(`<b>${esc(monGnk(r.fromGov))}</b> <span>${esc(t("from the governance account"))}</span>`);
+    if (r.toSale) parts.push(`<b>${esc(monGnk(r.toSale))}</b> <span>${esc(t("into the community sale"))}</span>`);
+    return `
+      <div class="mon-pay">
+        <div class="mon-pay-what"><span class="mon-prop-id">#${r.id}</span> ${esc(r.title)}<span class="small"> · ${esc(monDate(r.ended))}</span></div>
+        <div class="mon-pay-how">${parts.join("<br>")}${r.recipients ? `<span class="small"> · ${esc(t("recipients: {n}", { n: r.recipients }))}</span>` : ""}</div>
+      </div>`;
+  };
+  return `
+    <h2 class="mon-h2">${esc(t("The network's shared money"))}</h2>
+    ${tiles}
+    <div class="card" style="margin-top:12px">
+      <h3>${esc(t("Where it went"))}</h3>
+      ${shown.map(row).join("")}
+      ${all.length > 8 ? `<button class="mon-quiet" id="mon-all-pay" style="margin-top:10px">${esc(MON.allPayouts ? t("Show fewer") : t("Show all {n}", { n: all.length }))}</button>` : ""}
+      ${more("How does this money work?", `
+        <p>${esc(t("Only a passed proposal can spend from the community pool, the governance account or the community sale."))}</p>
+        ${into ? `<p>${esc(t("Proposal #{id} ({date}) moved {amount} from the community pool into the community sale, a contract that sells it for USDT. Grants and bounties are paid in that USDT.", { id: into.id, date: monDate(into.ended), amount: monGnk(into.toSale) }))}</p>` : ""}
+        <p>${esc(t("The governance account pays compensation and restitution, in coins that unlock over time."))}</p>`)}
+    </div>`;
+}
+
+function monVotesHtml() {
   const g = MON.gov;
-  if (!g) return `<div class="info-banner">${esc(t("Reading the proposals…"))}</div>`;
-  if (g.error) return `<div class="warn-banner">${esc(t("Couldn't read the proposals: {why}", { why: g.error }))}</div>`;
+  const head = `<div class="mon-title-row"><h1>${esc(t("Votes"))}</h1>
+    <span class="mon-title-sub">${esc(t("What the network is deciding, and where its shared money went."))}</span>
+    <button id="mon-refresh" class="mon-quiet">${esc(t("Refresh"))}</button></div>`;
+  if (!g) return head + `<div class="info-banner">${esc(t("Reading the proposals…"))}</div>`;
+  if (g.error) return head + `<div class="warn-banner">${esc(t("Couldn't read the proposals: {why}", { why: g.error }))}</div>`;
   const live = g.proposals.filter((p) => p.status === "VOTING_PERIOD");
   const past = g.proposals.filter((p) => p.status !== "VOTING_PERIOD");
   const voteWord = { YES: t("Yes"), NO: t("No"), ABSTAIN: t("Abstain"), NO_WITH_VETO: t("No, with veto") };
   const outcome = { PASSED: t("Passed"), REJECTED: t("Rejected"), FAILED: t("Failed"), DEPOSIT_PERIOD: t("Waiting for its deposit") };
   const links = (text) => { const m = String(text).match(/https?:\/\/[^\s)]+/g) || []; return [...new Set(m)].slice(0, 3); };
 
+  // A proposal folds to one line of what it is and how the vote went; click
+  // anywhere on it to see the votes by weight, what it pays, and its text.
   const card = (p, isLive) => {
     const cast = p.tally.voted;
-    const seg = (n) => (cast > 0 ? (n / cast * 100).toFixed(2) : 0);
+    const pc = (n) => (cast > 0 ? n / cast : 0);
+    const seg = (n) => (pc(n) * 100).toFixed(2);
     const turnout = p.turnout === null ? null : Math.min(1, p.turnout);
-    const needs = p.quorum;
     const mine = MON.votes[p.id] || [];
-    const why = !isLive && p.status === "REJECTED" && p.yesShare > p.threshold && turnout !== null && turnout < needs
+    const open = isLive || MON.open.has(p.id);
+    const why = !isLive && p.status === "REJECTED" && p.yesShare > p.threshold && turnout !== null && turnout < p.quorum
       ? t("Most votes were yes, but too few voted for it to count.") : "";
+    const pays = monPays(p);
+    const weightRow = (cls, label, n) => `
+      <div class="mon-w-row"><span><i class="${cls}"></i>${esc(label)}</span><b>${esc(monNum(n))}</b><span>${esc(cast > 0 ? monPct(pc(n)) : "—")}</span></div>`;
     return `
-      <div class="card mon-prop">
+      <div class="card mon-prop${open ? " open" : ""}${isLive ? " live" : ""}" data-prop="${p.id}" ${isLive ? "" : `role="button" tabindex="0" aria-expanded="${open}"`}>
         <div class="mon-prop-top">
           <span class="mon-prop-id">#${p.id}</span>
           ${isLive ? `<span class="pill ok">${esc(t("VOTING NOW"))}</span>` : `<span class="pill ${p.status === "PASSED" ? "ok" : "err"}">${esc(outcome[p.status] || p.status)}</span>`}
           <span class="small">${isLive ? esc(t("ends {date}", { date: monDate(p.ends) })) : esc(monDate(p.ends))}</span>
+          ${monPaysShort(p) ? `<span class="mon-prop-money${p.status === "PASSED" ? "" : " asked"}">${esc(monPaysShort(p))}</span>` : ""}
+          ${isLive ? "" : `<span class="mon-prop-chev" aria-hidden="true">›</span>`}
         </div>
         <h3>${esc(p.title)}</h3>
-        <div class="mon-prop-does">${esc(monDoes(p))}${p.asked ? ` · ${esc(t("asks for {amount}", { amount: monGnk(p.asked) }))}` : ""}</div>
-        ${p.summary ? `<details class="mon-prop-text"><summary>${esc(t("What it says"))}</summary><p>${esc(p.summary)}</p>
-          ${links(p.summary).map((u) => `<a href="#" data-open="${esc(u)}">${esc(u.length > 70 ? u.slice(0, 70) + "…" : u)}</a>`).join("<br>")}</details>` : ""}
+        <div class="mon-prop-does">${esc(monDoes(p))}</div>
         ${cast > 0 ? `
-          <div class="mon-tally" title="${esc(t("Yes {y} · No {n} · Veto {v} · Abstain {a}", { y: monPct(p.tally.yes / cast), n: monPct(p.tally.no / cast), v: monPct(p.tally.veto / cast), a: monPct(p.tally.abstain / cast) }))}">
+          <div class="mon-tally" title="${esc(t("Yes {y} · No {n} · Veto {v} · Abstain {a}", { y: monPct(pc(p.tally.yes)), n: monPct(pc(p.tally.no)), v: monPct(pc(p.tally.veto)), a: monPct(pc(p.tally.abstain)) }))}">
             <i class="yes" style="width:${seg(p.tally.yes)}%"></i><i class="no" style="width:${seg(p.tally.no)}%"></i><i class="veto" style="width:${seg(p.tally.veto)}%"></i><i class="abs" style="width:${seg(p.tally.abstain)}%"></i>
-          </div>
-          <div class="mon-tally-key">
-            <span><i class="yes"></i>${esc(t("Yes"))} ${esc(monPct(p.tally.yes / cast))}</span>
-            <span><i class="no"></i>${esc(t("No"))} ${esc(monPct((p.tally.no + p.tally.veto) / cast))}</span>
-            <span><i class="abs"></i>${esc(t("Abstain"))} ${esc(monPct(p.tally.abstain / cast))}</span>
           </div>` : `<p class="small">${esc(t("Nobody has voted yet."))}</p>`}
-        ${isLive && turnout !== null ? `
-          <div class="mon-turnout"><div class="mon-turnout-bar"><i style="width:${(turnout * 100).toFixed(1)}%"></i><b style="left:${(needs * 100).toFixed(1)}%"></b></div>
-          <span class="small">${esc(t("{voted} of the network's weight has voted. It needs {needs} to count.", { voted: monPct(turnout, 0), needs: monPct(needs, 0) }))}</span></div>` : ""}
-        ${why ? `<p class="small">${esc(why)}</p>` : ""}
-        ${isLive && mine.length ? `<div class="mon-myvote">${mine.map((v) => `${esc(v.name)}: <b>${v.vote ? esc(voteWord[v.vote] || v.vote) : esc(t("has not voted"))}</b>`).join(" · ")}</div>` : ""}
+        <div class="mon-prop-more">
+          ${cast > 0 ? `
+            <div class="mon-w-table">
+              <div class="mon-w-row mon-w-head"><span>${esc(t("Vote"))}</span><b>${esc(t("Weight"))}</b><span>${esc(t("Share of the votes"))}</span></div>
+              ${weightRow("yes", t("Yes"), p.tally.yes)}
+              ${weightRow("no", t("No"), p.tally.no)}
+              ${weightRow("veto", t("No, with veto"), p.tally.veto)}
+              ${weightRow("abs", t("Abstain"), p.tally.abstain)}
+              <div class="mon-w-row mon-w-total"><span>${esc(t("Total"))}</span><b>${esc(monNum(cast))}</b><span></span></div>
+            </div>` : ""}
+          ${isLive && turnout !== null ? `
+            <div class="mon-turnout"><div class="mon-turnout-bar"><i style="width:${(turnout * 100).toFixed(1)}%"></i><b style="left:${(p.quorum * 100).toFixed(1)}%"></b></div>
+            <span class="small">${esc(t("{voted} of the network's weight has voted. It needs {needs} to count.", { voted: monPct(turnout, 0), needs: monPct(p.quorum, 0) }))}</span></div>` : ""}
+          ${why ? `<p class="small">${esc(why)}</p>` : ""}
+          ${pays.length ? `<div class="mon-prop-pays">${pays.map((l) => `<div>${esc(l)}</div>`).join("")}${p.pays.recipients ? `<div class="small">${esc(t("recipients: {n}", { n: p.pays.recipients }))}</div>` : ""}</div>` : ""}
+          ${p.upgradeTo && p.upgradeTo.height ? `<p class="small">${esc(t("At block {h}.", { h: monNum(p.upgradeTo.height) }))}</p>` : ""}
+          ${p.summary ? `<div class="mon-prop-text"><p>${esc(p.summary)}</p>
+            ${links(p.summary).map((u) => `<a href="#" data-open="${esc(u)}">${esc(u.length > 70 ? u.slice(0, 70) + "…" : u)}</a>`).join("<br>")}</div>` : ""}
+          ${isLive && mine.length ? `<div class="mon-myvote">${mine.map((v) => `${esc(v.name)}: <b>${v.vote ? esc(voteWord[v.vote] || v.vote) : esc(t("has not voted"))}</b>`).join(" · ")}</div>` : ""}
+        </div>
       </div>`;
   };
 
-  return `
-    <p class="lede">${esc(t("What the network is deciding."))}</p>
-    ${more("How does voting work?", `<p>${esc(t("A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>`)}
+  return head + `
     ${live.length ? live.map((p) => card(p, true)).join("") : `<div class="info-banner">${esc(t("Nothing is being voted on right now."))}</div>`}
+    ${more("How does voting work?", `<p>${esc(t("A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>`)}
+    ${monMoneyHtml()}
     <h2 class="mon-h2">${esc(t("Recent proposals"))}</h2>
+    <p class="small" style="margin:-4px 0 10px">${esc(t("Click a proposal to see the votes by weight, what it pays and what it says."))}</p>
     ${past.map((p) => card(p, false)).join("")}`;
+}
+
+/** A click anywhere on a past proposal folds it open or shut; links inside still work. */
+function monWireVotes(main) {
+  main.querySelectorAll(".mon-prop[data-prop]:not(.live)").forEach((el) => {
+    const toggle = () => {
+      const id = Number(el.dataset.prop);
+      if (MON.open.has(id)) MON.open.delete(id); else MON.open.add(id);
+      el.classList.toggle("open", MON.open.has(id));
+      el.setAttribute("aria-expanded", MON.open.has(id) ? "true" : "false");
+    };
+    el.onclick = (e) => { if (e.target.closest("a, button, input, select")) return; if (window.getSelection && String(window.getSelection()).length) return; toggle(); };
+    el.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === el) { e.preventDefault(); toggle(); } };
+  });
+  const all = $("#mon-all-pay");
+  if (all) all.onclick = () => { MON.allPayouts = !MON.allPayouts; monRenderMain(); };
 }
