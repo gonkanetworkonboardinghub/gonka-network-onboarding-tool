@@ -181,7 +181,7 @@ async function members(seeds) {
  * pace the node accepts, so the app does not have to ask thirty questions to
  * draw one chart. Kept in memory for ten minutes. null when it cannot be had.
  */
-let archive = { at: 0, byEpoch: null };
+let archive = { at: 0, byEpoch: null, began: {} };
 async function epochArchive() {
   const url = K.get().epochsUrl;
   if (!url) return null;
@@ -189,9 +189,28 @@ async function epochArchive() {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return archive.byEpoch;
-    archive = { at: Date.now(), byEpoch: unpackEpochs(await res.json()) };
+    const file = await res.json();
+    archive = { at: Date.now(), byEpoch: unpackEpochs(file), began: epochStarts(file) };
   } catch (_) { /* keep whatever was read before */ }
   return archive.byEpoch;
+}
+/** epoch -> when it began (Unix seconds), for the epochs the file has dated. */
+function epochStarts(file) {
+  const out = {};
+  for (const e of (file && file.epochs) || []) if (e.t) out[e.e] = num(e.t);
+  return out;
+}
+/**
+ * When an epoch began, as an ISO time, and whether that is the chain's own
+ * record (`est: false`) or worked out from the current epoch and the pace of
+ * blocks, for an epoch the file has not dated yet.
+ */
+function epochWhen(e, now) {
+  const t = archive.began[e];
+  if (t) return { at: new Date(t * 1000).toISOString(), est: false };
+  if (!now || !now.secPerBlock || !now.epochBlocks) return { at: null, est: true };
+  const startNow = Date.now() - Math.max(0, now.height - now.pocStart) * now.secPerBlock * 1000;
+  return { at: new Date(startNow - (now.index - e) * now.epochBlocks * now.secPerBlock * 1000).toISOString(), est: true };
 }
 /** The file's compact rows back into the rows the screen works from. */
 function unpackEpochs(file) {
@@ -299,7 +318,7 @@ function summarise({ address, now, mem, hist, raw }) {
   const stats = (rec && rec.current_epoch_stats) || {};
   const dec = (d) => (d && d.value !== undefined ? num(d.value) * Math.pow(10, num(d.exponent)) : null);
 
-  const lines = hist.map((h) => epochLine(h.epoch, h.rows, address));
+  const lines = hist.map((h) => ({ ...epochLine(h.epoch, h.rows, address), ...epochWhen(h.epoch, now) }));
   const took = lines.filter((l) => l.took);
   const last = took.length ? took[took.length - 1] : null;
 
@@ -460,7 +479,7 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
   const sum = (a) => a.reduce((x, y) => x + y, 0);
 
   // The past, one entry an epoch: how many hosts took part and what was paid.
-  const past = finished.slice(-epochs).map((e) => ({ epoch: e, hosts: byEpoch[e].length, rewards: sum(byEpoch[e].map((r) => r.rewarded)) }));
+  const past = finished.slice(-epochs).map((e) => ({ epoch: e, ...epochWhen(e, now), hosts: byEpoch[e].length, rewards: sum(byEpoch[e].map((r) => r.rewarded)) }));
 
   // Everyone in the current epoch, with what they run and how they did last epoch.
   const files = (file && file.hosts) || {};
@@ -620,9 +639,37 @@ function tidyProposal(p, { totalWeight, quorum, threshold, liveTally, ctx }) {
 }
 
 /** The newest proposals, live ones first, with how the vote stands. */
-async function proposals(seeds, { limit = 25 } = {}) {
+/**
+ * Every proposal there has ever been, newest first. All of them (about 800 KB
+ * for the first 115) are read at most every half hour; in between only the
+ * newest few are read again, which is where votes and outcomes still change.
+ */
+let propCache = { at: 0, list: null };
+async function everyProposal(seeds) {
+  const page = (key, limit) => ask(seeds, `/chain-api/cosmos/gov/v1/proposals?pagination.reverse=true&pagination.limit=${limit}` +
+    (key ? "&pagination.key=" + encodeURIComponent(key) : ""), 60000);
+  if (!propCache.list || Date.now() - propCache.at > 30 * 60 * 1000) {
+    const all = [];
+    let key = null;
+    for (let i = 0; i < 20; i++) {
+      const r = await page(key, 200);
+      all.push(...((r && r.proposals) || []));
+      key = r && r.pagination && r.pagination.next_key;
+      if (!key) break;
+    }
+    propCache = { at: Date.now(), list: all };
+    return all;
+  }
+  const fresh = ((await page(null, 12)) || {}).proposals || [];
+  const byId = new Map(propCache.list.map((p) => [String(p.id), p]));
+  for (const p of fresh) byId.set(String(p.id), p);
+  propCache.list = [...byId.values()].sort((a, b) => num(b.id) - num(a.id));
+  return propCache.list;
+}
+
+async function proposals(seeds) {
   const [list, params, mem, money] = await Promise.all([
-    ask(seeds, `/chain-api/cosmos/gov/v1/proposals?pagination.reverse=true&pagination.limit=${limit}`, 40000),
+    everyProposal(seeds),
     soft(ask(seeds, "/chain-api/cosmos/gov/v1/params/tallying")),
     soft(members(seeds)),
     governanceFile()
@@ -631,7 +678,7 @@ async function proposals(seeds, { limit = 25 } = {}) {
   const totalWeight = mem ? mem.hosts.reduce((a, h) => a + h.weight, 0) : 0;
   const tp = (params && params.params) || {};
   const rules = { quorum: num(tp.quorum), threshold: num(tp.threshold), veto: num(tp.veto_threshold) };
-  const raw = (list && list.proposals) || [];
+  const raw = list || [];
   const out = [];
   for (const p of raw) {
     const live = /VOTING_PERIOD/.test(String(p.status));

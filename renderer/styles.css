@@ -737,13 +737,31 @@ button.mon-tile-link:hover { border-color: var(--line-strong); background: var(-
 @media (max-width: 1100px) { .mon-two { grid-template-columns: 1fr; } }
 .mon-sep { height: 1px; background: var(--line); margin: 12px 0; }
 
-/* charts: plain bars, drawn in the page */
-.mon-chart { display: block; width: 100%; height: 150px; margin: 6px 0 4px; }
-.mon-chart.small-chart { height: 46px; margin-top: 10px; }
-.mon-bar { fill: var(--accent); opacity: 0.85; }
-.mon-bar:hover { opacity: 1; }
-.mon-bar-none { fill: var(--line-strong); }
-.mon-chart-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+/* charts (monPlot / monDrawPlots): a scale at the left, dates underneath,
+   the exact figure wherever the pointer is */
+.mon-plot { position: relative; width: 100%; margin: 8px 0 6px; cursor: crosshair; border-radius: 6px; }
+.mon-plot:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.mon-plot svg { display: block; overflow: visible; }
+.mon-plot-grid { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.mon-plot-grid.base { stroke: var(--line-strong); }
+.mon-plot-tick { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.mon-plot-unit { font-size: 11px; letter-spacing: 0.04em; }
+.mon-plot-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.mon-plot-area { fill: var(--accent); opacity: 0.1; }
+.mon-plot-bar { fill: var(--accent); opacity: 0.8; }
+.mon-plot-bar.on { opacity: 1; }
+.mon-plot-none { fill: var(--line-strong); }
+.mon-plot-unknown { fill: var(--line-strong); opacity: 0.6; }
+.mon-plot-none.on, .mon-plot-unknown.on { fill: var(--muted); opacity: 1; }
+.mon-plot-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
+.mon-plot-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; pointer-events: none; }
+.mon-tip {
+  position: fixed; z-index: 50; display: none; pointer-events: none; max-width: 320px;
+  padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line-strong);
+  background: var(--panel-2); color: var(--text); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.mon-tip b { display: block; font-size: 14px; font-weight: 700; }
+.mon-tip span { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
 
 /* this node beside a typical host */
 .mon-compare { margin: 14px 0 4px; }
@@ -891,7 +909,6 @@ button.mon-tile-link:hover { border-color: var(--line-strong); background: var(-
 .mon-kv b { margin-left: auto; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .mon-kv .small { flex: none; }
 .mon-kv b.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
-.mon-bar-unknown { fill: var(--line-strong); opacity: 0.6; }
 
 /* GNOT's name, with the full name under it in small letters */
 .gnot-mark { margin: 14px 0 4px; display: flex; flex-direction: column; gap: 2px; }

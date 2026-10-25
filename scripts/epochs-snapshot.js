@@ -26,7 +26,10 @@
  *
  * Compact on purpose: addresses are listed once, and each row is
  *   [host, rewarded, earned, requests, missed, validated, invalidated, claimed]
- * with amounts in ngonka.
+ * with amounts in ngonka. Each epoch also carries `t`, when it began: the
+ * time of its Proof of Compute's first block, in Unix seconds, so the charts
+ * can say when an epoch was. Epochs read before `t` existed get it filled in
+ * with whatever questions a run has left over.
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
@@ -82,11 +85,24 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
   if (!seed) throw new Error("no Gonka node gave past results");
 
   // What the previous file already holds, back in plain form.
-  const have = {};
+  const have = {}, began = {};
   try {
     const prev = JSON.parse(fs.readFileSync(prevPath, "utf8"));
-    for (const e of prev.epochs || []) have[e.e] = e.r.map((r) => [prev.hosts[r[0]], ...r.slice(1)]);
+    for (const e of prev.epochs || []) {
+      have[e.e] = e.r.map((r) => [prev.hosts[r[0]], ...r.slice(1)]);
+      if (e.t) began[e.e] = e.t;
+    }
   } catch (_) { /* first run */ }
+
+  /** When an epoch began: the time of the block its Proof of Compute started at. */
+  async function startOf(group) {
+    const height = Number(((group || {}).epoch_group_data || {}).poc_start_block_height);
+    if (!height || budgetLeft() < 1) return null;
+    const b = await getJson(`${seed}/chain-rpc/block?height=${height}`);
+    const header = b && b.result && b.result.block && b.result.block.header;
+    const t = header ? Date.parse(header.time) : NaN;
+    return isFinite(t) ? Math.round(t / 1000) : null;
+  }
 
   const last = current - 1;                              // the newest finished epoch
   const first = Math.max(1, last - KEEP + 1);
@@ -97,12 +113,13 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
   async function readEpoch(e) {
     const group = await getJson(`${seed}${INF}/epoch_group_data/${e}`);
     const members = ((group && group.epoch_group_data && group.epoch_group_data.validation_weights) || []).map((m) => m.member_address);
-    if (!members.length || members.length + 1 > budgetLeft()) return null;
+    if (!members.length || members.length + 2 > budgetLeft()) return null;
     const rows = [];
     for (const a of members) {
       const j = await getJson(`${seed}${INF}/epoch_performance_summary/${e}/${a}`);
       if (j && j.epochPerformanceSummary) rows.push(toRow(j.epochPerformanceSummary));
     }
+    if (rows.length && !began[e]) { try { const t = await startOf(group); if (t) began[e] = t; } catch (_) { /* filled in later */ } }
     return rows.length ? rows : null;
   }
 
@@ -129,16 +146,28 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
     }
   }
 
+  // 3. When each held epoch began, for those read before that was kept: two
+  //    questions each (its group record, then that block), newest first.
+  let dated = 0;
+  for (let e = last; e >= first; e--) {
+    if (!have[e] || began[e]) continue;
+    if (budgetLeft() < 2) break;
+    try {
+      const t = await startOf(await getJson(`${seed}${INF}/epoch_group_data/${e}`));
+      if (t) { began[e] = t; dated++; }
+    } catch (err) { console.error(`epoch ${e} start: ${err.message}`); }
+  }
+
   // Back to the compact form: each address once.
   const hosts = [], at = new Map();
   const id = (address) => { if (!at.has(address)) { at.set(address, hosts.length); hosts.push(address); } return at.get(address); };
   const epochs = [];
-  for (let e = first; e <= last; e++) if (have[e]) epochs.push({ e, r: have[e].map((r) => [id(r[0]), ...r.slice(1)]) });
+  for (let e = first; e <= last; e++) if (have[e]) epochs.push({ e, ...(began[e] ? { t: began[e] } : {}), r: have[e].map((r) => [id(r[0]), ...r.slice(1)]) });
   if (!epochs.length) throw new Error("nothing could be read");
 
   const out = { asOf: new Date().toISOString(), from: epochs[0].e, to: epochs[epochs.length - 1].e, hosts, epochs };
   fs.writeFileSync(outPath, JSON.stringify(out) + "\n");
   const missing = last - first + 1 - epochs.length;
-  console.log(`epochs ${out.from}-${out.to}: ${epochs.length} held, ${filled} filled in and ${rechecked} claims re-checked this run ` +
+  console.log(`epochs ${out.from}-${out.to}: ${epochs.length} held (${epochs.filter((x) => x.t).length} dated, ${dated} this run), ${filled} filled in and ${rechecked} claims re-checked this run ` +
     `(${asked} questions), ${missing} still missing${stopped ? " — out of questions for this run, the next run goes on" : ""}; ${hosts.length} hosts, ${fs.statSync(outPath).size} bytes`);
 })().catch((e) => { console.error("epochs-snapshot failed: " + e.message); process.exit(1); });

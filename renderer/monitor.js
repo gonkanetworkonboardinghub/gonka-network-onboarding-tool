@@ -31,6 +31,8 @@ const MON = {
   down: null,         // { address, data, busy, error, confirm } — the way out, for the node on screen
   link: null,         // { address, open, busy, error } — linking a node to its wallet here
   ballot: null,       // { id, address, option, stage, pass, fee, error, txhash } — a vote being cast
+  plots: {},          // the charts on the page now, by id (monPlot)
+  propFilter: "",     // the words looked for among the proposals
   address: null,      // the node on screen
   data: null,         // what the network says about it
   at: 0,              // when `data` was read
@@ -87,7 +89,7 @@ const monKept = (address) => MON.nodes.some((n) => n.address === address);
 /** Yours: its wallet is in this computer's keyring, so it can sign for the node. */
 const monOwn = (n) => !!(n && n.wallet && MON.keyNames.includes(n.wallet));
 /** A clock time some seconds from now, with the time zone named. */
-const monAt = (seconds) => new Date(Date.now() + seconds * 1000).toLocaleString(monLang(), { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+const monAt = (seconds) => new Date(Date.now() + seconds * 1000).toLocaleString(monLang(), { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 const monTile = (label, num, sub) => `
   <div class="mon-tile"><div class="mon-tile-label">${esc(label)}</div>
     <div class="mon-tile-num">${esc(num)}</div>
@@ -270,6 +272,9 @@ async function monLoadProposals() {
 function monRenderMain() {
   const main = $("#mon-main");
   if (!main || !document.body.classList.contains("on-monitor")) return;
+  MON.plots = {};
+  const tip = document.getElementById("mon-tip");
+  if (tip) tip.style.display = "none";
   let html;
   if (MON.view === "network") html = monNetworkHtml();
   else if (MON.view === "votes") html = monVotesHtml();
@@ -287,6 +292,7 @@ function monRenderMain() {
   MON.rendered = page;
   for (const [id, v] of Object.entries(typed)) { const el = document.getElementById(id); if (el) el.value = v; }
   if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
+  monDrawPlots(main);
   main.scrollTop = keep;
   monWire(main);
 }
@@ -313,14 +319,172 @@ function monWire(main) {
 
 /* ---- the network ------------------------------------------------------- */
 
-function monMiniBars(values, { height = 70, cls = "mon-bar", title }) {
-  if (!values.length) return "";
-  const max = Math.max(1, ...values.map((v) => v.value));
-  const W = 600, gap = values.length > 90 ? 0.6 : 1.5, bw = (W - gap * (values.length - 1)) / values.length;
-  return `<svg class="mon-chart" style="height:${height}px" viewBox="0 0 ${W} ${height}" preserveAspectRatio="none" role="img">${values.map((v, i) => {
-    const h = Math.max(1, v.value / max * (height - 4));
-    return `<rect x="${(i * (bw + gap)).toFixed(2)}" y="${(height - h).toFixed(1)}" width="${bw.toFixed(2)}" height="${h.toFixed(1)}" class="${cls}"><title>${esc(title(v))}</title></rect>`;
-  }).join("")}</svg>`;
+/* ---- charts ----------------------------------------------------------------
+   A page only leaves a placeholder (monPlot); monDrawPlots draws it once the
+   page is in place, at the size it really has, so the scale on the left and
+   the dates underneath stay sharp at any width. Long histories are a line,
+   short ones columns. Wherever the pointer is, or with the arrow keys once
+   the chart has focus, it tells the exact figure and when. */
+
+/** A chart's place on the page. spec: { label, kind: "line" | "bars", unit, fmt(v), points: [{ y, gap, x, tip: [value, when] }] } */
+function monPlot(id, spec) {
+  MON.plots[id] = spec;
+  return `<div class="mon-plot" data-plot="${id}" tabindex="0" role="img" aria-label="${esc(spec.label)}" style="height:${spec.height || 190}px"></div>`;
+}
+/** Round steps for the scale: 0, 50, 100, 150… with the top at or above the largest value. */
+function monTicks(max) {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / 4, pow = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / pow;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pow;
+  const out = [];
+  for (let v = 0; v <= Math.ceil(max / step) * step + step / 2; v += step) out.push(v);
+  return out;
+}
+/** "Oct 3" under the chart; the full date and time, with its zone, in the readout. */
+const monDay = (iso) => (iso ? new Date(iso).toLocaleDateString(monLang(), { month: "short", day: "numeric" }) : "");
+const monWhenFull = (iso) => (iso ? new Date(iso).toLocaleString(monLang(), { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "");
+/** "Epoch 435 · began Oct 23, 2026, 3:12 PM EDT"; "about" when it is worked out rather than recorded. */
+const monEpochWhen = (p) => (p.at
+  ? t(p.est ? "Epoch {n} · began about {when}" : "Epoch {n} · began {when}", { n: p.epoch, when: monWhenFull(p.at) })
+  : t("Epoch {n}", { n: p.epoch }));
+
+function monDrawPlots(root) {
+  if (!root) return;
+  const NS = "http://www.w3.org/2000/svg";
+  root.querySelectorAll("[data-plot]").forEach((el) => {
+    const spec = MON.plots[el.dataset.plot];
+    const W = el.clientWidth, H = el.clientHeight;
+    if (!spec || !spec.points.length || !W || !H) return;
+    const pts = spec.points, n = pts.length;
+    const ticks = monTicks(Math.max(0, ...pts.map((p) => p.y || 0)));
+    const top = ticks[ticks.length - 1] || 1;
+    const labels = ticks.map(spec.fmt);
+    const pad = { l: Math.ceil(Math.max(...labels.map((s) => s.length), (spec.unit || "").length) * 7.2) + 14, r: 12, t: spec.unit ? 24 : 10, b: 26 };
+    const pw = Math.max(10, W - pad.l - pad.r), ph = Math.max(10, H - pad.t - pad.b);
+    const bars = spec.kind === "bars";
+    const slot = bars ? pw / n : (n > 1 ? pw / (n - 1) : pw);
+    const xOf = (i) => pad.l + (bars ? slot * (i + 0.5) : (n > 1 ? i * slot : pw / 2));
+    const yOf = (v) => pad.t + ph - (v / top) * ph;
+    const base = pad.t + ph;
+    let s = "";
+    // The scale: hairlines with round figures at the left.
+    ticks.forEach((v, i) => {
+      const y = yOf(v).toFixed(1);
+      s += `<line class="mon-plot-grid${i === 0 ? " base" : ""}" x1="${pad.l}" x2="${W - pad.r}" y1="${y}" y2="${y}"/>`;
+      s += `<text class="mon-plot-tick" x="${pad.l - 8}" y="${(+y + 4).toFixed(1)}" text-anchor="end">${esc(labels[i])}</text>`;
+    });
+    if (spec.unit) s += `<text class="mon-plot-tick mon-plot-unit" x="${pad.l - 8}" y="12" text-anchor="end">${esc(spec.unit)}</text>`;
+    // Dates underneath: the first, the last and a few between, never crowded.
+    const count = Math.max(2, Math.min(n, Math.floor(pw / 96)));
+    const marks = [...new Set(Array.from({ length: count }, (_, k) => Math.round(k * (n - 1) / Math.max(1, count - 1))))];
+    marks.forEach((i, k) => {
+      const anchor = bars ? "middle" : k === 0 ? "start" : k === marks.length - 1 ? "end" : "middle";
+      s += `<text class="mon-plot-tick" x="${xOf(i).toFixed(1)}" y="${H - 6}" text-anchor="${anchor}">${esc(pts[i].x || "")}</text>`;
+    });
+    // The data.
+    if (bars) {
+      const bw = Math.max(1, Math.min(24, slot - 2));
+      pts.forEach((p, i) => {
+        const x = xOf(i) - bw / 2;
+        if (p.gap === "unknown") s += `<rect class="mon-plot-unknown" data-i="${i}" x="${x.toFixed(1)}" y="${(base - 8).toFixed(1)}" width="${bw.toFixed(1)}" height="8"/>`;
+        else if (p.gap || !(p.y > 0)) s += `<rect class="mon-plot-none" data-i="${i}" x="${x.toFixed(1)}" y="${(base - 2).toFixed(1)}" width="${bw.toFixed(1)}" height="2"/>`;
+        else {
+          const y = yOf(p.y), r = Math.min(4, bw / 2, base - y);
+          s += `<path class="mon-plot-bar" data-i="${i}" d="M${x.toFixed(1)},${base}V${(y + r).toFixed(1)}Q${x.toFixed(1)},${y.toFixed(1)} ${(x + r).toFixed(1)},${y.toFixed(1)}H${(x + bw - r).toFixed(1)}Q${(x + bw).toFixed(1)},${y.toFixed(1)} ${(x + bw).toFixed(1)},${(y + r).toFixed(1)}V${base}Z"/>`;
+        }
+      });
+    } else {
+      // A gap in the record breaks the line rather than being drawn as zero.
+      let line = "", area = "", run = [];
+      const flush = () => {
+        if (!run.length) return;
+        line += run.map(([x, y], k) => `${k ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+        area += `M${run[0][0].toFixed(1)},${base}` + run.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join("") + `L${run[run.length - 1][0].toFixed(1)},${base}Z`;
+        run = [];
+      };
+      pts.forEach((p, i) => { if (p.gap || p.y == null) flush(); else run.push([xOf(i), yOf(p.y)]); });
+      flush();
+      s += `<path class="mon-plot-area" d="${area}"/><path class="mon-plot-line" d="${line}"/>`;
+    }
+    s += `<line class="mon-plot-cross" x1="0" x2="0" y1="${pad.t}" y2="${base}" visibility="hidden"/>`;
+    if (!bars) s += `<circle class="mon-plot-dot" r="4" cx="0" cy="0" visibility="hidden"/>`;
+    el.innerHTML = `<svg xmlns="${NS}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${s}</svg>`;
+    el._plot = { spec, pad, pw, slot, bars, n, xOf, yOf, i: null };
+    monWirePlot(el);
+  });
+}
+
+// Charts are drawn to the size they have, so a resized or zoomed window redraws them.
+let monResized = null;
+window.addEventListener("resize", () => {
+  clearTimeout(monResized);
+  monResized = setTimeout(() => { if (document.body.classList.contains("on-monitor")) monDrawPlots($("#mon-main")); }, 120);
+});
+
+/** The readout: one for the whole page, placed beside the pointer. */
+function monTip() {
+  let tip = document.getElementById("mon-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "mon-tip";
+    tip.className = "mon-tip";
+    tip.innerHTML = "<b></b><span></span>";
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+function monPlotShow(el, i, clientX, clientY) {
+  const P = el._plot;
+  if (!P) return;
+  i = Math.max(0, Math.min(P.n - 1, i));
+  P.i = i;
+  const p = P.spec.points[i];
+  const svg = el.querySelector("svg");
+  const x = P.xOf(i);
+  const cross = svg.querySelector(".mon-plot-cross");
+  cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
+  const dot = svg.querySelector(".mon-plot-dot");
+  if (dot) {
+    if (p.y != null && !p.gap) { dot.setAttribute("cx", x); dot.setAttribute("cy", P.yOf(p.y)); dot.setAttribute("visibility", "visible"); }
+    else dot.setAttribute("visibility", "hidden");
+  }
+  svg.querySelectorAll("[data-i]").forEach((b) => b.classList.toggle("on", Number(b.dataset.i) === i));
+  const tip = monTip();
+  tip.querySelector("b").textContent = p.tip[0];
+  tip.querySelector("span").textContent = p.tip[1] || "";
+  tip.style.display = "block";
+  const box = el.getBoundingClientRect();
+  const px = clientX != null ? clientX : box.left + x;
+  const py = clientY != null ? clientY : box.top + P.pad.t;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = px + 16;
+  if (left + w > window.innerWidth - 8) left = px - w - 16;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, py - h / 2)) + "px";
+}
+function monPlotHide(el) {
+  const tip = document.getElementById("mon-tip");
+  if (tip) tip.style.display = "none";
+  const svg = el.querySelector("svg");
+  if (!svg) return;
+  svg.querySelectorAll(".mon-plot-cross, .mon-plot-dot").forEach((m) => m.setAttribute("visibility", "hidden"));
+  svg.querySelectorAll("[data-i].on").forEach((b) => b.classList.remove("on"));
+}
+function monWirePlot(el) {
+  const at = (e) => {
+    const P = el._plot, x = e.clientX - el.getBoundingClientRect().left - P.pad.l;
+    return P.bars ? Math.floor(x / P.slot) : Math.round(x / P.slot);
+  };
+  el.onpointermove = (e) => monPlotShow(el, at(e), e.clientX, e.clientY);
+  el.onpointerleave = () => { if (document.activeElement !== el) monPlotHide(el); };
+  el.onfocus = () => monPlotShow(el, el._plot.i == null ? el._plot.n - 1 : el._plot.i);
+  el.onblur = () => monPlotHide(el);
+  el.onkeydown = (e) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1, Home: -1e9, End: 1e9 }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    monPlotShow(el, (el._plot.i == null ? el._plot.n - 1 : el._plot.i) + step);
+  };
 }
 
 function monNetworkHtml() {
@@ -351,12 +515,12 @@ function monNetworkHtml() {
   const charts = past.length ? `
     <div class="mon-two">
       <div class="card"><h3>${esc(t("Hosts, epoch by epoch"))}</h3>
-        ${monMiniBars(past.map((p) => ({ value: p.hosts, epoch: p.epoch })), { title: (v) => t("Epoch {n}: {hosts} hosts", { n: v.epoch, hosts: v.value }) })}
-        <div class="mon-chart-axis"><span>${esc(t("epoch {n}", { n: past[0].epoch }))}</span><span>${esc(t("epoch {n}", { n: past[past.length - 1].epoch }))}</span></div>
+        ${monPlot("hosts", { label: t("Hosts, epoch by epoch"), kind: "line", fmt: (v) => monNum(v),
+          points: past.map((p) => ({ y: p.hosts, x: monDay(p.at) || String(p.epoch), tip: [t("{n} hosts", { n: monNum(p.hosts) }), monEpochWhen(p)] })) })}
         <p class="small">${esc(t("{a} hosts then, {b} now.", { a: past[0].hosts, b: o.hosts.length }))}</p></div>
       <div class="card"><h3>${esc(t("Paid out, epoch by epoch"))}</h3>
-        ${monMiniBars(past.map((p) => ({ value: p.rewards, epoch: p.epoch })), { title: (v) => t("Epoch {n}: {amount}", { n: v.epoch, amount: monGnk(v.value) }) })}
-        <div class="mon-chart-axis"><span>${esc(t("epoch {n}", { n: past[0].epoch }))}</span><span>${esc(t("epoch {n}", { n: past[past.length - 1].epoch }))}</span></div>
+        ${monPlot("paid", { label: t("Paid out, epoch by epoch"), kind: "line", unit: "GNK", fmt: (v) => monShortNum(v),
+          points: past.map((p) => ({ y: p.rewards / MON_NGONKA, x: monDay(p.at) || String(p.epoch), tip: [[monGnk(p.rewards), monUsd(p.rewards)].filter(Boolean).join(" · "), monEpochWhen(p)] })) })}
         <p class="small">${esc(t("Shared among the hosts that took part."))}</p></div>
     </div>` : "";
   const bars = (rows) => {
@@ -904,24 +1068,22 @@ function monAttentionCard(d) {
 function monRewardsCard(d) {
   const lines = d.history;
   if (!lines.length) return "";
-  const max = Math.max(1, ...lines.map((l) => (l.took ? l.reward : 0)));
-  const W = 900, H = 150, gap = 3, bw = (W - gap * (lines.length - 1)) / lines.length;
-  const bars = lines.map((l, i) => {
-    const x = i * (bw + gap);
-    if (l.unknown) return `<rect x="${x.toFixed(1)}" y="${H - 10}" width="${bw.toFixed(1)}" height="10" class="mon-bar-unknown"><title>${esc(t("Epoch {n}: not collected yet", { n: l.epoch }))}</title></rect>`;
-    if (!l.took) return `<rect x="${x.toFixed(1)}" y="${H - 2}" width="${bw.toFixed(1)}" height="2" class="mon-bar-none"><title>${esc(t("Epoch {n}: did not take part", { n: l.epoch }))}</title></rect>`;
-    const h = Math.max(2, l.reward / max * (H - 6));
-    return `<rect x="${x.toFixed(1)}" y="${(H - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" class="mon-bar"><title>${esc(t("Epoch {n}: {amount}", { n: l.epoch, amount: monGnk(l.reward) }))}</title></rect>`;
-  }).join("");
+  const max = Math.max(0, ...lines.map((l) => (l.took ? l.reward : 0)));
   const tot = d.totals;
   if (tot.unknown === tot.of) {
     return `<div class="card"><h3>${esc(t("Rewards, epoch by epoch"))}</h3><p class="small">${esc(t("The record of past epochs could not be downloaded just now. Try Refresh in a moment."))}</p></div>`;
   }
+  const plot = monPlot("rewards", { label: t("Rewards, epoch by epoch"), kind: lines.length > 48 ? "line" : "bars", unit: "GNK", fmt: (v) => monShortNum(v),
+    points: lines.map((l) => ({
+      y: l.took ? l.reward / MON_NGONKA : null,
+      gap: l.unknown ? "unknown" : l.took ? null : "none",
+      x: monDay(l.at) || String(l.epoch),
+      tip: [l.unknown ? t("Not collected yet") : l.took ? [monGnk(l.reward), monUsd(l.reward)].filter(Boolean).join(" · ") : t("Did not take part"), monEpochWhen(l)]
+    })) });
   return `
     <div class="card">
       <h3>${esc(t("Rewards, epoch by epoch"))}</h3>
-      <svg class="mon-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t("Rewards, epoch by epoch"))}">${bars}</svg>
-      <div class="mon-chart-axis"><span>${esc(t("epoch {n}", { n: lines[0].epoch }))}</span><span>${esc(t("epoch {n}", { n: lines[lines.length - 1].epoch }))}</span></div>
+      ${plot}
       <p class="small">${esc(t("{total} over the {n} epochs it took part in, out of the last {of}. The tallest bar is {max}.", { total: monGnk(tot.reward), n: tot.epochs, of: tot.of, max: monGnk(max) }))} ${tot.unknown ? esc(tot.unknown === 1 ? t("The newest epoch is not collected yet; epochs are added a few times a day.") : t("{n} epochs are not collected yet; epochs are added a few times a day.", { n: tot.unknown })) : ""} ${MON.price ? esc(t("At today's price that is {usd}.", { usd: monUsd(tot.reward).replace("≈ ", "") })) : ""}</p>
     </div>`;
 }
@@ -961,11 +1123,11 @@ function monMoneyCard(d) {
   const stream = v.next;
   let chart = "";
   if (stream.length) {
-    const max = Math.max(1, ...stream), W = 420, H = 46, gap = 1, bw = (W - gap * (stream.length - 1)) / stream.length;
-    chart = `<svg class="mon-chart small-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${stream.map((a, i) => {
-      const h = Math.max(1, a / max * H);
-      return `<rect x="${(i * (bw + gap)).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" class="mon-bar"><title>${esc(t("In {n} epochs: {amount}", { n: i + 1, amount: monGnk(a) }))}</title></rect>`;
-    }).join("")}</svg>`;
+    // Slice n arrives about n-1 epochs after the next Proof of Compute.
+    const when = (i) => new Date(Date.now() + (d.epoch.secondsToNextPoc + i * d.epoch.hours * 3600) * 1000).toISOString();
+    chart = monPlot("vesting", { label: t("Still to arrive"), kind: stream.length > 48 ? "line" : "bars", unit: "GNK", height: 150, fmt: (x) => monShortNum(x),
+      points: stream.map((a, i) => ({ y: a / MON_NGONKA, x: monDay(when(i)),
+        tip: [monGnk(a), t(i === 0 ? "In 1 epoch, about {when}" : "In {n} epochs, about {when}", { n: i + 1, when: monWhenFull(when(i)) })] })) });
   }
   return `
     <div class="card">
@@ -1195,9 +1357,18 @@ function monVotesHtml() {
     ${howToVote}
     ${more("How does voting work?", `<p>${esc(t("A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>`)}
     ${monMoneyHtml()}
-    <h2 class="mon-h2">${esc(t("Recent proposals"))}</h2>
+    <h2 class="mon-h2">${esc(t("Every proposal ({n})", { n: monNum(g.proposals.length) }))}</h2>
     <p class="small" style="margin:-4px 0 10px">${esc(t("Click a proposal to see the votes by weight, what it pays and what it says."))}</p>
-    ${past.map((p) => card(p, false)).join("")}`;
+    <input type="text" id="mon-prop-filter" class="mon-search" placeholder="${esc(t("Find a proposal by its number or words in it"))}" value="${esc(MON.propFilter)}" spellcheck="false">
+    ${(() => {
+      // "#12" or "12" finds proposal 12; anything else, the words in its title and text.
+      const raw = MON.propFilter.trim().toLowerCase();
+      const q = raw.replace(/^#/, "");
+      const byWords = (list) => list.filter((p) => `${p.title} ${p.summary || ""}`.toLowerCase().includes(q));
+      const byId = /^#?\d+$/.test(raw) ? past.filter((p) => String(p.id) === q) : [];
+      const shown = !q ? past : byId.length || raw.startsWith("#") ? byId : byWords(past);
+      return shown.length ? shown.map((p) => card(p, false)).join("") : `<p class="small">${esc(t("No proposal matches."))}</p>`;
+    })()}`;
 }
 
 /* Voting with your own node: choose, unlock the wallet, let the network check
@@ -1294,4 +1465,6 @@ function monWireVotes(main) {
   });
   const all = $("#mon-all-pay");
   if (all) all.onclick = () => { MON.allPayouts = !MON.allPayouts; monRenderMain(); };
+  const f = $("#mon-prop-filter");
+  if (f) f.oninput = () => { MON.propFilter = f.value; const pos = f.selectionStart; monRenderMain(); const g = $("#mon-prop-filter"); if (g) { g.focus(); g.setSelectionRange(pos, pos); } };
 }
