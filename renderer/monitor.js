@@ -111,11 +111,13 @@ async function showMonitor(address) {
   $("#monitor").innerHTML = `
     <div class="mon-shell">
       <header class="mon-top" id="mon-top"></header>
+      <div class="mon-epoch" id="mon-epoch" hidden></div>
       <main class="mon-main" id="mon-main"></main>
     </div>`;
   try { MON.nodes = await api("monitorNodes"); } catch (_) { MON.nodes = []; }
   try { MON.keyNames = await api("keyNames"); } catch (_) { MON.keyNames = []; }
   api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; monRenderMain(); }).catch(() => {});
+  monRenderEpoch();
   if (address) monGo("node", address, "mine");
   else monGo("hub");
   if (!MON.timer) MON.timer = setInterval(monRefresh, MON_REFRESH_MS);
@@ -183,6 +185,44 @@ function monRenderTop() {
   $("#mon-back").onclick = () => (back.go ? monGo(back.go) : leaveMonitor());
   top.querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => monGo(b.dataset.tab); });
   $("#mon-refresh").onclick = monRefreshNow;
+}
+
+/* ---- where the epoch is ------------------------------------------------ */
+
+/*
+ * The strip under the top bar, on every page: which epoch, what the network
+ * is doing, how far through the epoch it is, and the time to the next Proof
+ * of Compute, ticking each second. It reads the same clock as Host Setup's
+ * bar (pocState in app.js, re-read from the chain every two minutes), and
+ * app.js calls this each second along with its own.
+ */
+function monRenderEpoch() {
+  const el = document.getElementById("mon-epoch");
+  if (!el || typeof pocState === "undefined" || !pocState) return;
+  if (!el.firstChild) {
+    el.innerHTML = `
+      <span class="mon-ep-n" id="mon-ep-n"></span>
+      <span class="mon-ep-phase" id="mon-ep-phase"></span>
+      <span class="mon-ep-track" aria-hidden="true"><i id="mon-ep-fill"></i></span>
+      <span class="mon-ep-pct" id="mon-ep-pct"></span>
+      <span class="mon-ep-next" id="mon-ep-next"></span>`;
+    el.hidden = false;
+  }
+  const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
+  const totalMs = pocState.totalBlocks * pocState.secPerBlock * 1000;
+  const frac = totalMs > 0 ? Math.min(1, Math.max(0, 1 - remain / totalMs)) : 0;
+  const poc = /poc/i.test(pocState.phase || "");
+  const hh = Math.floor(remain / 3600000), mm = Math.floor((remain % 3600000) / 60000), ss = Math.floor((remain % 60000) / 1000);
+  const at = new Date(Date.now() + remain).toLocaleString(monLang(), { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  document.getElementById("mon-ep-n").textContent = pocState.epoch ? t("Epoch {n}", { n: pocState.epoch }) : "";
+  const phase = document.getElementById("mon-ep-phase");
+  phase.textContent = poc ? t("Proof of Compute now") : t("Serving inference");
+  phase.classList.toggle("poc", poc);
+  document.getElementById("mon-ep-fill").style.width = (frac * 100).toFixed(2) + "%";
+  document.getElementById("mon-ep-pct").textContent = (frac * 100).toLocaleString(monLang(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + "%";
+  document.getElementById("mon-ep-next").innerHTML = remain > 0
+    ? `${esc(t("Next Proof of Compute"))} <b>${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s</b> · ${esc(at)}`
+    : esc(t("Proof of Compute is starting"));
 }
 
 /* ---- the start page ----------------------------------------------------- */
@@ -556,7 +596,7 @@ function monWirePlot(el) {
 function monNetworkHtml() {
   const o = MON.overview;
   const head = `<div class="mon-title-row"><h1>${esc(t("The Gonka network"))}</h1>
-    ${o ? `<span class="mon-title-sub">${esc(t("Epoch {n} · next Proof of Compute in {when}", { n: o.epoch.index, when: monSpan(o.epoch.secondsToNextPoc) }))}</span>` : ""}</div>`;
+  </div>`;
   if (!o) return head + (MON.overviewError ? `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.overviewError }))}</div>` : `<div class="info-banner">${esc(t("Reading the network…"))}</div>`);
   const g = o.gpus, l = o.last;
   const tiles = `

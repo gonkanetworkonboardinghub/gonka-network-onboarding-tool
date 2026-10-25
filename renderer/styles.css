@@ -641,6 +641,26 @@ body.on-home #monitor { display: none; }
 .mon-tab2:hover { color: var(--text); }
 .mon-tab2.on { background: var(--accent); color: var(--on-accent); }
 .mon-top-refresh { margin-left: auto; }
+/* where the epoch is, under the top bar on every page */
+.mon-epoch {
+  flex: none; display: flex; align-items: center; gap: 14px; padding: 9px 28px;
+  border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; white-space: nowrap;
+}
+.mon-epoch[hidden] { display: none; }
+.mon-ep-n { font-weight: 700; }
+.mon-ep-phase {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line-strong); color: var(--muted); font-size: 12px; font-weight: 600;
+}
+.mon-ep-phase::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.mon-ep-phase.poc { border-color: var(--accent); color: var(--text); }
+.mon-ep-phase.poc::before { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.mon-ep-track { position: relative; flex: 1 1 auto; min-width: 80px; height: 8px; border-radius: 4px; background: var(--wash-strong); overflow: hidden; }
+.mon-ep-track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); transition: width 1s linear; }
+.mon-ep-pct { min-width: 46px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mon-ep-next { color: var(--muted); font-variant-numeric: tabular-nums; }
+.mon-ep-next b { color: var(--text); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .mon-ep-track i { transition: none; } .mon-ep-phase.poc::before { animation: none; } }
 .mon-tabs2 + .mon-top-refresh { margin-left: 0; }
 
 /* the start page: three doors */

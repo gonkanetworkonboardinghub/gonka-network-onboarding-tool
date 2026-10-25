@@ -100,6 +100,7 @@ async function nextPoc(seed) {
   const blocksLeft = nextStart - h;
   return {
     phase: j.phase || "",
+    epoch: Number((j.epoch_stages && j.epoch_stages.epoch_index) || (j.latest_epoch && j.latest_epoch.index)) || null,
     blocksLeft,
     etaMs: Math.max(0, blocksLeft * secPerBlock * 1000),
     secPerBlock,

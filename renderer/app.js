@@ -264,6 +264,7 @@ function renderEpochBar() {
   $("#epoch-text").textContent =
     `⏱ ${t("Next Proof of Compute")}: ${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s · ${at} · ${(frac * 100).toFixed(1)}%`;
   renderPocAdvice();   // the first step's "best time to start" (only there when it is shown)
+  if (typeof monRenderEpoch === "function") monRenderEpoch();   // and the same clock along the top of Monitor/Vote
 }
 function header(eyebrow, title, lede) {
   // "Step N" eyebrows get the word translated; everything else goes through
