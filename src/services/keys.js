@@ -258,6 +258,34 @@ async function depositCollateral({ keyName, passphrase, amountNgonka, seedApiUrl
 }
 
 /**
+ * Bring a node's wallet onto this computer from its 24 words, for Monitor/Vote.
+ * The words are checked against the node FIRST: nothing is saved unless they
+ * are that node's wallet. Saved like Host Setup's import (an encrypted key in
+ * the keyring, under the keyring's passphrase; the words themselves are not
+ * kept). Returns the wallet's name, also when it was already here.
+ */
+async function importForNode({ address, mnemonic, passphrase }) {
+  let mine;
+  try { mine = wallet.addressOf(wallet.pubOf(wallet.privFromMnemonic(mnemonic))); }
+  catch (_) { throw new Error("Those are not 24 valid recovery words. Check that every word is spelled exactly as written down, in order."); }
+  if (mine !== address) {
+    throw new Error(`These words are the wallet ${mine.slice(0, 12)}…${mine.slice(-6)}, not this node's wallet (${address.slice(0, 12)}…${address.slice(-6)}).`);
+  }
+  // A name of its own, so it never meets one already here.
+  const taken = new Set(keyringKeyNames());
+  let name = `node-${address.slice(-6)}`;
+  for (let i = 2; taken.has(name); i++) name = `node-${address.slice(-6)}-${i}`;
+  try {
+    wallet.importKey(keyringFileDir(), name, passphrase, mnemonic);
+    return { name };
+  } catch (e) {
+    if (e.code === "ADDRESS_EXISTS") return { name: e.existingName, existed: true };   // the passphrase matched to get this far
+    if (e.code === "BAD_PASSPHRASE") throw sharedPassphraseError();
+    throw new Error("Couldn't save the wallet: " + e.message);
+  }
+}
+
+/**
  * Vote on a proposal with the node's own wallet, signed LOCALLY with the cold
  * key, as Gonka's guide does with `inferenced tx gov vote --from <cold key>`.
  * With `dryRun` nothing is sent: the chain only says what it would cost, or
@@ -343,6 +371,6 @@ function sshKeygen() {
 
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
-  grantMlOps, manualRegister, depositCollateral, vote, accountSequence,
+  grantMlOps, manualRegister, depositCollateral, vote, importForNode, accountSequence,
   keyringDir, sshKeygen, sshKeyInfo, keyringKeyNames, resetKeyring
 };

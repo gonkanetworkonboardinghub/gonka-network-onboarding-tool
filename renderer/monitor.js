@@ -320,7 +320,7 @@ function monRenderMain() {
   const keep = main.scrollTop;
   const page = MON.view + ":" + (MON.address || "");
   const typed = {};
-  if (MON.rendered === page) main.querySelectorAll("input[id], select[id]").forEach((el) => { typed[el.id] = el.value; });
+  if (MON.rendered === page) main.querySelectorAll("input[id], select[id], textarea[id]").forEach((el) => { typed[el.id] = el.value; });
   const focused = document.activeElement && main.contains(document.activeElement) ? document.activeElement.id : "";
   main.innerHTML = `<div class="mon-page mon-page-${MON.view}">${html}</div>`;
   MON.rendered = page;
@@ -789,7 +789,7 @@ function monWireNode() {
   if ($("#mon-remove")) $("#mon-remove").onclick = () => monForget(MON.address);
   if ($("#mon-rename")) $("#mon-rename").onclick = () => monRename(node);
   if (monOwn(node)) monWireActions(node);
-  else if ($("#mon-link")) monWireLink(node);
+  else if ($("#mon-link") || $("#mon-link-go")) monWireLink(node);
 }
 
 /* ---- your own node: vote, its server, the way out ---------------------- */
@@ -822,45 +822,87 @@ function monWireActions(node) {
   if (MON.panel === "shutdown") monWireShutdown(node);
 }
 
-/* A node set up before this version, or added by hand: prove it is yours by
-   unlocking its wallet once. Only the wallet's name is kept. */
+/* Linking a node to its wallet, so it can vote, reach its server and shut
+   down from here. Two ways: a wallet already saved on this computer (unlock
+   it once; its address must be the node's), or the wallet's 24 words (checked
+   against the node before anything is saved). Only the wallet's name is kept
+   with the node; passphrases and words never are. */
+const MON_KEY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16.5 6.5l2.5 2.5M14 9l2 2"/></svg>`;
+
 function monLinkHtml(node) {
   const l = MON.link && MON.link.address === node.address ? MON.link : null;
-  // With no wallet on this computer there is nothing to link yet: say so plainly.
-  if (!MON.keyNames.length) {
-    return `<div class="mon-link"><div><b>${esc(t("Is this your node?"))}</b>
-      <span>${esc(t("Voting, the command line and shutting down sign with the node's own wallet, and no wallet is saved on this computer. A node set up with GNOT on this computer has its wallet here."))}</span></div></div>`;
-  }
   if (!l || !l.open) {
-    return `<div class="mon-link"><div><b>${esc(t("Is this your node?"))}</b>
-      <span>${esc(t("If its wallet is on this computer, link it to vote with it, reach its server and shut it down from here."))}</span></div>
-      <button id="mon-link">${esc(t("Link its wallet"))}</button></div>`;
+    return `
+      <div class="mon-linkcta">
+        <span class="mon-yv-icon">${MON_KEY_ICON}</span>
+        <div class="mon-yv-body">
+          <b>${esc(t("Link your wallet"))}</b>
+          <span>${esc(t("Is this your node? Voting, the command line and shutting down sign with its own wallet. Link it once, and they work from here."))}</span>
+        </div>
+        <button class="primary" id="mon-link">${esc(t("Link your wallet"))}</button>
+      </div>`;
   }
+  const saved = MON.keyNames.length > 0;
+  const mode = l.mode || (saved ? "saved" : "words");
+  const tab = (id, label) => `<button type="button" class="${mode === id ? "on" : ""}" data-link-mode="${id}" role="radio" aria-checked="${mode === id}">${esc(label)}</button>`;
   return `
     <div class="card mon-link-form">
-      <h3>${esc(t("Link its wallet"))}</h3>
-      <div class="field-row two">
-        <label class="field"><span class="lbl">${esc(t("Wallet on this computer"))}</span>
-          <select id="mon-link-name">${MON.keyNames.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("")}</select></label>
-        <label class="field"><span class="lbl">${esc(t("Wallet passphrase"))}</span>
-          <input type="password" id="mon-link-pass" autocomplete="off"></label>
+      <div class="mon-card-head"><h3>${esc(t("Link your wallet"))}</h3><button class="mon-quiet" id="mon-link-cancel">${esc(t("Cancel"))}</button></div>
+      <div class="seg" role="radiogroup">
+        ${saved ? tab("saved", t("A wallet on this computer")) : ""}
+        ${tab("words", t("Bring it here with its 24 words"))}
       </div>
-      <div class="btn-row"><button class="primary" id="mon-link" ${l.busy ? "disabled" : ""}>${esc(l.busy ? t("Checking…") : t("Link"))}</button><button id="mon-link-cancel">${esc(t("Cancel"))}</button></div>
+      ${mode === "saved" ? `
+        <div class="field-row two">
+          <label class="field"><span class="lbl">${esc(t("Wallet on this computer"))}</span>
+            <select id="mon-link-name">${MON.keyNames.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("")}</select></label>
+          <label class="field"><span class="lbl">${esc(t("Wallet passphrase"))}</span>
+            <input type="password" id="mon-link-pass" autocomplete="off"></label>
+        </div>
+        <p class="small">${esc(t("The passphrase only unlocks the wallet to check its address. It is not kept."))}</p>` : `
+        <label class="field"><span class="lbl">${esc(t("The wallet's 24 recovery words, in order"))}</span>
+          <textarea id="mon-link-words" class="mono" rows="3" spellcheck="false" autocomplete="off"></textarea></label>
+        <div class="field-row two">
+          <label class="field"><span class="lbl">${esc(saved ? t("Passphrase of the wallets on this computer") : t("Choose a passphrase to lock it"))}</span>
+            <input type="password" id="mon-link-pass" autocomplete="off"></label>
+          ${saved ? "" : `<label class="field"><span class="lbl">${esc(t("The passphrase again"))}</span>
+            <input type="password" id="mon-link-pass2" autocomplete="off"></label>`}
+        </div>
+        <p class="small">${esc(t("The words are checked against this node first: nothing is saved unless they are its wallet. The wallet is then kept on this computer, locked with the passphrase, the same way Host Setup does it. The words themselves are not kept, and never leave this computer."))}</p>`}
+      <div class="btn-row"><button class="primary" id="mon-link-go" ${l.busy ? "disabled" : ""}>${esc(l.busy ? t("Checking…") : t("Link"))}</button></div>
       ${l.error ? `<p class="small mon-err">${esc(l.error)}</p>` : ""}
-      <p class="small">${esc(t("The passphrase only unlocks the wallet to check its address. It is not kept."))}</p>
     </div>`;
 }
+
 function monWireLink(node) {
   const l = MON.link && MON.link.address === node.address ? MON.link : null;
-  if (!l || !l.open) { $("#mon-link").onclick = () => { MON.link = { address: node.address, open: true }; monRenderMain(); const p = $("#mon-link-pass"); if (p) p.focus(); }; return; }
+  if (!l || !l.open) {
+    $("#mon-link").onclick = () => { MON.link = { address: node.address, open: true }; monRenderMain(); monFocusLink(); };
+    return;
+  }
   $("#mon-link-cancel").onclick = () => { MON.link = null; monRenderMain(); };
+  document.querySelectorAll("[data-link-mode]").forEach((b) => { b.onclick = () => { l.mode = b.dataset.linkMode; l.error = null; monRenderMain(); monFocusLink(); }; });
+  const mode = l.mode || (MON.keyNames.length ? "saved" : "words");
   const go = async () => {
-    const name = $("#mon-link-name").value, passphrase = $("#mon-link-pass").value;
-    if (!passphrase) { l.error = t("Enter the wallet passphrase."); monRenderMain(); return; }
+    const passphrase = $("#mon-link-pass").value;
+    let words = "";
+    if (mode === "words") {
+      words = $("#mon-link-words").value.trim().split(/\s+/).join(" ");
+      if (words.split(" ").length < 12) { l.error = t("Enter the wallet's 24 recovery words."); monRenderMain(); return; }
+      if (!MON.keyNames.length && passphrase !== ($("#mon-link-pass2") || {}).value) { l.error = t("The two passphrases are not the same."); monRenderMain(); return; }
+      if (passphrase.length < 8) { l.error = t("Use a passphrase of at least 8 characters."); monRenderMain(); return; }
+    } else if (!passphrase) { l.error = t("Enter the wallet passphrase."); monRenderMain(); return; }
     l.busy = true; l.error = null; monRenderMain();
     try {
-      const k = await api("keyShow", { name, passphrase });
-      if (k.address !== node.address) throw new Error(t("The wallet \"{name}\" is {address}, not this node's wallet.", { name, address: monShort(k.address) }));
+      let name;
+      if (mode === "words") {
+        name = (await api("keyImportForNode", { address: node.address, mnemonic: words, passphrase })).name;
+        MON.keyNames = await api("keyNames");
+      } else {
+        name = $("#mon-link-name") ? $("#mon-link-name").value : "";
+        const k = await api("keyShow", { name, passphrase });
+        if (k.address !== node.address) throw new Error(t("The wallet \"{name}\" is {address}, not this node's wallet.", { name, address: monShort(k.address) }));
+      }
       node.wallet = name;
       // The setup on this computer may still know how to reach its server.
       const s = typeof loadSession === "function" ? loadSession() : null;
@@ -872,8 +914,12 @@ function monWireLink(node) {
     } catch (e) { l.busy = false; l.error = e.message; }
     monRenderMain();
   };
-  $("#mon-link").onclick = go;
+  $("#mon-link-go").onclick = go;
   $("#mon-link-pass").onkeydown = (e) => { if (e.key === "Enter") go(); };
+}
+function monFocusLink() {
+  const f = $("#mon-link-words") || $("#mon-link-pass");
+  if (f) f.focus();
 }
 
 /* ---- a command line on your server ------------------------------------- */
@@ -1433,10 +1479,10 @@ function monYourVoteHtml(live) {
       <span class="mon-yv-icon">${MON_ICONS.votes}</span>
       <div class="mon-yv-body">
         <b>${esc(kept ? t("Link your node to vote from here") : t("Add your node to vote with it"))}</b>
-        <span>${esc(kept ? t("Open your node under My nodes and link its wallet. A host votes with its node, and the vote counts by the node's weight.")
+        <span>${esc(kept ? t("A host votes with its node, and the vote counts by the node's weight. Link its wallet once, and its votes are cast from here.")
           : t("A host votes with its node, and the vote counts by the node's weight. Add yours, and its votes are cast from here."))}</span>
       </div>
-      <button class="primary" data-go="${kept ? "mine" : "add"}">${esc(kept ? t("Open My nodes") : t("Add your node"))}</button>
+      ${kept ? `<button class="primary" id="mon-vote-link">${esc(t("Link your wallet"))}</button>` : `<button class="primary" data-go="add">${esc(t("Add your node"))}</button>`}
     </div>`;
 }
 
@@ -1628,6 +1674,16 @@ function monWireVotes(main) {
     el.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === el) { e.preventDefault(); toggle(); } };
   });
   main.querySelectorAll("[data-kind]").forEach((b) => { b.onclick = () => { MON.propKind = b.dataset.kind; monRenderMain(); }; });
+  // One node to link: straight to its form. Several: the list, to pick which.
+  const vl = $("#mon-vote-link");
+  if (vl) vl.onclick = () => {
+    const left = MON.nodes.filter((n) => !monOwn(n));
+    if (left.length !== 1) { monGo("mine"); return; }
+    monGo("node", left[0].address, "mine");
+    MON.link = { address: left[0].address, open: true };
+    monRenderMain();
+    monFocusLink();
+  };
   const f = $("#mon-prop-filter");
   if (f) f.oninput = () => { MON.propFilter = f.value; const pos = f.selectionStart; monRenderMain(); const g = $("#mon-prop-filter"); if (g) { g.focus(); g.setSelectionRange(pos, pos); } };
 }

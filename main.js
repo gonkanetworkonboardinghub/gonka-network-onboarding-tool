@@ -270,6 +270,10 @@ ipcMain.handle("fix:run", wrap(async ({ id }) => {
 ipcMain.handle("keys:ensureCli", wrap(async () => keys.ensureCli((t) => log(t))));
 ipcMain.handle("keys:create", wrap(async ({ name, passphrase }) => keys.createKey(name, passphrase)));
 ipcMain.handle("keys:import", wrap(async ({ name, passphrase, mnemonic }) => keys.importKey(name, passphrase, mnemonic)));
+ipcMain.handle("keys:importForNode", wrap(async ({ address, mnemonic, passphrase }) => {
+  if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
+  return keys.importForNode({ address: String(address).trim(), mnemonic, passphrase });
+}));
 ipcMain.handle("keys:show", wrap(async ({ name, passphrase }) => keys.showKey(name, passphrase)));
 ipcMain.handle("keys:grant", wrap(async (a) => keys.grantMlOps(a, onData)));
 ipcMain.handle("keys:manualRegister", wrap(async (a) => keys.manualRegister(a, onData)));

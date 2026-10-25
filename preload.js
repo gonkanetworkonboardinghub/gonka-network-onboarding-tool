@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("gonka", {
   ensureCli: call("keys:ensureCli"),
   keyCreate: call("keys:create"),
   keyImport: call("keys:import"),
+  keyImportForNode: call("keys:importForNode"),
   keyShow: call("keys:show"),
   grant: call("keys:grant"),
   manualRegister: call("keys:manualRegister"),
