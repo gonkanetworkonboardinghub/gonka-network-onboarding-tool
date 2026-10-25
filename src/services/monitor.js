@@ -310,6 +310,14 @@ function epochLine(epoch, rows, address) {
   };
 }
 
+/**
+ * A participant's join_time as an ISO date. Hosts that joined later give
+ * milliseconds; the ones there from the network's start (join_height 0) give
+ * seconds (1755848273, 22 August 2025), which read as milliseconds land in
+ * January 1970.
+ */
+const joinedAt = (v) => new Date(v < 1e11 ? v * 1000 : v).toISOString();
+
 function summarise({ address, now, mem, hist, raw }) {
   const me = mem.hosts.find((h) => h.address === address) || null;
   const out = mem.excluded.find((x) => x.address === address) || null;
@@ -362,7 +370,7 @@ function summarise({ address, now, mem, hist, raw }) {
       place: me ? place(mem.hosts, "weight", address) : null,
       models: me ? me.models : [],
       epochsCompleted: rec ? num(rec.epochs_completed) : 0,
-      joined: rec && num(rec.join_time) ? new Date(num(rec.join_time)).toISOString() : null,
+      joined: rec && num(rec.join_time) ? joinedAt(num(rec.join_time)) : null,
       url: rec ? rec.inference_url || "" : "",
       confirmationRatio: dec(stats.confirmationPoCRatio)
     },
@@ -773,5 +781,5 @@ module.exports = {
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
-  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, unpackEpochs }
+  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, unpackEpochs, joinedAt }
 };

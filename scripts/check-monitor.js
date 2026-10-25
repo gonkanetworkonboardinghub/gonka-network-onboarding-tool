@@ -168,6 +168,8 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   fs.writeFileSync(path.join(dir, "nodes.json"), "not json");
   check("a damaged list reads as empty", M.loadNodes(dir), []);
   check("no more than fifty nodes", M.saveNodes(dir, Array.from({ length: 80 }, (_, i) => ({ address: "gonka1" + String(i).padStart(2, "0").replace(/1/g, "q") + "a".repeat(36) }))).length, (n) => n <= 50);
+  check("a join time in milliseconds is read as such", M._internal.joinedAt(1790852087811).slice(0, 10), "2026-10-01");
+  check("…and one in seconds (the hosts there from the start) too, not as January 1970", M._internal.joinedAt(1755848273).slice(0, 10), "2025-08-22");
   check("an address is 'gonka1' and 38 more of the right letters", [M.looksLikeAddress(ME), M.looksLikeAddress("gonka1" + "b".repeat(38)), M.looksLikeAddress(ME + "a"), M.looksLikeAddress("")], [true, false, false, false]);
   fs.rmSync(dir, { recursive: true, force: true });
 
