@@ -257,6 +257,40 @@ async function depositCollateral({ keyName, passphrase, amountNgonka, seedApiUrl
   return { ok: true, txhash: r.txhash, output: `txhash: ${r.txhash}\ncode: 0` };
 }
 
+/**
+ * Vote on a proposal with the node's own wallet, signed LOCALLY with the cold
+ * key, as Gonka's guide does with `inferenced tx gov vote --from <cold key>`.
+ * With `dryRun` nothing is sent: the chain only says what it would cost, or
+ * why it would refuse. `address` is the node the vote is for; a key that is
+ * not that node's wallet is refused before anything is signed.
+ */
+async function vote({ keyName, passphrase, address, proposalId, option, seedApiUrl, dryRun }, onData) {
+  if (!wallet.VOTE_OPTIONS[option]) throw new Error("Choose Yes, No, No with veto or Abstain.");
+  const key = unlock(keyName, passphrase);
+  if (address && key.address !== address) {
+    throw new Error(`The wallet "${keyName}" is ${key.address}, not this node's wallet.`);
+  }
+  const seed = seedBase(seedApiUrl);
+  const messages = [wallet.Msg.vote(proposalId, key.address, option)];
+  const memo = `Voted with GNOT v${app.getVersion()}`;
+  const said = (e) => {
+    const m = String(e.message || e);
+    if (/inactive proposal/i.test(m)) return new Error("This vote has closed.");
+    if (/proposal.*(not found|doesn't exist|does not exist)/i.test(m)) return new Error("There is no such proposal.");
+    if (/insufficient (funds|fee)/i.test(m)) return new Error("The wallet does not hold enough GNK for the fee.");
+    return e;
+  };
+  try {
+    // Headroom like the other transactions the wallet signs: a failed one
+    // still burns its whole fee, and a vote's fee is a tiny amount anyway.
+    if (dryRun) return await wallet.estimate({ seed, priv: key.priv, messages, gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo });
+    const r = await wallet.signAndBroadcast({
+      seed, priv: key.priv, messages, gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo, onData
+    });
+    return { txhash: r.txhash, height: r.height, fee: r.fee };
+  } catch (e) { throw said(e); }
+}
+
 /** Account sequence (null when the account can't be read or doesn't exist yet). */
 async function accountSequence(address, seedApiUrl) {
   try {
@@ -309,6 +343,6 @@ function sshKeygen() {
 
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
-  grantMlOps, manualRegister, depositCollateral, accountSequence,
+  grantMlOps, manualRegister, depositCollateral, vote, accountSequence,
   keyringDir, sshKeygen, sshKeyInfo, keyringKeyNames, resetKeyring
 };

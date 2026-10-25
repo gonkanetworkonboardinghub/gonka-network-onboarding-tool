@@ -147,6 +147,32 @@ async function dryRunRegister(seed) {
   }
 }
 
+/**
+ * Would the chain take the vote Monitor/Vote signs (keys.vote)? On the newest
+ * proposal: while it is open the answer is the gas; once it has closed the
+ * chain still has to read the vote to say "inactive proposal", which is just
+ * as good a proof. Any other refusal means the message no longer fits.
+ * Nothing is sent.
+ */
+async function dryRunVote(seed) {
+  const acct = await get(`${seed}/chain-api/cosmos/auth/v1beta1/accounts/${DRY_RUN_ACCOUNT}`);
+  const a = acct.json && acct.json.account;
+  if (!a || !a.pub_key) return { unknown: "could not read the dry-run account from the chain" };
+  const list = (await get(`${seed}/chain-api/cosmos/gov/v1/proposals?pagination.reverse=true&pagination.limit=1`)).json;
+  const p = list && list.proposals && list.proposals[0];
+  if (!p) return { unknown: "could not read the proposals" };
+  const { txBody, authInfo, txRaw } = wallet._internal;
+  const raw = txRaw(txBody([wallet.Msg.vote(p.id, DRY_RUN_ACCOUNT, "ABSTAIN")], "dry run"), authInfo(Buffer.from(a.pub_key.key, "base64"), BigInt(a.sequence || 0), { amount: [], gas: 0 }), [Buffer.alloc(0)]);
+  try {
+    return { gas: await wallet.simulate(seed, raw) };
+  } catch (e) {
+    const said = String(e.message).replace(/^failed to simulate gas:\s*/, "");
+    if (/inactive proposal/.test(said)) return { closed: true };
+    const refused = said.match(/message index: \d+: (.*?)(?: \[|$)/);
+    return refused ? { refused: refused[1].trim() } : { unknown: said.slice(0, 200) };
+  }
+}
+
 /** Lines of the quickstart that are commands, so a changed command shows up. */
 function commandsIn(html) {
   const text = html.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "")
@@ -250,6 +276,11 @@ function commandsIn(html) {
   if (reg.refused) problem("register-refused", `The live chain refuses the registration the app signs with the wallet: "${reg.refused}"`);
   else if (reg.unknown) unknown.push("dry run of the registration: " + reg.unknown);
   else registerFee = Math.floor(reg.gas * 2.0) * Number(k.gasPriceNgonka);
+
+  // The vote Monitor/Vote signs with a host's own wallet.
+  const vote = await dryRunVote(seed);
+  if (vote.refused) problem("vote-refused", `The live chain refuses the vote the app signs with the wallet: "${vote.refused}"`);
+  else if (vote.unknown) unknown.push("dry run of a vote: " + vote.unknown);
 
   /* ---- 4. fees -------------------------------------------------------- */
   const params = (await get(`${seed}${k.api.inferenceParams}`)).json;

@@ -86,5 +86,13 @@ contextBridge.exposeInMainWorld("gonka", {
   monitorVoteOf: call("monitor:voteOf"),
   termRun: call("term:run"),
   termCwd: call("term:cwd"),
+  mineConnect: call("mine:connect"),
+  mineDisconnect: call("mine:disconnect"),
+  mineRun: call("mine:run"),
+  mineVote: call("mine:vote"),
+  mineShutdownStatus: call("mine:shutdownStatus"),
+  mineSetMachines: call("mine:setMachines"),
+  mineClaimReward: call("mine:claimReward"),
+  mineSwitchOff: call("mine:switchOff"),
   myEpochWeight: call("net:myEpochWeight")
 });

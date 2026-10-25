@@ -805,6 +805,75 @@ button.mon-tile-link:hover { border-color: var(--line-strong); background: var(-
 .mon-turnout-bar b { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--text); }
 .mon-myvote { margin-top: 10px; font-size: 13px; }
 
+/* voting with your own node, on an open proposal */
+.mon-ballot { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--wash); }
+.mon-ballot-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.mon-ballot-head b { font-size: 14px; }
+.mon-ballot-opts { display: flex; gap: 8px; flex-wrap: wrap; }
+.mon-ballot-opts button { min-width: 96px; }
+.mon-ballot-opts button.on { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.mon-ballot-opts button.cast { border-color: var(--green); color: var(--green); }
+.mon-ballot-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 13.5px; }
+.mon-ballot-flow label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mon-ballot-flow input { width: 240px; }
+.mon-ballot-flow.ok { color: var(--green); }
+.mon-err { color: var(--red); }
+
+/* your own node: three things it can do, and the panel each opens */
+.mon-yours { vertical-align: middle; margin-left: 6px; font-size: 11.5px; }
+.mon-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.mon-action {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; text-align: left;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--wash);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.mon-action b { font-size: 15px; }
+.mon-action span { font-size: 12.5px; color: var(--muted); }
+.mon-action:hover { background: var(--wash-strong); }
+.mon-action.on { border-color: var(--accent); background: var(--wash-strong); }
+@media (max-width: 900px) { .mon-actions { grid-template-columns: 1fr; } }
+.mon-panel { margin: -4px 0 18px; }
+.mon-panel .field-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.mon-panel .mon-card-head { margin-bottom: 10px; flex-wrap: wrap; }
+.mon-panel .mon-card-head .mon-quiet { margin-left: auto; }
+.mon-panel-lede { margin: -4px 0 8px; }
+.mon-link { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 16px 0; padding: 12px 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.mon-link b { display: block; font-size: 14px; margin-bottom: 2px; }
+.mon-link span { font-size: 13px; color: var(--muted); }
+.mon-link-form { margin: 16px 0; }
+
+/* the command line on your server */
+.mon-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.mon-term-out {
+  height: 300px; overflow: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--inset); color: var(--text); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; user-select: text;
+}
+.mon-term-out .cmd { color: var(--muted); }
+.mon-term-out .err { color: var(--red); }
+.mon-term-out.small-out { height: auto; max-height: 160px; margin-top: 12px; }
+.mon-term-form { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mon-term-prompt { flex: none; font-size: 12.5px; color: var(--muted); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-term-form input { flex: 1 1 auto; min-width: 0; }
+.mon-ai { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.mon-ai .mon-quiet { padding: 3px 10px; font-size: 12.5px; }
+
+/* shutting down: four steps, each done, now, waiting or later */
+.mon-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.mon-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.mon-step:first-child { border-top: none; }
+.mon-step > i {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; font-weight: 700; margin-top: 1px;
+}
+.mon-step b { display: block; font-size: 14px; margin-bottom: 3px; }
+.mon-step p { margin: 0 0 8px; font-size: 13px; line-height: 1.55; color: var(--muted); }
+.mon-step.done > i { border-color: var(--green); background: var(--green); color: var(--on-accent); }
+.mon-step.now > i { border-color: var(--accent); }
+.mon-step.now b { color: var(--text); }
+.mon-step.wait > i { border-color: var(--accent); border-style: dashed; }
+.mon-step.later { opacity: 0.6; }
+.mon-step .btn-row { margin-top: 4px; }
+
 /* what deserves a look */
 .mon-attention { border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px; background: var(--wash); }
 .mon-attention b { display: block; font-size: 14px; margin-bottom: 6px; }

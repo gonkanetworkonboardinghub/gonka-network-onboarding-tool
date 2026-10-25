@@ -28,6 +28,7 @@ const configgen = require("./src/services/configgen");
 const deploy = require("./src/services/deploy");
 const netdata = require("./src/services/netdata");
 const monitor = require("./src/services/monitor");
+const mynode = require("./src/services/mynode");
 const earnings = require("./src/services/earnings");
 const usage = require("./src/services/usage");
 const updates = require("./src/update");
@@ -219,26 +220,31 @@ ipcMain.handle("app:pickFile", wrap(async () => {
 /* ------------------------------------------------------------------ */
 /* IPC: connection                                                     */
 /* ------------------------------------------------------------------ */
-ipcMain.handle("conn:connect", wrap(async ({ mode, ssh }) => {
-  if (driver) { driver.dispose(); driver = null; }
-  termCwd = null;   // new machine: forget the old terminal directory
+/** A connection to a server: this machine (through WSL on Windows) or SSH. */
+async function openDriver(mode, ssh) {
   if (mode === "local") {
-    driver = new LocalDriver();
+    const d = new LocalDriver();
     if (process.platform === "win32") {
-      const wsl = await driver.exec("echo WSL_OK");
+      const wsl = await d.exec("echo WSL_OK");
       if (!wsl.stdout.includes("WSL_OK")) {
-        driver = null;
         throw new Error("Windows detected but WSL isn't available. Install WSL2 with Ubuntu (run `wsl --install` in PowerShell as admin), or choose the remote-server option.");
       }
     }
-    const probe = await driver.exec("uname -a");
-    return { kind: "local", info: probe.stdout.trim() };
+    const probe = await d.exec("uname -a");
+    return { driver: d, kind: "local", info: probe.stdout.trim() };
   }
   const s = new SshDriver();
   await s.connect(ssh);
-  driver = s;
-  const probe = await driver.exec("uname -a && whoami");
-  return { kind: "ssh", info: probe.stdout.trim() };
+  const probe = await s.exec("uname -a && whoami");
+  return { driver: s, kind: "ssh", info: probe.stdout.trim() };
+}
+
+ipcMain.handle("conn:connect", wrap(async ({ mode, ssh }) => {
+  if (driver) { driver.dispose(); driver = null; }
+  termCwd = null;   // new machine: forget the old terminal directory
+  const o = await openDriver(mode, ssh);
+  driver = o.driver;
+  return { kind: o.kind, info: o.info };
 }));
 
 ipcMain.handle("conn:disconnect", wrap(async () => { if (driver) driver.dispose(); driver = null; termCwd = null; return true; }));
@@ -389,43 +395,86 @@ ipcMain.handle("net:myEpochWeight", wrap(async ({ seed, address }) => netdata.my
 let termCwd = null;
 const INTERACTIVE = /^(vi|vim|nano|top|htop|less|more|man|watch|tmux|screen)\b/;
 
-ipcMain.handle("term:cwd", wrap(async () => {
-  if (!driver) return { cwd: null, connected: false };
-  if (!termCwd) {
-    // Start where the deployment lives when it exists — that's where nearly
-    // every useful command wants to run.
-    const join = K.get().repo.joinDir;
-    const r = await driver.exec(`cd ${join} 2>/dev/null && pwd || pwd`);
-    termCwd = (r.stdout || "").trim() || "~";
-  }
-  return { cwd: termCwd, connected: true };
-}));
+// Start where the deployment lives when it exists — that's where nearly
+// every useful command wants to run.
+async function termStartDir(d) {
+  const r = await d.exec(`cd ${K.get().repo.joinDir} 2>/dev/null && pwd || pwd`);
+  return (r.stdout || "").trim() || "~";
+}
 
-ipcMain.handle("term:run", wrap(async ({ command }) => {
-  const d = needDriver();
+/** Run one command from `cwd`; returns the output and the directory it leaves. */
+async function termCommand(d, cwd, command) {
   const cmd = String(command || "").trim();
-  if (!cmd) return { output: "" };
+  if (!cmd) return { output: "", cwd };
   if (INTERACTIVE.test(cmd)) {
     throw new Error(
       `"${cmd.split(/\s+/)[0]}" needs a full interactive terminal, which this window can't provide. ` +
       `Use a non-interactive form instead — for example "tail -n 50 <file>" rather than less, ` +
       `or "nvidia-smi" rather than watch.`);
   }
-  if (!termCwd) {
-    const j = await d.exec(`cd ${K.get().repo.joinDir} 2>/dev/null && pwd || pwd`);
-    termCwd = (j.stdout || "").trim() || "~";
-  }
   // `cd` must be handled here: every exec is its own shell, so a plain
   // `cd foo` would succeed and then be immediately forgotten.
   const cdOnly = cmd.match(/^cd(?:\s+(.*))?$/);
   if (cdOnly) {
     const target = (cdOnly[1] || "~").trim();
-    const r = await d.exec(`cd ${shq(termCwd)} && cd ${target} && pwd`);
+    const r = await d.exec(`cd ${shq(cwd)} && cd ${target} && pwd`);
     const next = (r.stdout || "").trim();
     if (r.code !== 0 || !next) throw new Error((r.stderr || `cd: ${target}: no such file or directory`).trim());
-    termCwd = next;
-    return { output: "", cwd: termCwd };
+    return { output: "", cwd: next };
   }
-  const r = await d.exec(`cd ${shq(termCwd)} 2>/dev/null; ${cmd}`, { timeoutMs: 120000 });
-  return { output: (r.stdout || "") + (r.stderr || ""), code: r.code, cwd: termCwd };
+  const r = await d.exec(`cd ${shq(cwd)} 2>/dev/null; ${cmd}`, { timeoutMs: 120000 });
+  return { output: (r.stdout || "") + (r.stderr || ""), code: r.code, cwd };
+}
+
+ipcMain.handle("term:cwd", wrap(async () => {
+  if (!driver) return { cwd: null, connected: false };
+  if (!termCwd) termCwd = await termStartDir(driver);
+  return { cwd: termCwd, connected: true };
 }));
+
+ipcMain.handle("term:run", wrap(async ({ command }) => {
+  const d = needDriver();
+  if (!termCwd) termCwd = await termStartDir(d);
+  const r = await termCommand(d, termCwd, command);
+  termCwd = r.cwd;
+  return r;
+}));
+
+/* ------------------------------------------------------------------ */
+/* IPC: your own node, from Gonka Host Monitor/Vote                    */
+/* ------------------------------------------------------------------ */
+// The monitor reaches a node's server on a connection of its own, so using
+// it never disturbs a setup that is still running on another server.
+let mineDriver = null, mineCwd = null;
+const needMine = () => { if (!mineDriver) throw new Error("Not connected to your server."); return mineDriver; };
+
+ipcMain.handle("mine:connect", wrap(async ({ server, password, passphrase }) => {
+  if (mineDriver) { mineDriver.dispose(); mineDriver = null; }
+  mineCwd = null;
+  const s = server || {};
+  const o = await openDriver(s.mode === "local" ? "local" : "ssh", {
+    host: s.host, port: s.port, username: s.username,
+    privateKeyPath: s.auth === "key" ? s.privateKeyPath : undefined,
+    password: s.auth === "password" ? password : undefined,
+    passphrase: s.auth === "key" ? passphrase || undefined : undefined
+  });
+  mineDriver = o.driver;
+  mineCwd = await termStartDir(mineDriver);
+  return { kind: o.kind, info: o.info, cwd: mineCwd };
+}));
+ipcMain.handle("mine:disconnect", wrap(async () => { if (mineDriver) mineDriver.dispose(); mineDriver = null; mineCwd = null; return true; }));
+ipcMain.handle("mine:run", wrap(async ({ command }) => {
+  const d = needMine();
+  if (!mineCwd) mineCwd = await termStartDir(d);
+  const r = await termCommand(d, mineCwd, command);
+  mineCwd = r.cwd;
+  return r;
+}));
+ipcMain.handle("mine:vote", wrap(async (a) => keys.vote({ ...a, seedApiUrl: (await seedForMonitor())[0] })));
+ipcMain.handle("mine:shutdownStatus", wrap(async ({ address }) => {
+  if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
+  return mynode.shutdownStatus(await seedForMonitor(), mineDriver, String(address).trim());
+}));
+ipcMain.handle("mine:setMachines", wrap(async ({ enabled }) => mynode.setMachines(needMine(), !!enabled)));
+ipcMain.handle("mine:claimReward", wrap(async () => mynode.claimReward(needMine())));
+ipcMain.handle("mine:switchOff", wrap(async () => mynode.switchOff(needMine())));

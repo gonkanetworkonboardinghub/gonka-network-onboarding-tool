@@ -148,7 +148,9 @@ async function epochNow(seeds) {
     confirmationPocActive: !!j.is_confirmation_poc_active,
     height, secPerBlock,
     pocStart: num(st.poc_start), nextPocStart: num(st.next_poc_start),
-    epochBlocks: num((j.epoch_params || {}).epoch_length)
+    epochBlocks: num((j.epoch_params || {}).epoch_length),
+    // The block where hosts claim the previous epoch's reward, and the next one.
+    claimMoney: num(st.claim_money), nextClaimMoney: num((j.next_epoch_stages || {}).claim_money)
   };
 }
 
@@ -650,12 +652,36 @@ async function voteOf(seeds, id, address) {
 const looksLikeAddress = (s) => /^gonka1[02-9ac-hj-np-z]{38}$/.test(String(s || "").trim());
 
 /* The nodes a person has chosen to watch: an address and the name they gave
-   it, kept in a small file on this computer and nowhere else. */
+   it, kept in a small file on this computer and nowhere else. A node of
+   their own also keeps the name of its wallet in this computer's keyring and
+   how to reach its server. Never a password or a passphrase: those are asked
+   for each time. */
 const MAX_NODES = 50;
+const tidyText = (s, max) => String(s || "").replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, max);
+function tidyServer(s) {
+  if (!s || typeof s !== "object") return null;
+  if (s.mode === "local") return { mode: "local" };
+  const host = tidyText(s.host, 253);
+  const username = tidyText(s.username, 64);
+  if (!host || !username || /\s/.test(host)) return null;
+  const port = Math.round(Number(s.port) || 22);
+  const auth = s.auth === "password" ? "password" : "key";
+  const out = { mode: "ssh", host, port: port >= 1 && port <= 65535 ? port : 22, username, auth };
+  if (auth === "key" && s.privateKeyPath) out.privateKeyPath = tidyText(s.privateKeyPath, 1024);
+  return out;
+}
+function tidyNode(n) {
+  const out = { address: String(n.address).trim(), name: tidyText(n.name, 40) };
+  const wallet = tidyText(n.wallet, 64);
+  if (wallet) out.wallet = wallet;
+  const server = tidyServer(n.server);
+  if (server) out.server = server;
+  return out;
+}
 function loadNodes(dir) {
   try {
     const list = JSON.parse(fs.readFileSync(path.join(dir, "nodes.json"), "utf8"));
-    return Array.isArray(list) ? list.filter((n) => n && looksLikeAddress(n.address)).slice(0, MAX_NODES) : [];
+    return Array.isArray(list) ? list.filter((n) => n && looksLikeAddress(n.address)).slice(0, MAX_NODES).map(tidyNode) : [];
   } catch (_) { return []; }
 }
 function saveNodes(dir, nodes) {
@@ -665,7 +691,7 @@ function saveNodes(dir, nodes) {
     const address = String((n && n.address) || "").trim();
     if (!looksLikeAddress(address) || seen.has(address)) continue;
     seen.add(address);
-    clean.push({ address, name: String((n && n.name) || "").replace(/[\x00-\x1f]/g, "").trim().slice(0, 40) });
+    clean.push(tidyNode({ ...n, address }));
     if (clean.length >= MAX_NODES) break;
   }
   fs.mkdirSync(dir, { recursive: true });

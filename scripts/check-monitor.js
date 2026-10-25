@@ -153,6 +153,18 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   const saved = M.saveNodes(dir, [{ address: ME, name: "  My\u0007 node  " }, { address: "gonka1nope" }, { address: ME, name: "again" }, { address: " " + B + " ", name: "x".repeat(90) }, null, { address: "cosmos1" + "a".repeat(38) }]);
   check("only real addresses are saved, once each, names tidied", saved, [{ address: ME, name: "My node" }, { address: B, name: "x".repeat(40) }]);
   check("…and read back the same", M.loadNodes(dir), saved);
+  const own = M.saveNodes(dir, [
+    { address: ME, name: "Mine", wallet: " gonka-account-key ", server: { host: "1.2.3.4", port: "2222", username: "root", auth: "key", privateKeyPath: "C:\\k\\id", password: "secret", passphrase: "secret" } },
+    { address: B, wallet: "w", server: { host: "5.6.7.8", username: "ubuntu", auth: "password", password: "secret", privateKeyPath: "x" } },
+    { address: "gonka1" + "e".repeat(38), server: { mode: "local", host: "ignored" } },
+    { address: "gonka1" + "d".repeat(38), server: { host: "bad host", username: "root" } }]);
+  check("a node's own wallet and server are kept, never a password", own, [
+    { address: ME, name: "Mine", wallet: "gonka-account-key", server: { mode: "ssh", host: "1.2.3.4", port: 2222, username: "root", auth: "key", privateKeyPath: "C:\\k\\id" } },
+    { address: B, name: "", wallet: "w", server: { mode: "ssh", host: "5.6.7.8", port: 22, username: "ubuntu", auth: "password" } },
+    { address: "gonka1" + "e".repeat(38), name: "", server: { mode: "local" } },
+    { address: "gonka1" + "d".repeat(38), name: "" }]);
+  check("…nothing secret reaches the file", /secret/.test(fs.readFileSync(path.join(dir, "nodes.json"), "utf8")), false);
+  check("…and it reads back the same", M.loadNodes(dir), own);
   fs.writeFileSync(path.join(dir, "nodes.json"), "not json");
   check("a damaged list reads as empty", M.loadNodes(dir), []);
   check("no more than fifty nodes", M.saveNodes(dir, Array.from({ length: 80 }, (_, i) => ({ address: "gonka1" + String(i).padStart(2, "0").replace(/1/g, "q") + "a".repeat(36) }))).length, (n) => n <= 50);

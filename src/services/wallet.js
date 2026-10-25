@@ -110,8 +110,16 @@ const Msg = {
   depositCollateral: (participant, amount) => any("/inference.collateral.MsgDepositCollateral", cat(
     str(1, participant), req(2, coin(amount)))),
   send: (from, to, amount) => any("/cosmos.bank.v1beta1.MsgSend", cat(
-    str(1, from), str(2, to), amount.map((c) => req(3, coin(c)))))
+    str(1, from), str(2, to), amount.map((c) => req(3, coin(c))))),
+  // option: one of VOTE_OPTIONS' keys. The chain also takes a free-text
+  // metadata field (4); the CLI leaves it empty, and so does this.
+  vote: (proposalId, voter, option) => {
+    if (!VOTE_OPTIONS[option]) throw new Error(`unknown vote option ${option}`);
+    return any("/cosmos.gov.v1.MsgVote", cat(u64(1, proposalId), str(2, voter), u64(3, VOTE_OPTIONS[option])));
+  }
 };
+/** cosmos.gov.v1.VoteOption */
+const VOTE_OPTIONS = { YES: 1, ABSTAIN: 2, NO: 3, NO_WITH_VETO: 4 };
 
 const SIGN_MODE_DIRECT = 1;
 const txBody = (messages, memo) => cat(messages.map((m) => ld(1, m)), str(2, memo));
@@ -406,6 +414,19 @@ async function waitForTx(seed, txhash, onData, tries = 20, delayMs = 3000) {
 }
 
 /**
+ * What sending `messages` would cost, without sending anything: the chain runs
+ * them unsigned and says the gas they use, or why it would refuse them.
+ */
+async function estimate({ seed, priv, messages, gasAdjustment, gasPrice = 10, memo = "" }) {
+  const pub = pubOf(priv);
+  const acct = await getAccount(seed, addressOf(pub));
+  if (!acct) throw new Error(`account ${addressOf(pub)} not found on the network — it has never received any GNK.`);
+  const gasUsed = await simulate(seed, txRaw(txBody(messages, memo), authInfo(pub, acct.sequence, { amount: [], gas: 0 }), [EMPTY]));
+  const gas = Math.floor(gasUsed * gasAdjustment);
+  return { gas, fee: String(BigInt(gas) * BigInt(gasPrice)) };
+}
+
+/**
  * Sign `messages` with `priv` and broadcast, sizing gas like the CLI's
  * `--gas auto --gas-adjustment X --gas-prices Nngonka`.
  * Resolves once the tx is in a block with code 0; throws on any failure.
@@ -465,10 +486,10 @@ async function signAndBroadcast({ seed, chainId, priv, messages, gasAdjustment, 
 }
 
 module.exports = {
-  PREFIX, HD_PATH, DENOM, Msg,
+  PREFIX, HD_PATH, DENOM, Msg, VOTE_OPTIONS,
   privFromMnemonic, pubOf, addressOf, pubkeyJson,
   createKey, importKey, loadKey, saveKey, passphraseOk, fileNameFor,
-  getAccount, getChainId, simulate, broadcast, waitForTx, signAndBroadcast,
+  getAccount, getChainId, simulate, estimate, broadcast, waitForTx, signAndBroadcast,
   // exposed for the format tests
   _internal: { fields, txBody, authInfo, signDoc, txRaw, jweEncrypt, jweDecrypt, recordBytes, parseRecord, keyWrap, keyUnwrap }
 };

@@ -11,6 +11,11 @@
    prepares what the chain will not hand over cheaply), so it asks for
    nothing: no key, no password, no access to a server.
 
+   A node whose wallet is on this computer is "yours", and its page can also
+   act: vote with it, open a command line on its server, and shut it down the
+   way Gonka's guide says to (src/services/mynode.js). Those ask for the
+   wallet passphrase or the server password each time; neither is kept.
+
    Shares $, esc, t, api and APP_NAME with app.js. Every name here starts with
    "mon" or "MON": the renderer scripts share one global scope. */
 
@@ -19,7 +24,13 @@ const MON = {
   opened: false,      // the first visit lands on the first node kept, if any
   open: new Set(),    // proposals unfolded on the Votes page
   allPayouts: false,  // "Where it went" shows every payout
-  nodes: [],          // [{ address, name }] — the nodes this person keeps an eye on
+  nodes: [],          // [{ address, name, wallet?, server? }] — the nodes this person keeps an eye on
+  keyNames: [],       // the wallets in this computer's keyring, by name
+  panel: null,        // on your own node's page: "server" | "shutdown"
+  srv: { address: null, busy: false, error: null, lines: [], cwd: "", history: [], idx: 0 },
+  down: null,         // { address, data, busy, error, confirm } — the way out, for the node on screen
+  link: null,         // { address, open, busy, error } — linking a node to its wallet here
+  ballot: null,       // { id, address, option, stage, pass, fee, error, txhash } — a vote being cast
   address: null,      // the node on screen
   data: null,         // what the network says about it
   at: 0,              // when `data` was read
@@ -73,6 +84,10 @@ function monSpan(seconds) {
 const monPlace = (p) => (p ? t("{rank} of {of}", { rank: p.rank, of: p.of }) : "—");
 const monName = (n) => (n.name ? n.name : monShort(n.address));
 const monKept = (address) => MON.nodes.some((n) => n.address === address);
+/** Yours: its wallet is in this computer's keyring, so it can sign for the node. */
+const monOwn = (n) => !!(n && n.wallet && MON.keyNames.includes(n.wallet));
+/** A clock time some seconds from now, with the time zone named. */
+const monAt = (seconds) => new Date(Date.now() + seconds * 1000).toLocaleString(monLang(), { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
 const monTile = (label, num, sub) => `
   <div class="mon-tile"><div class="mon-tile-label">${esc(label)}</div>
     <div class="mon-tile-num">${esc(num)}</div>
@@ -80,7 +95,8 @@ const monTile = (label, num, sub) => `
 
 /* ---- coming and going -------------------------------------------------- */
 
-async function showMonitor() {
+/** Open the tool; with an address, straight on that node's page. */
+async function showMonitor(address) {
   document.body.classList.remove("on-home");
   document.body.classList.add("on-monitor");
   document.title = "Gonka Host Monitor/Vote — GNOT";
@@ -100,8 +116,10 @@ async function showMonitor() {
     </div>`;
   $("#mon-home").onclick = (e) => { e.preventDefault(); leaveMonitor(); };
   try { MON.nodes = await api("monitorNodes"); } catch (_) { MON.nodes = []; }
+  try { MON.keyNames = await api("keyNames"); } catch (_) { MON.keyNames = []; }
   api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; monRenderMain(); }).catch(() => {});
-  if (!MON.opened && MON.nodes.length) { MON.opened = true; monGo("node", MON.nodes[0].address); }
+  if (address) { MON.opened = true; monGo("node", address); }
+  else if (!MON.opened && MON.nodes.length) { MON.opened = true; monGo("node", MON.nodes[0].address); }
   else { MON.opened = true; monGo(MON.view === "add" ? "network" : MON.view, MON.address); }
   if (!MON.timer) MON.timer = setInterval(monRefresh, MON_REFRESH_MS);
 }
@@ -118,7 +136,7 @@ function monGo(view, address) {
   if (view === "mine" && MON.nodes.length) { view = "node"; address = address || MON.nodes[0].address; }
   MON.view = view;
   if (view === "node") {
-    if (address !== MON.address) { MON.data = null; MON.error = null; }
+    if (address !== MON.address) { MON.data = null; MON.error = null; MON.panel = null; MON.down = null; MON.link = null; }
     MON.address = address;
   }
   monRenderRail();
@@ -127,14 +145,16 @@ function monGo(view, address) {
   if (main) main.scrollTop = 0;
   if (view === "network" && (!MON.overview || Date.now() - MON.overviewAt > MON_REFRESH_MS)) monLoadOverview();
   // The network page counts the open votes, so the proposals are read there too.
-  if ((view === "votes" || view === "network") && !MON.gov) monLoadProposals();
+  // …and so does your own node's page, for its Vote button.
+  if ((view === "votes" || view === "network" || (view === "node" && monOwn(MON.nodes.find((n) => n.address === address)))) && !MON.gov) monLoadProposals();
   if (view === "node" && !MON.data) monLoad();
 }
 
 function monRefresh() {
   if (!document.body.classList.contains("on-monitor")) return;
   if (MON.view === "network") monLoadOverview(true);
-  else if (MON.view === "votes") monLoadProposals();
+  // Never redraw under someone typing a passphrase.
+  else if (MON.view === "votes") { if (!MON.ballot) monLoadProposals(); }
   else if (MON.view === "node") monLoad(true);
 }
 
@@ -167,7 +187,9 @@ function monRenderRail() {
   body.querySelectorAll("[data-forget]").forEach((b) => { b.onclick = () => monForget(b.dataset.forget); });
   if ($("#mon-undo")) $("#mon-undo").onclick = monUndoForget;
   $("#mon-add").onclick = () => monGo("add");
-  $("#mon-foot").innerHTML = `<div>${esc(t("Public information from the Gonka network. No key, no password."))}</div>`;
+  $("#mon-foot").innerHTML = `<div>${esc(MON.nodes.some(monOwn)
+    ? t("Public information from the Gonka network. Passwords and passphrases are asked for each time and never kept.")
+    : t("Public information from the Gonka network. No key, no password."))}</div>`;
 }
 
 async function monSave() {
@@ -235,12 +257,12 @@ async function monLoadProposals() {
     for (const p of MON.gov.proposals.filter((x) => x.status === "VOTING_PERIOD")) {
       MON.votes[p.id] = [];
       for (const n of MON.nodes) {
-        try { MON.votes[p.id].push({ name: monName(n), vote: await api("monitorVoteOf", { id: p.id, address: n.address }) }); } catch (_) { /* unknown */ }
+        try { MON.votes[p.id].push({ address: n.address, name: monName(n), vote: await api("monitorVoteOf", { id: p.id, address: n.address }) }); } catch (_) { /* unknown */ }
       }
     }
   } catch (e) { MON.gov = { error: e.message, proposals: [] }; }
-  // The network page counts the open votes; the Votes page is all of it.
-  if (MON.view === "votes" || MON.view === "network") monRenderMain();
+  // The network page and your node's Vote button count the open votes; the Votes page is all of it.
+  if (MON.view === "votes" || MON.view === "network" || MON.view === "node") monRenderMain();
 }
 
 /* ---- pages ------------------------------------------------------------- */
@@ -254,9 +276,17 @@ function monRenderMain() {
   else if (MON.view === "mine") html = monMineHtml();
   else if (MON.view === "add") html = monAddHtml();
   else html = monNodePageHtml();
-  // Keep the place on the page when it redraws itself (a refresh, a filter).
+  // Keep the place on the page when it redraws itself (a refresh, a filter),
+  // and whatever was half typed into it: a refresh comes every two minutes.
   const keep = main.scrollTop;
+  const page = MON.view + ":" + (MON.address || "");
+  const typed = {};
+  if (MON.rendered === page) main.querySelectorAll("input[id], select[id]").forEach((el) => { typed[el.id] = el.value; });
+  const focused = document.activeElement && main.contains(document.activeElement) ? document.activeElement.id : "";
   main.innerHTML = `<div class="mon-page">${html}</div>`;
+  MON.rendered = page;
+  for (const [id, v] of Object.entries(typed)) { const el = document.getElementById(id); if (el) el.value = v; }
+  if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
   main.scrollTop = keep;
   monWire(main);
 }
@@ -276,7 +306,7 @@ function monWire(main) {
   }
   if (MON.view === "add") monWireAdd();
   if (MON.view === "node") monWireNode();
-  if (MON.view === "votes") monWireVotes(main);
+  if (MON.view === "votes") { monWireVotes(main); monWireBallots(main); }
   const r = $("#mon-refresh");
   if (r) r.onclick = () => { if (MON.view === "node") monLoad(); else if (MON.view === "votes") { MON.gov = null; monRenderMain(); monLoadProposals(); } else monLoadOverview(); };
 }
@@ -400,7 +430,7 @@ function monMineHtml() {
       <button class="primary" data-go="add">${esc(t("Add your node"))}</button>
       <button data-go-hosts="1">${esc(t("Find it among every host"))}</button>
     </div>
-    <p class="small" style="margin-top:12px">${esc(t("Voting and shutting down sign with your node's wallet, so they work for nodes set up with GNOT on this computer."))}</p>`;
+    <p class="small" style="margin-top:12px">${esc(t("Voting, the command line and shutting down work for a node whose wallet is on this computer, such as one set up with GNOT here."))}</p>`;
 }
 
 /* ---- adding a node ----------------------------------------------------- */
@@ -435,10 +465,11 @@ function monWireAdd() {
 function monNodePageHtml() {
   const kept = MON.nodes.find((n) => n.address === MON.address);
   const node = kept || { address: MON.address, name: "" };
+  const own = monOwn(kept);
   const head = `
     <div class="mon-head">
       <div class="mon-head-id">
-        <h1>${esc(monName(node))}</h1>
+        <h1>${esc(monName(node))}${own ? ` <span class="pill ok mon-yours">${esc(t("Yours"))}</span>` : ""}</h1>
         <div class="mon-head-addr mono" id="mon-copy" title="${esc(t("Copy address"))}">${esc(node.address)}</div>
       </div>
       <div class="mon-head-tools">
@@ -452,7 +483,9 @@ function monNodePageHtml() {
   if (MON.error && !MON.data) body = `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.error }))}</div>`;
   else if (!MON.data) body = `<div class="info-banner">${esc(t("Reading what the network says about this node…"))}</div>`;
   else body = monNodeHtml(MON.data);
-  return head + body;
+  // Your own node can act; a kept one whose wallet may be here can be linked to it.
+  const acts = own ? monActionsHtml(kept) : kept && MON.keyNames.length ? monLinkHtml(kept) : "";
+  return head + acts + body;
 }
 function monWireNode() {
   const node = MON.nodes.find((n) => n.address === MON.address) || { address: MON.address, name: "" };
@@ -460,6 +493,320 @@ function monWireNode() {
   if ($("#mon-keep")) $("#mon-keep").onclick = async () => { await monKeep(MON.address, ""); monRenderRail(); monRenderMain(); };
   if ($("#mon-remove")) $("#mon-remove").onclick = () => monForget(MON.address);
   if ($("#mon-rename")) $("#mon-rename").onclick = () => monRename(node);
+  if (monOwn(node)) monWireActions(node);
+  else if ($("#mon-link")) monWireLink(node);
+}
+
+/* ---- your own node: vote, its server, the way out ---------------------- */
+
+function monActionsHtml(node) {
+  const open = MON.gov && MON.gov.proposals ? MON.gov.proposals.filter((p) => p.status === "VOTING_PERIOD").length : null;
+  const on = MON.srv.address === node.address;
+  const act = (id, title, sub, lit) => `
+    <button class="mon-action${lit ? " on" : ""}" data-act="${id}" aria-expanded="${lit ? "true" : "false"}"><b>${esc(title)}</b><span>${esc(sub)}</span></button>`;
+  const panel = MON.panel === "server" ? monServerHtml(node) : MON.panel === "shutdown" ? monShutdownHtml(node) : "";
+  return `
+    <div class="mon-actions">
+      ${act("vote", t("Vote"), open === null ? t("on the network's proposals") : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }), false)}
+      ${act("server", t("Your server"), on ? t("connected") : t("a command line on your server"), MON.panel === "server")}
+      ${act("shutdown", t("Shut down safely"), t("Gonka's steps for leaving"), MON.panel === "shutdown")}
+    </div>
+    ${panel}`;
+}
+function monWireActions(node) {
+  document.querySelectorAll("[data-act]").forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === "vote") { monGo("votes"); return; }
+      MON.panel = MON.panel === a ? null : a;
+      if (MON.panel === "shutdown") monLoadShutdown(node);
+      monRenderMain();
+    };
+  });
+  if (MON.panel === "server") monWireServer(node);
+  if (MON.panel === "shutdown") monWireShutdown(node);
+}
+
+/* A node set up before this version, or added by hand: prove it is yours by
+   unlocking its wallet once. Only the wallet's name is kept. */
+function monLinkHtml(node) {
+  const l = MON.link && MON.link.address === node.address ? MON.link : null;
+  if (!l || !l.open) {
+    return `<div class="mon-link"><div><b>${esc(t("Is this your node?"))}</b>
+      <span>${esc(t("If its wallet is on this computer, link it to vote with it, reach its server and shut it down from here."))}</span></div>
+      <button id="mon-link">${esc(t("Link its wallet"))}</button></div>`;
+  }
+  return `
+    <div class="card mon-link-form">
+      <h3>${esc(t("Link its wallet"))}</h3>
+      <div class="field-row two">
+        <label class="field"><span class="lbl">${esc(t("Wallet on this computer"))}</span>
+          <select id="mon-link-name">${MON.keyNames.map((k) => `<option value="${esc(k)}">${esc(k)}</option>`).join("")}</select></label>
+        <label class="field"><span class="lbl">${esc(t("Wallet passphrase"))}</span>
+          <input type="password" id="mon-link-pass" autocomplete="off"></label>
+      </div>
+      <div class="btn-row"><button class="primary" id="mon-link" ${l.busy ? "disabled" : ""}>${esc(l.busy ? t("Checking…") : t("Link"))}</button><button id="mon-link-cancel">${esc(t("Cancel"))}</button></div>
+      ${l.error ? `<p class="small mon-err">${esc(l.error)}</p>` : ""}
+      <p class="small">${esc(t("The passphrase only unlocks the wallet to check its address. It is not kept."))}</p>
+    </div>`;
+}
+function monWireLink(node) {
+  const l = MON.link && MON.link.address === node.address ? MON.link : null;
+  if (!l || !l.open) { $("#mon-link").onclick = () => { MON.link = { address: node.address, open: true }; monRenderMain(); const p = $("#mon-link-pass"); if (p) p.focus(); }; return; }
+  $("#mon-link-cancel").onclick = () => { MON.link = null; monRenderMain(); };
+  const go = async () => {
+    const name = $("#mon-link-name").value, passphrase = $("#mon-link-pass").value;
+    if (!passphrase) { l.error = t("Enter the wallet passphrase."); monRenderMain(); return; }
+    l.busy = true; l.error = null; monRenderMain();
+    try {
+      const k = await api("keyShow", { name, passphrase });
+      if (k.address !== node.address) throw new Error(t("The wallet \"{name}\" is {address}, not this node's wallet.", { name, address: monShort(k.address) }));
+      node.wallet = name;
+      // The setup on this computer may still know how to reach its server.
+      const s = typeof loadSession === "function" ? loadSession() : null;
+      if (!node.server && s && s.wallet && s.wallet.address === node.address) {
+        node.server = s.mode === "local" ? { mode: "local" } : { mode: "ssh", ...s.ssh, auth: s.ssh && s.ssh.auth === "password" ? "password" : "key" };
+      }
+      await monSave();
+      MON.link = null;
+      monRenderRail();
+    } catch (e) { l.busy = false; l.error = e.message; }
+    monRenderMain();
+  };
+  $("#mon-link").onclick = go;
+  $("#mon-link-pass").onkeydown = (e) => { if (e.key === "Enter") go(); };
+}
+
+/* ---- a command line on your server ------------------------------------- */
+
+const MON_QUICK = [
+  ["Containers", "docker compose -f docker-compose.yml -f docker-compose.mlnode.yml ps"],
+  ["Node log", "docker compose -f docker-compose.yml logs --tail 60 node"],
+  ["GPUs", "nvidia-smi"],
+  ["Disk space", "df -h"]
+];
+
+function monServerHtml(node) {
+  const s = node.server || {};
+  const v = MON.srv;
+  if (v.address !== node.address) {
+    // Not connected: how to reach it, filled in from last time.
+    const local = s.mode === "local";
+    const auth = s.auth === "password" ? "password" : "key";
+    return `
+      <div class="card mon-panel">
+        <h3>${esc(t("Connect to your server"))}</h3>
+        ${local ? `<p class="small">${esc(t("This node runs on this computer."))}</p>` : `
+        <div class="field-row">
+          <label class="field"><span class="lbl">${esc(t("Server address (IP or hostname)"))}</span><input type="text" id="mon-s-host" class="mono" value="${esc(s.host || "")}" placeholder="203.0.113.42"></label>
+          <label class="field"><span class="lbl">${esc(t("SSH port"))}</span><input type="number" id="mon-s-port" class="mono" value="${esc(String(s.port || 22))}"></label>
+          <label class="field"><span class="lbl">${esc(t("Username"))}</span><input type="text" id="mon-s-user" class="mono" value="${esc(s.username || "root")}"></label>
+        </div>
+        <div class="field"><span class="lbl">${esc(t("How do you log in?"))}</span>
+          <select id="mon-s-auth"><option value="key" ${auth === "key" ? "selected" : ""}>${esc(t("SSH key file"))}</option><option value="password" ${auth === "password" ? "selected" : ""}>${esc(t("Password"))}</option></select></div>
+        <div id="mon-s-keybox" ${auth === "key" ? "" : "hidden"}>
+          <div class="field-row two">
+            <label class="field"><span class="lbl">${esc(t("Private key file"))}</span><input type="text" id="mon-s-key" class="mono" value="${esc(s.privateKeyPath || "")}"></label>
+            <label class="field"><span class="lbl">${esc(t("Key passphrase (leave empty if none)"))}</span><input type="password" id="mon-s-keypass" autocomplete="off"></label>
+          </div>
+          <button id="mon-s-pick" class="mon-quiet">${esc(t("Choose file…"))}</button>
+        </div>
+        <div id="mon-s-passbox" ${auth === "password" ? "" : "hidden"}>
+          <label class="field"><span class="lbl">${esc(t("Password"))}</span><input type="password" id="mon-s-pass" autocomplete="off"></label>
+        </div>`}
+        <div class="btn-row"><button class="primary" id="mon-s-connect" ${v.busy ? "disabled" : ""}>${esc(v.busy ? t("Connecting…") : t("Connect"))}</button></div>
+        ${v.error ? `<p class="small mon-err">${esc(v.error)}</p>` : ""}
+        <p class="small">${esc(t("Passwords and passphrases are used to connect and then forgotten. The address and username are kept for next time."))}</p>
+      </div>`;
+  }
+  return `
+    <div class="card mon-panel">
+      <div class="mon-card-head"><h3>${esc(t("Your server"))}</h3><span class="small mono">${esc(v.info || "")}</span><button id="mon-s-off" class="mon-quiet">${esc(t("Disconnect"))}</button></div>
+      <div class="mon-quick">${MON_QUICK.map(([label, cmd], i) => `<button class="mon-quiet" data-quick="${i}" title="${esc(cmd)}">${esc(t(label))}</button>`).join("")}</div>
+      <pre class="mon-term-out mono" id="mon-term-out">${v.lines.map((l) => `<span class="${l.err ? "err" : l.cmd ? "cmd" : ""}">${esc(l.text)}</span>`).join("")}</pre>
+      <form class="mon-term-form" id="mon-term-form" autocomplete="off">
+        <span class="mono mon-term-prompt">${esc((v.cwd || "~") + " $")}</span>
+        <input type="text" id="mon-term-in" class="mono" spellcheck="false" placeholder="${esc(t("run a command on your server — try: docker compose ps"))}" ${v.busy ? "disabled" : ""}>
+      </form>
+      <p class="small mon-ai">${esc(t("Stuck? Copy what you see here into an AI such as ChatGPT or Claude and ask what to do. Never paste a password or your 24 words."))}
+        <button class="mon-quiet" id="mon-term-copy">${esc(t("Copy the output"))}</button></p>
+    </div>`;
+}
+function monWireServer(node) {
+  const v = MON.srv;
+  if (v.address !== node.address) {
+    const auth = $("#mon-s-auth");
+    if (auth) auth.onchange = () => { $("#mon-s-keybox").hidden = auth.value !== "key"; $("#mon-s-passbox").hidden = auth.value !== "password"; };
+    if ($("#mon-s-pick")) $("#mon-s-pick").onclick = async () => { const p = await api("pickFile"); if (p) $("#mon-s-key").value = p; };
+    $("#mon-s-connect").onclick = () => monConnect(node);
+    ["mon-s-pass", "mon-s-keypass"].forEach((id) => { const el = $("#" + id); if (el) el.onkeydown = (e) => { if (e.key === "Enter") monConnect(node); }; });
+    return;
+  }
+  const out = $("#mon-term-out");
+  if (out) out.scrollTop = out.scrollHeight;
+  $("#mon-s-off").onclick = async () => { try { await api("mineDisconnect"); } catch (_) {} MON.srv = { address: null, busy: false, error: null, lines: [], cwd: "", history: v.history, idx: v.history.length }; monRenderMain(); };
+  document.querySelectorAll("[data-quick]").forEach((b) => { b.onclick = () => monRun(MON_QUICK[Number(b.dataset.quick)][1]); });
+  const input = $("#mon-term-in");
+  $("#mon-term-form").onsubmit = (e) => { e.preventDefault(); const c = input.value.trim(); if (c) { input.value = ""; monRun(c); } };
+  input.onkeydown = (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    if (!v.history.length) return;
+    e.preventDefault();
+    v.idx = Math.max(0, Math.min(v.history.length, v.idx + (e.key === "ArrowUp" ? -1 : 1)));
+    input.value = v.history[v.idx] || "";
+  };
+  $("#mon-term-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(v.lines.map((l) => l.text).join("")); $("#mon-term-copy").textContent = "✓"; setTimeout(() => { const b = $("#mon-term-copy"); if (b) b.textContent = t("Copy the output"); }, 1500); } catch (_) {}
+  };
+}
+
+async function monConnect(node) {
+  const v = MON.srv;
+  const old = node.server || {};
+  const server = old.mode === "local" ? { mode: "local" } : {
+    mode: "ssh",
+    host: $("#mon-s-host").value.trim(), port: Number($("#mon-s-port").value) || 22, username: $("#mon-s-user").value.trim(),
+    auth: $("#mon-s-auth").value, privateKeyPath: $("#mon-s-key").value.trim()
+  };
+  const password = $("#mon-s-pass") ? $("#mon-s-pass").value : "";
+  const passphrase = $("#mon-s-keypass") ? $("#mon-s-keypass").value : "";
+  if (server.mode === "ssh" && (!server.host || !server.username)) { v.error = t("Address and username are required."); monRenderMain(); return; }
+  if (server.mode === "ssh" && server.auth === "password" && !password) { v.error = t("Enter the password."); monRenderMain(); return; }
+  if (server.mode === "ssh" && server.auth === "key" && !server.privateKeyPath) { v.error = t("Choose the private key file."); monRenderMain(); return; }
+  v.busy = true; v.error = null; monRenderMain();
+  try {
+    const r = await api("mineConnect", { server, password, passphrase });
+    MON.srv = { address: node.address, busy: false, error: null, info: r.info, cwd: r.cwd, lines: [], history: v.history, idx: v.history.length };
+    node.server = server;
+    await monSave();
+  } catch (e) { v.busy = false; v.error = t("Couldn't connect: {why}", { why: e.message }); }
+  monRenderMain();
+  const input = $("#mon-term-in");
+  if (input) input.focus();
+}
+
+/** Run one command and add what it said to the panel, without redrawing the page. */
+async function monRun(cmd) {
+  const v = MON.srv;
+  if (v.busy) return;
+  v.history.push(cmd); v.idx = v.history.length;
+  const add = (text, kind) => {
+    v.lines.push({ text, err: kind === "err", cmd: kind === "cmd" });
+    if (v.lines.length > 1500) v.lines.splice(0, v.lines.length - 1500);
+    const out = $("#mon-term-out");
+    if (out) { const s = document.createElement("span"); if (kind) s.className = kind; s.textContent = text; out.appendChild(s); out.scrollTop = out.scrollHeight; }
+  };
+  add(`${v.cwd || "~"} $ ${cmd}\n`, "cmd");
+  v.busy = true;
+  const input = $("#mon-term-in");
+  if (input) input.disabled = true;
+  try {
+    const r = await api("mineRun", { command: cmd });
+    if (r.output) add(r.output.endsWith("\n") ? r.output : r.output + "\n");
+    if (r.code) add(`(exit code ${r.code})\n`, "err");
+    if (r.cwd) v.cwd = r.cwd;
+  } catch (e) { add(e.message + "\n", "err"); }
+  v.busy = false;
+  const again = $("#mon-term-in");
+  if (again) { again.disabled = false; again.focus(); }
+  const p = document.querySelector(".mon-term-prompt");
+  if (p) p.textContent = (v.cwd || "~") + " $";
+}
+
+/* ---- shutting down, Gonka's way ---------------------------------------- */
+
+async function monLoadShutdown(node) {
+  const asked = node.address;
+  MON.down = { ...(MON.down && MON.down.address === asked ? MON.down : {}), address: asked, busy: true, error: null };
+  try {
+    const data = await api("mineShutdownStatus", { address: asked });
+    if (MON.down && MON.down.address === asked) { MON.down.data = data; MON.down.busy = false; }
+  } catch (e) {
+    if (MON.down && MON.down.address === asked) { MON.down.error = e.message; MON.down.busy = false; }
+  }
+  if (MON.view === "node" && MON.address === asked && MON.panel === "shutdown") monRenderMain();
+}
+
+function monShutdownHtml(node) {
+  const d = MON.down && MON.down.address === node.address ? MON.down : null;
+  const linked = MON.srv.address === node.address;
+  const guide = `<a href="#" data-open="https://gonka.ai/host/quickstart/#how-to-stop-your-node">${esc(t("Gonka's guide"))}</a>`;
+  const head = `<div class="mon-card-head"><h3>${esc(t("Shut down safely"))}</h3>
+    <button class="mon-quiet" id="mon-down-refresh">${esc(t("Check again"))}</button></div>
+    <p class="small mon-panel-lede">${t("Four steps, as in {guide}. Leaving early can lose the last epoch's reward.", { guide })}</p>`;
+  if (!d || (!d.data && d.busy)) return `<div class="card mon-panel">${head}<div class="info-banner">${esc(t("Reading where your node stands…"))}</div></div>`;
+  if (!d.data) return `<div class="card mon-panel">${head}<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: d.error }))}</div></div>`;
+  const s = d.data;
+  const step = (state, title, text, extra = "") => `
+    <div class="mon-step ${state}"><i aria-hidden="true">${state === "done" ? "✓" : ""}</i>
+      <div><b>${esc(title)}</b><p>${text}</p>${extra}</div></div>`;
+  const needServer = linked ? "" : `<button class="mon-quiet" data-act-panel="server">${esc(t("Connect to your server"))}</button>`;
+
+  // 1. Stop joining new epochs.
+  let one;
+  if (!d.off && (!linked || !s.machines)) {
+    one = step("now", t("Stop joining new epochs"), esc(linked ? t("The node's admin API on the server did not answer. Is the node running?") : t("Connect to your server first: this step runs there.")), needServer);
+  } else if (s.stopped || d.off) {
+    one = step("done", t("Stop joining new epochs"), esc(t("Its GPUs will not take part in the next Proof of Compute.")),
+      s.inEpoch ? `<button class="mon-quiet" id="mon-down-undo" ${d.doing ? "disabled" : ""}>${esc(t("Changed your mind? Switch them back on"))}</button>` : "");
+  } else {
+    const n = s.machines.length;
+    one = step("now", t("Stop joining new epochs"),
+      esc(t("The node keeps working until this epoch ends, then stays out of the next one. Until the next Proof of Compute this can be undone.")) +
+      `<br><span class="small">${esc(t(n === 1 ? "1 machine: {list}" : "{n} machines: {list}", { n, list: s.machines.map((m) => `${m.id}${m.enabled ? "" : " (" + t("off") + ")"}`).join(", ") }))}</span>`,
+      `<button class="primary" id="mon-down-stop" ${d.doing ? "disabled" : ""}>${esc(d.doing === "stop" ? t("Stopping…") : t("Stop joining new epochs"))}</button>`);
+  }
+  // 2. Finish this epoch.
+  const two = s.inEpoch
+    ? step(s.stopped ? "wait" : "later", t("Let it finish this epoch"), esc(t("It is still working in epoch {n}. Leave it running: it is paid for this epoch at about {when}, {span} from now.", { n: s.finish.epoch, when: monAt(s.finish.seconds), span: monSpan(s.finish.seconds) })))
+    : step("done", t("Let it finish this epoch"), esc(t("The network no longer counts it in the current epoch.")));
+  // 3. Collect the last reward.
+  let three;
+  const r = s.reward;
+  if (!r) three = step("later", t("Collect its last reward"), esc(t("After this epoch, the node claims its reward by itself. Keep it running until then.")));
+  else if (r.state === "none") three = step("done", t("Collect its last reward"), esc(t("Nothing is left to collect.")));
+  else if (r.state === "claimed") three = step("done", t("Collect its last reward"), esc(t("Epoch {n}'s reward, {amount}, was claimed.", { n: r.epoch, amount: monGnk(r.amount) })));
+  else if (r.state === "waiting") three = step("wait", t("Collect its last reward"), esc(t("Epoch {n}'s reward, {amount}, is claimed at about {when}, {span} from now. Keep the node running until then.", { n: r.epoch, amount: monGnk(r.amount), when: monAt(r.seconds), span: monSpan(r.seconds) })));
+  else three = step("now", t("Collect its last reward"), esc(t("Epoch {n}'s reward, {amount}, has not been claimed. Claim it by hand, the way Gonka's guide does.", { n: r.epoch, amount: monGnk(r.amount) })),
+    linked ? `<button class="primary" id="mon-down-claim" ${d.doing ? "disabled" : ""}>${esc(d.doing === "claim" ? t("Claiming…") : t("Claim it now"))}</button>` : needServer);
+  // 4. Switch it off.
+  let four;
+  if (d.off) four = step("done", t("Switch it off"), esc(t("Every container on the server is stopped. The node is off.")));
+  else if (!s.ready) four = step("later", t("Switch it off"), esc(t("Once the steps above are done.")));
+  else if (!linked) four = step("now", t("Switch it off"), esc(t("Connect to your server first: this step runs there.")), needServer);
+  else if (!d.confirm) four = step("now", t("Switch it off"), esc(t("Stops every container on the server.")), `<button class="primary" id="mon-down-off">${esc(t("Switch off the node"))}</button>`);
+  else four = step("now", t("Switch it off"), esc(t("This stops the node for good: it earns nothing more until it is started and registered for an epoch again. Your wallet, its GNK and the server's files stay as they are.")),
+    `<div class="btn-row"><button class="danger" id="mon-down-off-yes" ${d.doing ? "disabled" : ""}>${esc(d.doing === "off" ? t("Switching off…") : t("Yes, switch it off"))}</button><button id="mon-down-off-no">${esc(t("Cancel"))}</button></div>`);
+
+  return `<div class="card mon-panel">${head}
+    ${d.error ? `<div class="warn-banner">${esc(d.error)}</div>` : ""}
+    <div class="mon-steps">${one}${two}${three}${four}</div>
+    ${d.said ? `<pre class="mon-term-out mono small-out">${esc(d.said)}</pre>` : ""}
+  </div>`;
+}
+
+function monWireShutdown(node) {
+  const d = MON.down;
+  const act = async (kind, call, args) => {
+    d.doing = kind; d.error = null; monRenderMain();
+    try {
+      const r = await api(call, args);
+      if (kind === "off") { d.off = true; d.said = r.output || ""; }
+      else if (kind === "claim") d.said = r.message || "";
+      else d.said = (r.results || []).filter((x) => !x.ok).map((x) => `${x.id}: ${x.said}`).join("\n");
+    } catch (e) { d.error = e.message; }
+    d.doing = null; d.confirm = false;
+    await monLoadShutdown(node);
+  };
+  if ($("#mon-down-refresh")) $("#mon-down-refresh").onclick = () => monLoadShutdown(node).then(() => monRenderMain());
+  document.querySelectorAll("[data-act-panel]").forEach((b) => { b.onclick = () => { MON.panel = b.dataset.actPanel; monRenderMain(); }; });
+  if (!d) return;
+  if ($("#mon-down-stop")) $("#mon-down-stop").onclick = () => act("stop", "mineSetMachines", { enabled: false });
+  if ($("#mon-down-undo")) $("#mon-down-undo").onclick = () => act("undo", "mineSetMachines", { enabled: true });
+  if ($("#mon-down-claim")) $("#mon-down-claim").onclick = () => act("claim", "mineClaimReward");
+  if ($("#mon-down-off")) $("#mon-down-off").onclick = () => { d.confirm = true; monRenderMain(); };
+  if ($("#mon-down-off-no")) $("#mon-down-off-no").onclick = () => { d.confirm = false; monRenderMain(); };
+  if ($("#mon-down-off-yes")) $("#mon-down-off-yes").onclick = () => act("off", "mineSwitchOff");
 }
 
 /** Naming a node happens in the page: Electron has no prompt(). */
@@ -794,7 +1141,8 @@ function monVotesHtml() {
     const pc = (n) => (cast > 0 ? n / cast : 0);
     const seg = (n) => (pc(n) * 100).toFixed(2);
     const turnout = p.turnout === null ? null : Math.min(1, p.turnout);
-    const mine = MON.votes[p.id] || [];
+    // Your own nodes vote right here; the others kept here only show their vote.
+    const mine = (MON.votes[p.id] || []).filter((v) => !monOwn(MON.nodes.find((n) => n.address === v.address)));
     const open = isLive || MON.open.has(p.id);
     const why = !isLive && p.status === "REJECTED" && p.yesShare > p.threshold && turnout !== null && turnout < p.quorum
       ? t("Most votes were yes, but too few voted for it to count.") : "";
@@ -829,6 +1177,7 @@ function monVotesHtml() {
           ${isLive && turnout !== null ? `
             <div class="mon-turnout"><div class="mon-turnout-bar"><i style="width:${(turnout * 100).toFixed(1)}%"></i><b style="left:${(p.quorum * 100).toFixed(1)}%"></b></div>
             <span class="small">${esc(t("{voted} of the network's weight has voted. It needs {needs} to count.", { voted: monPct(turnout, 0), needs: monPct(p.quorum, 0) }))}</span></div>` : ""}
+          ${isLive ? monBallotHtml(p) : ""}
           ${why ? `<p class="small">${esc(why)}</p>` : ""}
           ${pays.length ? `<div class="mon-prop-pays">${pays.map((l) => `<div>${esc(l)}</div>`).join("")}${p.pays.recipients ? `<div class="small">${esc(t("recipients: {n}", { n: p.pays.recipients }))}</div>` : ""}</div>` : ""}
           ${p.upgradeTo && p.upgradeTo.height ? `<p class="small">${esc(t("At block {h}.", { h: monNum(p.upgradeTo.height) }))}</p>` : ""}
@@ -839,13 +1188,96 @@ function monVotesHtml() {
       </div>`;
   };
 
+  const howToVote = live.length && !MON.nodes.some(monOwn)
+    ? `<p class="small">${esc(t("To vote from here, open your node under My nodes and link its wallet."))}</p>` : "";
   return head + `
     ${live.length ? live.map((p) => card(p, true)).join("") : `<div class="info-banner">${esc(t("Nothing is being voted on right now."))}</div>`}
+    ${howToVote}
     ${more("How does voting work?", `<p>${esc(t("A host votes with its node; a proposal passes when at least {quorum} of the network's weight votes and more than {threshold} of those votes are yes.", { quorum: monPct(g.rules.quorum, 0), threshold: monPct(g.rules.threshold, 0) }))}</p>`)}
     ${monMoneyHtml()}
     <h2 class="mon-h2">${esc(t("Recent proposals"))}</h2>
     <p class="small" style="margin:-4px 0 10px">${esc(t("Click a proposal to see the votes by weight, what it pays and what it says."))}</p>
     ${past.map((p) => card(p, false)).join("")}`;
+}
+
+/* Voting with your own node: choose, unlock the wallet, let the network check
+   the vote without sending it, then send. The passphrase lives in memory only
+   while the vote is being cast. */
+const MON_OPTIONS = ["YES", "NO", "NO_WITH_VETO", "ABSTAIN"];
+const monVoteWord = (o) => ({ YES: t("Yes"), NO: t("No"), ABSTAIN: t("Abstain"), NO_WITH_VETO: t("No, with veto") })[o] || o;
+
+function monBallotHtml(p) {
+  return MON.nodes.filter(monOwn).map((n) => {
+    const now = ((MON.votes[p.id] || []).find((v) => v.address === n.address) || {}).vote || null;
+    const b = MON.ballot && MON.ballot.id === p.id && MON.ballot.address === n.address ? MON.ballot : null;
+    const busy = b && b.stage !== "done";
+    const outOfEpoch = MON.overview && !MON.overview.hosts.some((h) => h.address === n.address);
+    let flow = "";
+    if (b && (b.stage === "pass" || b.stage === "checking")) flow = `
+      <div class="mon-ballot-flow">
+        <label>${esc(t("Vote {option} with {name}. Wallet passphrase:", { option: monVoteWord(b.option), name: monName(n) }))}
+          <input type="password" id="mon-b-pass" autocomplete="off" ${b.stage === "checking" ? "disabled" : ""}></label>
+        <button class="primary" id="mon-b-check" ${b.stage === "checking" ? "disabled" : ""}>${esc(b.stage === "checking" ? t("Checking…") : t("Continue"))}</button>
+        <button id="mon-b-cancel">${esc(t("Cancel"))}</button>
+      </div>`;
+    else if (b && (b.stage === "confirm" || b.stage === "sending")) flow = `
+      <div class="mon-ballot-flow">
+        <span>${esc(t("The network accepts this vote. The fee is about {fee}.", { fee: monGnk(b.fee) }))}</span>
+        <button class="primary" id="mon-b-send" ${b.stage === "sending" ? "disabled" : ""}>${esc(b.stage === "sending" ? t("Sending…") : t("Send the vote: {option}", { option: monVoteWord(b.option) }))}</button>
+        <button id="mon-b-cancel" ${b.stage === "sending" ? "disabled" : ""}>${esc(t("Cancel"))}</button>
+      </div>`;
+    else if (b && b.stage === "done") flow = `<div class="mon-ballot-flow ok">${esc(t("Voted {option}. You can change the vote until it ends; the last one counts.", { option: monVoteWord(b.option) }))}</div>`;
+    if (b && b.error) flow += `<p class="small mon-err">${esc(b.error)}</p>`;
+    return `
+      <div class="mon-ballot" data-ballot="${esc(n.address)}">
+        <div class="mon-ballot-head"><b>${esc(t("Vote with {name}", { name: monName(n) }))}</b>
+          <span class="small">${now ? esc(t("Its vote now: {vote}", { vote: monVoteWord(now) })) : esc(t("It has not voted."))}</span></div>
+        <div class="mon-ballot-opts">${MON_OPTIONS.map((o) => `<button data-option="${o}" class="${b && b.option === o ? "on" : now === o ? "cast" : ""}" ${busy ? "disabled" : ""}>${esc(monVoteWord(o))}</button>`).join("")}</div>
+        ${outOfEpoch ? `<p class="small">${esc(t("This node is not in the current epoch. Its vote only counts if it is in the epoch when the vote ends."))}</p>` : ""}
+        ${flow}
+      </div>`;
+  }).join("");
+}
+
+function monWireBallots(main) {
+  main.querySelectorAll("[data-ballot]").forEach((box) => {
+    const id = Number(box.closest("[data-prop]").dataset.prop);
+    box.querySelectorAll("[data-option]").forEach((btn) => {
+      btn.onclick = () => {
+        MON.ballot = { id, address: box.dataset.ballot, option: btn.dataset.option, stage: "pass" };
+        monRenderMain();
+        const p = $("#mon-b-pass");
+        if (p) p.focus();
+      };
+    });
+  });
+  const b = MON.ballot;
+  const node = b && MON.nodes.find((n) => n.address === b.address);
+  if (!b || !node) return;
+  const ask = (dryRun) => api("mineVote", { keyName: node.wallet, passphrase: b.pass, address: b.address, proposalId: b.id, option: b.option, dryRun });
+  if ($("#mon-b-cancel")) $("#mon-b-cancel").onclick = () => { MON.ballot = null; monRenderMain(); };
+  const check = async () => {
+    const pass = $("#mon-b-pass").value;
+    if (!pass) return;
+    b.pass = pass; b.stage = "checking"; b.error = null; monRenderMain();
+    try { b.fee = (await ask(true)).fee; b.stage = "confirm"; }
+    catch (e) { b.stage = "pass"; b.pass = null; b.error = e.message; }
+    if (MON.ballot === b) monRenderMain();
+  };
+  if ($("#mon-b-check")) { $("#mon-b-check").onclick = check; $("#mon-b-pass").onkeydown = (e) => { if (e.key === "Enter") check(); }; }
+  if ($("#mon-b-send")) $("#mon-b-send").onclick = async () => {
+    b.stage = "sending"; b.error = null; monRenderMain();
+    try {
+      b.txhash = (await ask(false)).txhash;
+      b.stage = "done"; b.pass = null;
+      const list = MON.votes[b.id] || (MON.votes[b.id] = []);
+      const had = list.find((v) => v.address === b.address);
+      if (had) had.vote = b.option; else list.push({ address: b.address, name: monName(node), vote: b.option });
+      // Then read the tally again, once the message has been seen.
+      setTimeout(() => { if (MON.ballot === b) { MON.ballot = null; monLoadProposals(); } }, 20000);
+    } catch (e) { b.stage = "confirm"; b.error = e.message; }
+    if (MON.ballot === b) monRenderMain();
+  };
 }
 
 /** A click anywhere on a past proposal folds it open or shut; links inside still work. */

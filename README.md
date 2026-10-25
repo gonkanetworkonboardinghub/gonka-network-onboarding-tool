@@ -22,8 +22,10 @@ GNOT opens on a home screen of tools:
   step: connect over SSH, health check and fixes, wallet, network and SSL,
   model and GPU configuration, model weights, launch and registration,
   collateral, and verification.
-- **Gonka Host Monitor** is coming soon.
-- **Gonka Vote** is coming soon.
+- **Gonka Host Monitor/Vote** follows any node from public network data, shows
+  what the network is voting on and where its shared money went, and for your
+  own node (one whose wallet is on this computer) votes with it, opens a
+  command line on its server, and shuts it down the way Gonka's guide says to.
 
 ## Verifying what the app does
 
@@ -32,7 +34,7 @@ Good places to start reading:
 | What | Where |
 | --- | --- |
 | Your wallet | `src/services/wallet.js`, `src/services/keys.js` |
-| Commands run on your server | `src/services/scan.js`, `src/services/fixes.js`, `src/services/deploy.js` |
+| Commands run on your server | `src/services/scan.js`, `src/services/fixes.js`, `src/services/deploy.js`, `src/services/mynode.js` |
 | Network facts and endpoints | `src/knowledge.js`, `src/services/netdata.js` |
 | Updates | `src/update.js`, `src/updater.js` |
 | Install commands | `scripts/install.ps1`, `scripts/install.sh` |
@@ -44,8 +46,10 @@ The short version:
   official `inferenced` tool, protected by your passphrase. The 24-word
   recovery phrase is shown once and never written to disk. Transactions are
   signed locally and sent to Gonka network nodes.
-- **Everything the app runs on your server** goes over your SSH connection and
-  appears in the Activity log.
+- **Everything the app runs on your server** goes over your SSH connection.
+  The setup's commands appear in the Activity log; Monitor/Vote runs only the
+  ones you type and the shutdown steps in `src/services/mynode.js`. Server
+  passwords and key passphrases are never saved.
 - **No accounts and no tracking.** The app talks to Gonka network nodes,
   GitHub (the update manifest, releases, Gonka's official repository for
   supported configurations, and this repository's `data` branch for the
@@ -63,7 +67,9 @@ The short version:
   (`GNOT_MEMO` in `src/services/keys.js`). It says nothing about you. It exists
   so anyone can count the nodes GNOT has helped bring into the network, straight
   from the chain: `scripts/onboarded-snapshot.js` finds those transactions and
-  publishes the count per epoch, with every transaction hash as proof.
+  publishes the count per epoch, with every transaction hash as proof. A vote
+  cast from Monitor/Vote carries `Voted with GNOT v<version>` instead, and is
+  not counted.
 - **Updates and installs are verified.** The app and both install scripts
   check each download's SHA-256 against `manifest.json` before running it.
 - **Every published build is signed by GitHub as coming from this source.**

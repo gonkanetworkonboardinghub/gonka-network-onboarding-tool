@@ -2438,9 +2438,27 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
+      <button class="primary" id="b-watch">Watch your node</button>
       <button id="b-again">Set up another node</button>
-    </div>`);
+    </div>
+    <p class="small">${esc(t("Watch your node opens it in Gonka Host Monitor/Vote: how it is doing, its earnings, voting with it, a command line on its server, and shutting it down safely."))}</p>`);
   $("#b-back").onclick = () => go(11);
+  // Add the node to My nodes as yours: its wallet's name and how to reach its
+  // server. Never a password or a passphrase.
+  $("#b-watch").onclick = async () => {
+    const server = S.mode === "local" ? { mode: "local" } : {
+      mode: "ssh", host: S.ssh.host, port: S.ssh.port, username: S.ssh.username,
+      auth: S.ssh.auth === "password" ? "password" : "key", privateKeyPath: S.ssh.privateKeyPath
+    };
+    const mine = { address: S.wallet.address, wallet: S.wallet.name, server };
+    try {
+      const nodes = await api("monitorNodes");
+      const i = nodes.findIndex((n) => n.address === mine.address);
+      if (i >= 0) nodes[i] = { ...nodes[i], ...mine }; else nodes.unshift({ ...mine, name: t("My node") });
+      await api("monitorSaveNodes", { nodes });
+    } catch (e) { logLine("\nCouldn't add the node to Monitor/Vote: " + e.message + "\n", "stderr"); }
+    showMonitor(S.wallet.address);
+  };
   const seed = S.seed || S.K.seedNodes[0];
   $("#d-part").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + S.K.api.participants + S.wallet.address }); };
   $("#d-dash").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + "/dashboard/gonka/validator" }); };
