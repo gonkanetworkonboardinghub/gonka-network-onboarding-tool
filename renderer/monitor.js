@@ -779,7 +779,7 @@ function monNodePageHtml() {
   else if (!MON.data) body = `<div class="info-banner">${esc(t("Reading what the network says about this node…"))}</div>`;
   else body = monNodeHtml(MON.data);
   // Your own node can act; a kept one whose wallet may be here can be linked to it.
-  const acts = own ? monActionsHtml(kept) : kept && MON.keyNames.length ? monLinkHtml(kept) : "";
+  const acts = own ? monActionsHtml(kept) : kept ? monLinkHtml(kept) : "";
   return head + acts + body;
 }
 function monWireNode() {
@@ -826,6 +826,11 @@ function monWireActions(node) {
    unlocking its wallet once. Only the wallet's name is kept. */
 function monLinkHtml(node) {
   const l = MON.link && MON.link.address === node.address ? MON.link : null;
+  // With no wallet on this computer there is nothing to link yet: say so plainly.
+  if (!MON.keyNames.length) {
+    return `<div class="mon-link"><div><b>${esc(t("Is this your node?"))}</b>
+      <span>${esc(t("Voting, the command line and shutting down sign with the node's own wallet, and no wallet is saved on this computer. A node set up with GNOT on this computer has its wallet here."))}</span></div></div>`;
+  }
   if (!l || !l.open) {
     return `<div class="mon-link"><div><b>${esc(t("Is this your node?"))}</b>
       <span>${esc(t("If its wallet is on this computer, link it to vote with it, reach its server and shut it down from here."))}</span></div>

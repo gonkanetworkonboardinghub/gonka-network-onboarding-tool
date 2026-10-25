@@ -707,6 +707,7 @@ body.on-home #monitor { display: none; }
 .mon-lock-tile .mon-lock { position: absolute; top: 14px; right: 14px; width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.8; }
 
 /* Votes: whether you can vote, and what each proposal asks for */
+.mon-yourvote > button { flex: none; white-space: nowrap; }
 .mon-yourvote { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--wash); }
 .mon-yourvote.ready { border-color: var(--green); }
 .mon-yv-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; background: var(--accent-dim); }
