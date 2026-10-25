@@ -18,6 +18,9 @@
 #   governance.json - where the shared money is (community pool, governance
 #                     account, community sale) and what every passed proposal
 #                     paid, for the Votes page (scripts/governance-snapshot.js)
+#   capacity.json   - the network's size each epoch: H100 equivalent by Gonka's
+#                     own formula, and the GPUs that took part, for the network
+#                     page's chart (scripts/capacity-snapshot.js)
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -56,7 +59,7 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +73,7 @@ jobs:
       - name: Fetch what was published last time
         run: |
           git fetch origin data --depth=1 || true
-          for f in earnings onboarded stats compat epochs network governance; do
+          for f in earnings onboarded stats compat epochs network governance capacity; do
             git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
           done
 
@@ -135,10 +138,16 @@ jobs:
         run: |
           node scripts/governance-snapshot.js "$RUNNER_TEMP/governance.json"             || { rm -f "$RUNNER_TEMP/governance.json"; exit 1; }
 
+      - name: Measure the network's size, epoch by epoch
+        id: capacity
+        continue-on-error: true
+        run: |
+          node scripts/capacity-snapshot.js "$RUNNER_TEMP/prev-capacity.json" "$RUNNER_TEMP/capacity.json"             || { rm -f "$RUNNER_TEMP/capacity.json"; exit 1; }
+
       - name: Publish them on the data branch
         run: |
           kept=""
-          for f in earnings onboarded stats compat epochs network governance; do
+          for f in earnings onboarded stats compat epochs network governance capacity; do
             if [ -s "$RUNNER_TEMP/$f.json" ] && node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$RUNNER_TEMP/$f.json"; then
               cp "$RUNNER_TEMP/$f.json" "$RUNNER_TEMP/out-$f.json"
             else
@@ -155,8 +164,8 @@ jobs:
             git checkout --orphan data
             git rm -rf . >/dev/null 2>&1 || true
           fi
-          for f in earnings onboarded stats compat epochs network governance; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
-          git add earnings.json onboarded.json stats.json compat.json epochs.json network.json governance.json
+          for f in earnings onboarded stats compat epochs network governance capacity; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
+          git add earnings.json onboarded.json stats.json compat.json epochs.json network.json governance.json capacity.json
           # services.json listed Use Gonka's services; nothing reads it since 1.5.0.
           git rm -q --ignore-unmatch services.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }

@@ -326,10 +326,16 @@ function monWire(main) {
    short ones columns. Wherever the pointer is, or with the arrow keys once
    the chart has focus, it tells the exact figure and when. */
 
-/** A chart's place on the page. spec: { label, kind: "line" | "bars", unit, fmt(v), points: [{ y, gap, x, tip: [value, when] }] } */
+/**
+ * A chart's place on the page. spec: { label, kind: "line" | "bars", unit, fmt(v),
+ * points: [{ y, gap, x, tip: [value…, when] }] }. With `series: [{ label }]` it
+ * is several lines on one scale (same unit only), each point carrying `ys`,
+ * and a legend above it; the second line is dashed, so color is never alone.
+ */
 function monPlot(id, spec) {
   MON.plots[id] = spec;
-  return `<div class="mon-plot" data-plot="${id}" tabindex="0" role="img" aria-label="${esc(spec.label)}" style="height:${spec.height || 190}px"></div>`;
+  const legend = spec.series ? `<div class="mon-legend">${spec.series.map((s, i) => `<span><i class="mon-key s${i}"></i>${esc(s.label)}</span>`).join("")}</div>` : "";
+  return `${legend}<div class="mon-plot" data-plot="${id}" tabindex="0" role="img" aria-label="${esc(spec.label)}" style="height:${spec.height || 190}px"></div>`;
 }
 /** Round steps for the scale: 0, 50, 100, 150… with the top at or above the largest value. */
 function monTicks(max) {
@@ -356,10 +362,15 @@ function monDrawPlots(root) {
     const W = el.clientWidth, H = el.clientHeight;
     if (!spec || !spec.points.length || !W || !H) return;
     const pts = spec.points, n = pts.length;
-    const ticks = monTicks(Math.max(0, ...pts.map((p) => p.y || 0)));
+    const lanes = spec.series ? spec.series.length : 1;
+    const valOf = (p, s) => (spec.series ? (p.ys || [])[s] : p.y);
+    const ticks = monTicks(Math.max(0, ...pts.flatMap((p) => Array.from({ length: lanes }, (_, s) => valOf(p, s) || 0))));
     const top = ticks[ticks.length - 1] || 1;
     const labels = ticks.map(spec.fmt);
-    const pad = { l: Math.ceil(Math.max(...labels.map((s) => s.length), (spec.unit || "").length) * 7.2) + 14, r: 12, t: spec.unit ? 24 : 10, b: 26 };
+    // Several lines are labelled at their right-hand end, so they need room there.
+    const ends = spec.series ? Array.from({ length: lanes }, (_, s) => { for (let i = n - 1; i >= 0; i--) if (valOf(pts[i], s) != null) return { i, v: valOf(pts[i], s) }; return null; }) : [];
+    const endW = ends.length ? Math.ceil(Math.max(...ends.map((x) => (x ? spec.fmt(x.v).length : 0))) * 7.2) + 12 : 0;
+    const pad = { l: Math.ceil(Math.max(...labels.map((s) => s.length), (spec.unit || "").length) * 7.2) + 14, r: 12 + endW, t: spec.unit ? 24 : 10, b: 26 };
     const pw = Math.max(10, W - pad.l - pad.r), ph = Math.max(10, H - pad.t - pad.b);
     const bars = spec.kind === "bars";
     const slot = bars ? pw / n : (n > 1 ? pw / (n - 1) : pw);
@@ -395,21 +406,30 @@ function monDrawPlots(root) {
       });
     } else {
       // A gap in the record breaks the line rather than being drawn as zero.
-      let line = "", area = "", run = [];
-      const flush = () => {
-        if (!run.length) return;
-        line += run.map(([x, y], k) => `${k ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
-        area += `M${run[0][0].toFixed(1)},${base}` + run.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join("") + `L${run[run.length - 1][0].toFixed(1)},${base}Z`;
-        run = [];
-      };
-      pts.forEach((p, i) => { if (p.gap || p.y == null) flush(); else run.push([xOf(i), yOf(p.y)]); });
-      flush();
-      s += `<path class="mon-plot-area" d="${area}"/><path class="mon-plot-line" d="${line}"/>`;
+      // The first series gets a faint wash under it; the others are lines only.
+      for (let lane = lanes - 1; lane >= 0; lane--) {
+        let line = "", area = "", run = [];
+        const flush = () => {
+          if (!run.length) return;
+          line += run.map(([x, y], k) => `${k ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+          area += `M${run[0][0].toFixed(1)},${base}` + run.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join("") + `L${run[run.length - 1][0].toFixed(1)},${base}Z`;
+          run = [];
+        };
+        pts.forEach((p, i) => { const v = valOf(p, lane); if (p.gap || v == null) flush(); else run.push([xOf(i), yOf(v)]); });
+        flush();
+        s += `${lane === 0 ? `<path class="mon-plot-area" d="${area}"/>` : ""}<path class="mon-plot-line s${lane}" d="${line}"/>`;
+        // With only a few points, each one is marked, so a short line still reads as measurements.
+        if (n <= 30) pts.forEach((p, i) => { const v = valOf(p, lane); if (!p.gap && v != null) s += `<circle class="mon-plot-mark s${lane}" r="3" cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}"/>`; });
+      }
+      // Each line's latest figure at its end, unless two would sit on top of each other.
+      const ys = ends.map((x) => (x ? yOf(x.v) : null));
+      const apart = ys.every((y, a) => ys.every((z, b) => a === b || y === null || z === null || Math.abs(y - z) >= 15));
+      if (ends.length && apart) ends.forEach((x, lane) => { if (x) s += `<text class="mon-plot-end" x="${(xOf(x.i) + 6).toFixed(1)}" y="${(yOf(x.v) + 4).toFixed(1)}">${esc(spec.fmt(x.v))}</text>`; });
     }
     s += `<line class="mon-plot-cross" x1="0" x2="0" y1="${pad.t}" y2="${base}" visibility="hidden"/>`;
-    if (!bars) s += `<circle class="mon-plot-dot" r="4" cx="0" cy="0" visibility="hidden"/>`;
+    if (!bars) for (let lane = 0; lane < lanes; lane++) s += `<circle class="mon-plot-dot s${lane}" r="4" cx="0" cy="0" visibility="hidden"/>`;
     el.innerHTML = `<svg xmlns="${NS}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${s}</svg>`;
-    el._plot = { spec, pad, pw, slot, bars, n, xOf, yOf, i: null };
+    el._plot = { spec, pad, pw, slot, bars, n, xOf, yOf, valOf, i: null };
     monWirePlot(el);
   });
 }
@@ -428,10 +448,24 @@ function monTip() {
     tip = document.createElement("div");
     tip.id = "mon-tip";
     tip.className = "mon-tip";
-    tip.innerHTML = "<b></b><span></span>";
     document.body.appendChild(tip);
   }
   return tip;
+}
+/**
+ * Fill the readout: the figure first, then the details and when. With several
+ * lines, one figure each, keyed to its line, then when.
+ */
+function monTipFill(tip, rows, keyed) {
+  tip.textContent = "";
+  rows.filter((r) => r).forEach((text, i, all) => {
+    const strong = keyed ? i < all.length - 1 || all.length === 1 : i === 0;
+    const row = document.createElement(strong ? "b" : "span");
+    const last = !strong;
+    if (keyed && !last) { const k = document.createElement("i"); k.className = "mon-key s" + i; row.appendChild(k); }
+    row.appendChild(document.createTextNode(text || ""));
+    tip.appendChild(row);
+  });
 }
 function monPlotShow(el, i, clientX, clientY) {
   const P = el._plot;
@@ -443,15 +477,14 @@ function monPlotShow(el, i, clientX, clientY) {
   const x = P.xOf(i);
   const cross = svg.querySelector(".mon-plot-cross");
   cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("visibility", "visible");
-  const dot = svg.querySelector(".mon-plot-dot");
-  if (dot) {
-    if (p.y != null && !p.gap) { dot.setAttribute("cx", x); dot.setAttribute("cy", P.yOf(p.y)); dot.setAttribute("visibility", "visible"); }
+  svg.querySelectorAll(".mon-plot-dot").forEach((dot, lane) => {
+    const v = P.valOf(p, lane);
+    if (v != null && !p.gap) { dot.setAttribute("cx", x); dot.setAttribute("cy", P.yOf(v)); dot.setAttribute("visibility", "visible"); }
     else dot.setAttribute("visibility", "hidden");
-  }
+  });
   svg.querySelectorAll("[data-i]").forEach((b) => b.classList.toggle("on", Number(b.dataset.i) === i));
   const tip = monTip();
-  tip.querySelector("b").textContent = p.tip[0];
-  tip.querySelector("span").textContent = p.tip[1] || "";
+  monTipFill(tip, p.tip, !!P.spec.series);
   tip.style.display = "block";
   const box = el.getBoundingClientRect();
   const px = clientX != null ? clientX : box.left + x;
@@ -518,10 +551,7 @@ function monNetworkHtml() {
         ${monPlot("hosts", { label: t("Hosts, epoch by epoch"), kind: "line", fmt: (v) => monNum(v),
           points: past.map((p) => ({ y: p.hosts, x: monDay(p.at) || String(p.epoch), tip: [t("{n} hosts", { n: monNum(p.hosts) }), monEpochWhen(p)] })) })}
         <p class="small">${esc(t("{a} hosts then, {b} now.", { a: past[0].hosts, b: o.hosts.length }))}</p></div>
-      <div class="card"><h3>${esc(t("Paid out, epoch by epoch"))}</h3>
-        ${monPlot("paid", { label: t("Paid out, epoch by epoch"), kind: "line", unit: "GNK", fmt: (v) => monShortNum(v),
-          points: past.map((p) => ({ y: p.rewards / MON_NGONKA, x: monDay(p.at) || String(p.epoch), tip: [[monGnk(p.rewards), monUsd(p.rewards)].filter(Boolean).join(" · "), monEpochWhen(p)] })) })}
-        <p class="small">${esc(t("Shared among the hosts that took part."))}</p></div>
+      ${monGpusCard(o)}
     </div>` : "";
   const bars = (rows) => {
     const top = Math.max(1, ...rows.map((r) => r.n));
@@ -547,6 +577,31 @@ function monNetworkHtml() {
       ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
     </div>`;
   return head + tiles + charts + runs + hosts;
+}
+
+/* The GPUs that took part, epoch by epoch. A count of cards treats an H100
+   and a B300 alike, so pointing at an epoch also tells its mix. */
+const monKindsLine = (kinds) => Object.entries(kinds || {}).sort((a, b) => b[1] - a[1])
+  .map(([k, n]) => `${k === "Other" ? t("Other") : k} ${monNum(n)}`).join(" · ");
+function monGpusCard(o) {
+  const cap = o.capacity || [];
+  const head = `<h3>${esc(t("GPUs, epoch by epoch"))}</h3>`;
+  if (!cap.length) return `<div class="card">${head}<p class="small">${esc(t("Not collected yet. It fills in over the next few hours."))}</p></div>`;
+  const now = cap[cap.length - 1];
+  const plot = monPlot("gpus", {
+    label: t("GPUs, epoch by epoch"), kind: "line", fmt: (v) => monNum(v),
+    points: cap.map((c) => ({
+      y: c.gpus, x: monDay(c.at) || String(c.epoch),
+      tip: [t("{n} GPUs took part", { n: monNum(c.gpus) }), monKindsLine(c.kinds), monEpochWhen(c)]
+    }))
+  });
+  return `<div class="card">${head}${plot}
+    <p class="small">${esc(t("{a} GPUs then, {b} in epoch {n}. Point at an epoch to see which kinds.", { a: monNum(cap[0].gpus), b: monNum(now.gpus), n: now.epoch }))}</p>
+    ${more("What does this count?", `
+      <p>${esc(t("Every card the hosts report on the machines that did work in that epoch. The hosts report their own hardware; the network does not check it. GPUs differ a great deal, so the mix matters as much as the number."))}</p>
+      <p>${esc(t("The network keeps only each host's latest hardware report, so the past comes from Gonkascan's record, which it has kept every epoch. GNOT measures each new epoch itself, and the two agree."))}
+        <a href="#" data-open="https://gonkascan.com">gonkascan.com</a></p>`)}
+  </div>`;
 }
 
 /* ---- every host -------------------------------------------------------- */

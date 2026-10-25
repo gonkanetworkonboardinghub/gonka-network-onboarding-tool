@@ -466,11 +466,28 @@ async function hardwareSetups() {
 }
 
 /**
+ * The GPUs that took part each epoch, and of what kind, as capacity.json
+ * carries them (scripts/capacity-snapshot.js). Kept in memory for ten
+ * minutes; null when it cannot be had.
+ */
+let capFile = { at: 0, data: null };
+async function capacityFile() {
+  const url = K.get().capacityUrl;
+  if (!url) return null;
+  if (capFile.data && Date.now() - capFile.at < 10 * 60 * 1000) return capFile.data;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) capFile = { at: Date.now(), data: await res.json() };
+  } catch (_) { /* keep whatever was read before */ }
+  return capFile.data;
+}
+
+/**
  * The network page: where the epoch is, who is in it, what they run, what was
  * paid out, what exists, and how all of it moved over the recent epochs.
  */
 async function networkOverview(seeds, { epochs = 180 } = {}) {
-  const [now, mem, file, kept] = await Promise.all([epochNow(seeds), members(seeds), networkFile(), epochArchive()]);
+  const [now, mem, file, kept, cap] = await Promise.all([epochNow(seeds), members(seeds), networkFile(), epochArchive(), capacityFile()]);
   const byEpoch = kept || {};
   const totalWeight = mem.hosts.reduce((a, h) => a + h.weight, 0);
   const finished = Object.keys(byEpoch).map(Number).filter((e) => e < mem.epoch).sort((a, b) => a - b);
@@ -522,7 +539,12 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     last: lastEpoch ? { epoch: lastEpoch, rewards: lastRewards, hosts: lastRows.length, perGpu: totals && totals.gpus ? lastRewards / totals.gpus : null } : null,
     supply: file ? file.supply : null,
     communityPool: file ? file.communityPool : null,
-    past
+    past,
+    // The GPUs that took part, epoch by epoch (oldest first), and of what kind:
+    // measured by GNOT's data job while the epoch was on, or else Gonkascan's record.
+    capacity: ((cap && cap.epochs) || []).filter((c) => c.e > now.index - epochs && (c.g != null || c.gs != null)).map((c) => ({
+      epoch: c.e, ...epochWhen(c.e, now), gpus: c.g != null ? c.g : c.gs, kinds: c.k || {}, measured: c.g != null
+    }))
   };
 }
 

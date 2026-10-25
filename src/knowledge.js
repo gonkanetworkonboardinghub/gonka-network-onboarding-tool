@@ -110,6 +110,9 @@ const overridable = {
   // Where the shared money is and what each passed proposal paid
   // (scripts/governance-snapshot.js), for Monitor/Vote's Votes page.
   governanceUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/governance.json",
+  // The GPUs that took part each epoch, and of what kind
+  // (scripts/capacity-snapshot.js), for the network page's GPU chart.
+  capacityUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/capacity.json",
 
   // API paths (relative to a node base URL)
   api: {
