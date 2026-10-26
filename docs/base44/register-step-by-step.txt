@@ -1,0 +1,133 @@
+PROMPT FOR BASE44 — Register a Node: step-by-step pictures instead of the video
+(attach the 14 pictures from the folder "register-walkthrough-pictures" to this
+message — 01-welcome.webp to 14-finished.webp — then paste everything below
+and publish)
+
+On the page /register-a-node, in the "GNOT Host Setup Tool" section:
+
+1. REMOVE THE VIDEO (GonkaWalkthrough.mp4) completely. It shows an older
+   version of the app. Keep everything else in that section as it is: the
+   text, the Download GNOT button and the "Checked against the live Gonka
+   network" line.
+
+2. ADD A NEW SECTION right below it, titled:
+
+       Step by step with GNOT
+
+   with this short line under the title, in the small grey style:
+
+       Every step of Gonka Host Setup, as the app shows it. The pictures use
+       an example 8 × H100 server; the addresses in them are examples.
+
+   Then a row of small numbered chips (1 to 14), each jumping to its step
+   below, so people can go straight to the step they are on.
+
+   Then the 14 steps, in order, one under the other. Each step is a card in
+   the site's existing card style with:
+   - a round number badge (1, 2, 3 …) and the step's title in bold;
+   - the caption below the title, in normal text;
+   - the picture below the caption, full width of the card, rounded corners,
+     a thin border in the site's border colour, loaded lazily;
+   - clicking the picture opens it large in a lightbox (dark backdrop, close
+     with Esc, the × or a click outside; arrow keys go to the previous and
+     next picture).
+   Give each card an anchor (#step-1 … #step-14) for the chips.
+
+   The pictures are the attached files. Use them exactly in this order, with
+   these titles and captions (keep the wording):
+
+   1  — 01-welcome.webp
+   Title: Pick what you'll run
+   Caption: Choose a model and the GPUs you'll rent. Each box is a setup
+   Gonka has a ready-made configuration for; "Whole 8-GPU servers" run that
+   setup several times at once and earn that many times more. The number on
+   the right is how many hosts run the model right now.
+
+   2  — 02-welcome-needs.webp
+   Title: See exactly what your server needs
+   Caption: Once you pick a setup, GNOT lists what to rent: the GPUs, a
+   dedicated server (never spot — it can be taken back mid-epoch, and then
+   that epoch pays nothing), 1,000 GB of disk, memory of 1.5 × the GPUs',
+   Linux with an NVIDIA driver for CUDA 13 (or 12.9), the root login and two
+   open ports. "What it earns →" shows what that setup earns before you pay
+   for anything.
+
+   3  — 03-your-server.webp
+   Title: Tell GNOT where the server is
+   Caption: A rented server, which GNOT reaches over SSH, or the computer
+   you're using.
+
+   4  — 04-connect.webp
+   Title: Connect
+   Caption: Paste the SSH command your provider shows, or fill in the
+   address, user and key. No SSH key yet? GNOT can make one and shows you
+   what to paste into your provider's form.
+
+   5  — 05-health-check.webp
+   Title: Health check
+   Caption: GNOT checks the server against everything Gonka needs. Anything
+   with a Fix button is repaired in one click — Docker, the NVIDIA container
+   toolkit, the model downloader, even an old NVIDIA driver — and you see
+   the exact commands first.
+
+   6  — 06-wallet.webp
+   Title: Your wallet
+   Caption: GNOT creates your wallet on your own computer. Its 24 recovery
+   words are shown once: write them on paper and never share them — they
+   are your wallet and your earnings. The wallet needs a little GNK for the
+   setup and for the node's network fees (Gonka's guide suggests 10 GNK).
+
+   7  — 07-network.webp
+   Title: How the network reaches your node
+   Caption: Simple uses your server's IP address; Secure uses your own
+   domain with HTTPS. Either way, ports 8000 and 5000 must be open in your
+   provider's dashboard.
+
+   8  — 08-model.webp
+   Title: The model configuration
+   Caption: GNOT shows Gonka's ready-made configurations, marks the ones
+   that fit your server, and picks the one you chose on the first step. On
+   8 GPUs it runs a 4-GPU setup twice at once.
+
+   9  — 09-review.webp
+   Title: Review and write the configuration
+   Caption: Exactly what will be written to your server: the model, your
+   node's address and the setup. Both settings files can be opened and read
+   first, and internal ports are locked down automatically.
+
+   10 — 10-weights.webp
+   Title: Download the model
+   Caption: The model files are hundreds of GB, so this is the longest
+   step. It resumes by itself if interrupted; you can leave it running.
+
+   11 — 11-launch.webp
+   Title: Launch and register
+   Caption: GNOT runs Gonka's official launch sequence in order: the
+   software, the blockchain node, the server's own key, registering your
+   host on the network, the permissions (signed on your computer) and the
+   full node. The activity log shows every command.
+
+   12 — 12-collateral.webp
+   Title: Collateral
+   Caption: A small deposit — a fraction of a GNK — that lets your node
+   earn in full; without it the network counts only 20% of your GPUs' work.
+   It stays yours and can be withdrawn later; it can be cut by 10–20% for
+   downtime or invalid work.
+
+   13 — 13-verify.webp
+   Title: Verify
+   Caption: GNOT watches your node until it is fully ready — registered,
+   reachable from the internet and active — and says what it is doing. You
+   can leave it running and walk away.
+
+   14 — 14-finished.webp
+   Title: Your node is live
+   Caption: Your node is now in My nodes in Gonka Host Monitor/Vote, inside
+   the same app: see how it is doing, vote with it, use a command line on
+   its server, or shut it down safely. From here: keep the server on, keep
+   your 24 words safe, and never delete the .tmkms folder on the server.
+
+3. On phones: the chips wrap onto several lines, the cards stack, and the
+   pictures stay full width of the card (they can be opened large).
+
+Change nothing else on the page or the site.

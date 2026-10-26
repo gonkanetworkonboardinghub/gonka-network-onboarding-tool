@@ -1,0 +1,68 @@
+PROMPT FOR BASE44 — Hide Impact for now, and a light tidy-up of the whole site
+(paste everything below into Base44, then publish)
+
+Keep the site's look exactly as it is — the dark style, the fonts, the
+colours, the photos on the home page, every page's wording. These are small
+changes to make it easier to find your way around.
+
+1. HIDE "IMPACT" FOR NOW.
+   - Remove IMPACT from the top menu and from the phone menu, and remove any
+     other link to /impact anywhere on the site.
+   - Keep the /impact page itself working at its address, unchanged, so it
+     can come back later. If the platform allows it, keep it out of the
+     sitemap and mark it noindex while it is hidden.
+
+2. THE TOP MENU, in plain words. Today it reads "ACQUIRE · REGISTER · MINE OR
+   BUY · IMPACT · Download GNOT · FAQ". Make it:
+
+       Get a node · Register a node · Mine or buy · FAQ        [ Download GNOT ]
+
+   - same links as today (/get-a-node, /register-a-node, /mine-or-buy, /faq);
+   - "Download GNOT" (to /download) becomes a small filled button on the
+     right, in the site's accent style, so it stands out from the links;
+   - the current page's link stays highlighted as it is now;
+   - the language selector stays where it is;
+   - the phone menu lists the same items in the same order, with Download
+     GNOT as a full-width button at the bottom.
+
+3. THE HOME PAGE: something under the two big cards. Today the page ends
+   right after "Get a Node" and "Register a Node". Below them, add one row
+   of three smaller cards in the same card style (no photos), each with a
+   small icon, a title, one line and an arrow, the whole card clickable:
+   - Download GNOT — "The app that sets up your node, on Windows or Mac." →
+     /download
+   - Mine it or buy it? — "What each rig earns today, and what renting one
+     costs." → /mine-or-buy
+   - Questions — "How it works, what it costs, and how your wallet stays
+     safe." → /faq
+   On phones the three cards stack.
+
+4. A FOOTER ON EVERY PAGE (today there is none). One quiet line or two at the
+   bottom, in the small grey style, with:
+   - on the left: the GNOH logo mark and "The Gonka Network Onboarding Hub";
+   - links: Get a node · Register a node · Mine or buy · Download GNOT · FAQ
+     · Source code (https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool,
+     new tab) · Gonka Discord (the same Discord link the site already uses,
+     new tab);
+   - the "Checked against the live Gonka network …" line the download page
+     already shows, if it can be reused here as it is.
+   On phones the links wrap onto several lines, centred.
+
+5. LINK RELATED PAGES.
+   - On /get-a-node, at the end of the Spheron section (under its
+     RESOURCES), add a card: "What does renting each rig cost right now? —
+     Compare with providers →" linking to /mine-or-buy#compare.
+   - On /mine-or-buy, give the "Compare with providers" section the anchor
+     id "compare", so that link lands on it.
+   - On /register-a-node, at the very end of the page, add a card: "Not sure
+     what to rent? — See what each setup needs and earns →" linking to
+     /mine-or-buy.
+
+6. SMALL POLISH, everywhere:
+   - clickable cards lift very slightly and their border brightens on hover
+     (about 2 px, quick and subtle); nothing moves for people who turned on
+     "reduce motion";
+   - every page scrolls back to the top when you open it from the menu;
+   - nothing on any page scrolls sideways on a phone.
+
+Change nothing else.
