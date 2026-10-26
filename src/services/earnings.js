@@ -131,6 +131,9 @@ async function chainFacts(seed) {
   // to "what would mine get".
   const byClass = new Map();        // "H100"        -> { gpus, perGpu: [] }
   const byClassModel = new Map();   // "H100|model"  -> { gpus, perGpu: [] }
+  // How many machines run exactly this setup now, and for how many hosts:
+  // "H100|model|8" -> { machines, hosts }. Only machines with one kind of GPU.
+  const sizes = new Map();
   const bump = (map, key, gpus, weight, nodeGpus, host) => {
     const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [], hosts: new Set() };
     cur.gpus += gpus;
@@ -162,6 +165,14 @@ async function chainFacts(seed) {
       const share = (w / pocTotal) * paid;     // this node's slice of what the member is paid for
       const gpus = node.hardware.reduce((a, h) => a + Number(h.count || 0), 0) || 1;
       const models = (node.models || []).length ? node.models : [null];
+      const only = node.hardware.length === 1 ? classOf(node.hardware[0].type) : null;
+      if (only) for (const model of models) {
+        if (!model) continue;
+        const key = `${only}|${model}|${gpus}`;
+        const cur = sizes.get(key) || { machines: 0, hosts: new Set() };
+        cur.machines++; cur.hosts.add(p.index);
+        sizes.set(key, cur);
+      }
       for (const h of node.hardware) {
         const cls = classOf(h.type);
         if (!cls) continue;
@@ -189,7 +200,7 @@ async function chainFacts(seed) {
     gnkPerWeight: totalWeight ? mintedGnk / totalWeight : 0,
     rewardParams: params.bitcoin_reward_params || null,
     api,
-    byClass, byClassModel
+    byClass, byClassModel, sizes
   };
 }
 
@@ -306,6 +317,11 @@ async function estimate(seed, { force = false } = {}) {
   // Setups Gonka publishes for a kind of GPU no host runs now: nothing to
   // measure, so they are named rather than priced.
   const noHosts = [];
+  // Machines running exactly this rig now, and the hosts they belong to.
+  const runningNow = (gpuClass, model, gpuCount) => {
+    const s = facts.sizes.get(`${gpuClass}|${model}|${gpuCount}`);
+    return { machines: s ? s.machines : 0, hosts: s ? s.hosts.size : 0 };
+  };
   const rig = (row, per, gpuCount, copies) => {
     const gnkPerDay = per.w * gpuCount * facts.gnkPerWeight * perDay;
     return {
@@ -314,6 +330,7 @@ async function estimate(seed, { force = false } = {}) {
       gpuCount,
       // How many copies of the setup the ML node runs on this many GPUs.
       copies,
+      ...runningNow(row.gpuClass, row.model, gpuCount),
       weight: Math.round(per.w * gpuCount),
       gnkPerDay,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
@@ -331,13 +348,17 @@ async function estimate(seed, { force = false } = {}) {
     if (seen.has(key)) continue;
     seen.add(key);
     const per = weightPerGpu(row.gpuClass, row.model);
-    if (!per) { noHosts.push({ model: row.model, gpuClass: row.gpuClass, gpuCount: row.gpuCount }); continue; }
-    configs.push(rig(row, per, row.gpuCount, 1));
-    // The same setup on a whole server, when it divides evenly.
-    if (row.gpuCount < FULL_SERVER && FULL_SERVER % row.gpuCount === 0 && !seen.has(`${row.model}|${row.gpuClass}|${FULL_SERVER}`)) {
-      seen.add(`${row.model}|${row.gpuClass}|${FULL_SERVER}`);
-      configs.push(rig(row, per, FULL_SERVER, FULL_SERVER / row.gpuCount));
+    // The same setup on a whole server too, when it divides evenly.
+    const whole = row.gpuCount < FULL_SERVER && FULL_SERVER % row.gpuCount === 0 && !seen.has(`${row.model}|${row.gpuClass}|${FULL_SERVER}`);
+    if (whole) seen.add(`${row.model}|${row.gpuClass}|${FULL_SERVER}`);
+    if (!per) {
+      const none = { model: row.model, gpuClass: row.gpuClass, machines: 0, hosts: 0 };
+      noHosts.push({ ...none, gpuCount: row.gpuCount, copies: 1 });
+      if (whole) noHosts.push({ ...none, gpuCount: FULL_SERVER, copies: FULL_SERVER / row.gpuCount });
+      continue;
     }
+    configs.push(rig(row, per, row.gpuCount, 1));
+    if (whole) configs.push(rig(row, per, FULL_SERVER, FULL_SERVER / row.gpuCount));
   }
 
   // Models the network pays for that no published configuration covers — GLM
@@ -355,6 +376,7 @@ async function estimate(seed, { force = false } = {}) {
     const gnkPerDay = w * gpuCount * facts.gnkPerWeight * perDay;
     configs.push({
       model, gpuClass, gpuCount,
+      ...runningNow(gpuClass, model, gpuCount),
       weight: Math.round(w * gpuCount),
       gnkPerDay,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,

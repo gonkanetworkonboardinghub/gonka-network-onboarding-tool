@@ -431,9 +431,12 @@ function renderNeeds() {
   line.innerHTML = p ? `<span>${t("For {setup} running {model}.", {
       setup: `<b dir="ltr">${esc(`${p.count} × ${p.gpu}`)}${p.variant ? " " + esc(p.variant) : ""}</b>`,
       model: `<b>${esc(p.model.split("/").pop())}</b>` })}${whole}</span>
+    ${p.custom ? "" : `<button type="button" id="need-earn">${esc(t("What it earns →"))}</button>`}
     <button type="button" id="need-clear">${esc(t("Show the general list"))}</button>`
     : `<span>${esc(t("General needs. Pick a setup above to see the exact ones."))}</span>`;
   if (p) $("#need-clear").onclick = () => pickSetup(null);
+  // Straight to the calculator, opened on this setup.
+  if (p && $("#need-earn")) $("#need-earn").onclick = () => { EARN_TO_CALC = true; openEarnings(); };
 }
 /** Pick a setup (or null for the general list); picking the same one again clears it. */
 function pickSetup(chip) {
@@ -2595,6 +2598,8 @@ function setTheme(value) {
    paying for itself. All of it measured from the chain (src/services/
    earnings.js); the numbers change on their own as the network does. */
 let EARN = null, EARN_AT = 0;
+/** Open Mine it or buy it at its calculator (from Host Setup's "What it earns"). */
+let EARN_TO_CALC = false;
 
 const shortModel = (m) => String(m).split("/").pop();
 const fmtGnk = (n) => Math.round(n).toLocaleString(window.I18N.lang());
@@ -2686,23 +2691,42 @@ async function refreshPrice(known) {
 function renderEarnBody(d) {
   const body = $("#earn-body");
   if (!body) return;
+  const rigCell = (c) => `<td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}${c.copies > 1
+    ? `<span class="per-gpu">${esc(t("{n} copies at once", { n: c.copies }))}</span>` : ""}</td>`;
+  // Machines running exactly this rig now, read from what each host publishes.
+  const nowCell = (c) => `<td class="num">${c.machines == null ? "—" : esc(String(c.machines))}${c.hosts
+    ? `<span class="per-gpu">${esc(t("hosts: {n}", { n: c.hosts }))}</span>` : ""}</td>`;
   const rows = d.configs.map((c) => `
     <tr${c.deployable === false ? ' class="own-config"' : ""} title="${esc(t("Measured on {n} GPUs", { n: c.sampleGpus }))}">
-      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}${c.copies > 1
-        ? `<span class="per-gpu">${esc(t("{n} copies at once", { n: c.copies }))}</span>` : ""}</td>
+      ${rigCell(c)}
       <td>${esc(shortModel(c.model))}</td>
+      ${nowCell(c)}
       <td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
       <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
       <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"
         // Rigs differ in size, so the per-GPU rate is what makes rows comparable.
         + `<span class="per-gpu">${esc(fmtUsd(c.breakEvenPerHour / c.gpuCount))}${esc(t("/h per GPU"))}</span>`}</td>
+    </tr>`).join("")
+    // Setups Gonka publishes that no host runs now: there to pick, with nothing measured.
+    + (d.noHosts || []).map((c) => `
+    <tr class="own-config none-yet">
+      ${rigCell(c)}
+      <td>${esc(shortModel(c.model))}</td>
+      ${nowCell(c)}
+      <td class="dim" colspan="3">${esc(t("No host runs this yet, so there is nothing to measure."))}</td>
     </tr>`).join("");
+  // Every rig in the calculator, the unmeasured ones last: "c3" or "n1".
+  const calcRigs = [...d.configs.map((c, i) => ({ c, v: "c" + i })), ...(d.noHosts || []).map((c, i) => ({ c, v: "n" + i, none: true }))];
+  // Open on the setup picked on Host Setup's first step, when there is one.
+  const wp = WELCOME.pick;
+  const start = wp && calcRigs.find(({ c }) => c.model === wp.model && c.gpuClass === wp.gpu && c.gpuCount === wp.count);
 
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
     <table class="earn-table">
       <thead><tr>
         <th>${esc(t("Rig"))}</th><th>${esc(t("Model"))}</th>
+        <th class="num" title="${esc(t("Machines on the network running exactly this rig and model right now, as their hosts report them."))}">${esc(t("Machines now"))}</th>
         <th class="num">${esc(t("GNK a day"))}</th><th class="num">${esc(t("Worth"))}</th>
         <th class="num">${esc(t("Rent below"))}</th>
       </tr></thead>
@@ -2714,15 +2738,15 @@ function renderEarnBody(d) {
       ? t("Only rigs this app can set up, for models the network is paying for today. Left out: {list}.",
           { list: d.withoutData.map(shortModel).join(", ") })
       : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
-    ${(d.noHosts || []).length ? `<div class="earn-scope">${esc(t("Gonka publishes a setup for these, but no host runs them now, so there is nothing to measure: {list}.",
-      { list: d.noHosts.map((c) => `${c.gpuCount}× ${c.gpuClass} ${shortModel(c.model)}`).join(", ") }))}</div>` : ""}
+    <div class="earn-scope">${esc(t("Machines now: the machines on the network running exactly that rig and model right now, as their hosts report them, and how many hosts they belong to."))}</div>
 
     <div class="earn-calc">
       <div class="earn-calc-title">${esc(t("Will it pay for itself?"))}</div>
       <div class="earn-calc-lead">${esc(t("Pick a rig, type what you pay for it, and see whether what it mines covers the cost."))}</div>
       <div class="earn-calc-row">
-        <select id="earn-pick">${d.configs.map((c, i) =>
-          `<option value="${i}">${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}</option>`).join("")}</select>
+        <select id="earn-pick">${calcRigs.map(({ c, v, none }) =>
+          `<option value="${v}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${none
+            ? ` (${esc(t("no host runs it yet"))})` : ""}</option>`).join("")}</select>
         <input id="earn-cost" type="number" min="0" step="0.01" placeholder="${esc(t("what you pay"))}" />
         <select id="earn-unit">
           <option value="24">${esc(t("per hour"))}</option>
@@ -2761,7 +2785,14 @@ function renderEarnBody(d) {
 
   const pick = $("#earn-pick"), cost = $("#earn-cost"), unit = $("#earn-unit"), out = $("#earn-out");
   const recalc = () => {
-    const c = d.configs[Number(pick.value)];
+    const chosen = calcRigs.find((r) => r.v === pick.value);
+    const c = chosen && chosen.c;
+    // Nothing measured to compare a price with: say so, whatever was typed.
+    if (chosen && chosen.none) {
+      out.innerHTML = `<div>${esc(t("No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it.",
+        { rig: `${c.gpuCount}× ${c.gpuClass}`, model: shortModel(c.model) }))}</div>`;
+      return;
+    }
     const paid = Number(cost.value);
     if (!c || !isFinite(paid) || paid <= 0) { out.innerHTML = ""; return; }
     const perDayCost = paid * Number(unit.value);
@@ -2769,6 +2800,7 @@ function renderEarnBody(d) {
     const lines = [t("It mines {gnk} GNK a day{usd}.", {
       gnk: fmtGnk(c.gnkPerDay), usd: earnUsd == null ? "" : ", " + t("worth {usd}", { usd: fmtUsd(earnUsd) })
     })];
+    if (c.machines != null) lines.push(t("Machines running this now: {m} · hosts: {h}", { m: c.machines, h: c.hosts }));
     lines.push(t("You pay {usd} a day.", { usd: fmtUsd(perDayCost) }));
     if (earnUsd != null) {
       const diff = earnUsd - perDayCost;
@@ -2794,6 +2826,12 @@ function renderEarnBody(d) {
   pick.onchange = recalc;
   unit.onchange = recalc;
   cost.oninput = recalc;
+  if (start) recalc();
+  if (EARN_TO_CALC) {
+    EARN_TO_CALC = false;
+    $(".earn-calc").scrollIntoView({ block: "start" });
+    cost.focus({ preventScroll: true });
+  }
 }
 
 function renderHome() {
