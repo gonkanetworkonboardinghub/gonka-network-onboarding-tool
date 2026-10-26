@@ -2637,12 +2637,40 @@ function headlineConfig(d) {
   return (common && d.configs.find((c) => c.gpuClass === common.id)) || d.configs[0] || null;
 }
 
+/**
+ * While Mine it or buy it reads the chain: a short chain of blocks lit one
+ * after another, the step being done under it (the real steps, in turn), and
+ * the shape of the table to come. Still for anyone who asked for less motion.
+ */
+const CHAIN_STEPS = ["Finding this epoch's hosts", "Matching each GPU to the work it proved",
+  "Checking what hosts were paid last epoch", "Asking for the GNK price", "Working out each rig"];
+function chainLoaderHtml() {
+  const row = `<div>${"<span></span>".repeat(6)}</div>`;   // the table has six columns
+  return `<div class="chain-load" role="status" aria-live="polite">
+      <div class="chain-blocks" aria-hidden="true">${"<i></i>".repeat(5)}</div>
+      <div class="chain-load-text">${esc(t("Reading the chain…"))}</div>
+      <div class="chain-load-step">${esc(t(CHAIN_STEPS[0]))}</div>
+    </div>
+    <div class="chain-skeleton" aria-hidden="true">${row.repeat(6)}</div>`;
+}
+/** Turn the step line over every so often until the loader is replaced. */
+function startChainSteps(root) {
+  let i = 0;
+  const timer = setInterval(() => {
+    const step = root && root.querySelector(".chain-load-step");
+    if (!step || !document.contains(step)) { clearInterval(timer); return; }
+    if (i >= CHAIN_STEPS.length - 1) { clearInterval(timer); return; }   // the last step stays until the figures come
+    step.classList.add("fade");
+    setTimeout(() => { i++; step.textContent = t(CHAIN_STEPS[i]); step.classList.remove("fade"); }, 250);
+  }, 1500);
+}
+
 function renderEarnStrip() {
   const el = $("#earn-strip");
   if (!el) return;
   // Say what it is while the chain is being read, instead of sitting there as
   // an empty grey bar for a second or two.
-  el.innerHTML = `<span class="led"></span><span class="earn-text">${esc(t("Reading the chain…"))}</span>` +
+  el.innerHTML = `<span class="chain-mini" aria-hidden="true"><i></i><i></i><i></i></span><span class="earn-text">${esc(t("Reading the chain…"))}</span>` +
     `<span class="earn-go">${esc(t("Mine it or buy it? →"))}</span>`;
   el.hidden = false;
   el.onclick = () => openEarnings();
@@ -2669,7 +2697,7 @@ function openEarnings() {
       <div class="sheet-top"><span class="tool-name">${esc(t("Mine it or buy it?"))}</span></div>
       <div class="earn-now" id="earn-now"></div>
       <p class="sheet-lead">${esc(t("What each rig mined over the last epoch, measured from the chain, against what that much GNK costs to buy."))}</p>
-      <div id="earn-body" class="earn-body">${esc(t("Reading the chain…"))}</div>
+      <div id="earn-body" class="earn-body">${chainLoaderHtml()}</div>
       <div class="btn-row"><button class="primary" id="sheet-close">${esc(t("Close"))}</button></div>
     </div>`;
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -2681,6 +2709,7 @@ function openEarnings() {
   $("#sheet-close").onclick = close;
   document.addEventListener("keydown", onKey);
   $("#sheet-close").focus();
+  startChainSteps($("#earn-body"));
 
   loadEarnings()
     .then((d) => {
@@ -2700,8 +2729,9 @@ function renderRent() {
   if (!box) return;
   renderRentHint();
   if (!RENT) {
-    box.innerHTML = `<div class="earn-scope">${esc(RENT_ERROR != null
-      ? t("Could not read the providers' prices right now.") + " " + RENT_ERROR : t("Reading the providers' prices…"))}</div>`;
+    box.innerHTML = RENT_ERROR != null
+      ? `<div class="earn-scope">${esc(t("Could not read the providers' prices right now.") + " " + RENT_ERROR)}</div>`
+      : `<div class="earn-scope rent-loading"><span class="chain-mini" aria-hidden="true"><i></i><i></i><i></i></span>${esc(t("Reading the providers' prices…"))}</div>`;
     return;
   }
   // This computer's clock, with its time zone named, so nobody wonders whose time it is.

@@ -288,6 +288,44 @@ button.tool-card:focus-visible { outline: 2px solid var(--focus); outline-offset
 .earn-strip .earn-text { flex: 1 1 auto; color: var(--muted); }
 .earn-strip .earn-go { flex: none; font-weight: 600; }
 .earn-body { margin-top: 16px; }
+/* While the chain is read: a short chain of blocks lit one after another, the
+   step being done, and the shape of the table to come. */
+.chain-load { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 0 20px; }
+.chain-blocks { display: flex; align-items: center; margin-bottom: 4px; }
+.chain-blocks i { position: relative; width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line-strong); background: var(--panel-2); animation: chain-read 1.6s ease-in-out infinite; }
+.chain-blocks i + i { margin-left: 16px; }
+.chain-blocks i + i::before { content: ""; position: absolute; right: calc(100% + 1px); top: 50%; width: 16px; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--line-strong); animation: chain-link 1.6s ease-in-out infinite; animation-delay: inherit; }
+.chain-blocks i:nth-child(2) { animation-delay: 0.16s; }
+.chain-blocks i:nth-child(3) { animation-delay: 0.32s; }
+.chain-blocks i:nth-child(4) { animation-delay: 0.48s; }
+.chain-blocks i:nth-child(5) { animation-delay: 0.64s; }
+@keyframes chain-read {
+  0%, 55%, 100% { background: var(--panel-2); border-color: var(--line-strong); box-shadow: none; transform: translateY(0); }
+  18% { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--accent), 0 0 2px var(--accent); transform: translateY(-3px); }
+}
+@keyframes chain-link { 0%, 55%, 100% { background: var(--line-strong); } 18% { background: var(--accent); } }
+.chain-load-text { font-weight: 600; font-size: 14px; color: var(--text); }
+.chain-load-step { font-size: 12.5px; color: var(--muted); min-height: 1.5em; transition: opacity 0.25s; }
+.chain-load-step.fade { opacity: 0; }
+.chain-skeleton { display: flex; flex-direction: column; gap: 14px; padding: 6px 0 4px; }
+.chain-skeleton div { display: grid; grid-template-columns: 0.9fr 1.7fr 0.7fr 0.7fr 0.8fr 1fr; gap: 18px; }
+.chain-skeleton span { height: 11px; border-radius: 4px; background: linear-gradient(90deg, var(--wash) 30%, var(--wash-strong) 50%, var(--wash) 70%); background-size: 300% 100%; animation: shimmer 1.6s linear infinite; }
+.chain-skeleton div:nth-child(2) span { animation-delay: 0.1s; } .chain-skeleton div:nth-child(3) span { animation-delay: 0.2s; }
+.chain-skeleton div:nth-child(4) span { animation-delay: 0.3s; } .chain-skeleton div:nth-child(5) span { animation-delay: 0.4s; }
+.chain-skeleton div:nth-child(6) span { animation-delay: 0.5s; }
+.chain-skeleton div:nth-child(even) { opacity: 0.7; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+/* The same, small: on the home strip and while the providers are read. */
+.chain-mini { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.chain-mini i { width: 6px; height: 6px; border-radius: 2px; background: var(--led-off); animation: chain-mini 1.2s ease-in-out infinite; }
+.chain-mini i:nth-child(2) { animation-delay: 0.15s; }
+.chain-mini i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chain-mini { 0%, 55%, 100% { background: var(--led-off); box-shadow: none; } 20% { background: var(--accent); box-shadow: 0 0 6px var(--accent); } }
+.rent-loading { display: flex; align-items: center; gap: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .chain-blocks i, .chain-blocks i + i::before, .chain-mini i, .chain-skeleton span { animation: none; }
+  .chain-load-step { transition: none; }
+}
 .earn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .earn-table th {
   text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 500;
