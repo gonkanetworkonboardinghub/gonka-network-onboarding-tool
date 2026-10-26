@@ -23,14 +23,26 @@ const netdata = require("./netdata");
 const K = require("../knowledge");
 
 const GPU_CLASSES = [
-  [/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"]
+  [/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"],
+  // Hosts run these and are paid for them, but Gonka publishes no setup for
+  // them, so they are listed with a † only. (\bH20\b leaves H200 alone.)
+  [/\bH20\b/i, "H20"], [/RTX\s*5090/i, "RTX 5090"], [/RTX\s*4090/i, "RTX 4090"],
+  [/RTX\s*PRO\s*6000/i, "RTX PRO 6000"], [/MI355X/i, "MI355X"], [/MI300X/i, "MI300X"]
 ];
+/**
+ * Servers are mostly rented whole, with 8 GPUs. Gonka's ML node starts as many
+ * copies of a setup as the server has room for (mlnode runner.py: GPUs ÷ GPUs
+ * per copy), so an 8-GPU server with a 4-GPU setup runs two and earns twice.
+ */
+const FULL_SERVER = 8;
 /** Wrapped GNK on Ethereum — the only official one (gonka.ai/docs/FAQ). */
 const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
 /** A class+model pair needs at least this many GPUs behind it to be quoted on its own. */
 const MIN_SAMPLE_GPUS = 8;
 /** A rig the network runs but no config covers needs at least this many GPUs behind it to be listed at all. */
 const MIN_OBSERVED_GPUS = 4;
+/** ...and at least this many hosts running it, since each host reports its own hardware. */
+const MIN_OBSERVED_HOSTS = 2;
 const CACHE_MS = 10 * 60 * 1000;
 
 let cache = null;
@@ -119,10 +131,10 @@ async function chainFacts(seed) {
   // to "what would mine get".
   const byClass = new Map();        // "H100"        -> { gpus, perGpu: [] }
   const byClassModel = new Map();   // "H100|model"  -> { gpus, perGpu: [] }
-  const bump = (map, key, gpus, weight, nodeGpus) => {
-    const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [] };
+  const bump = (map, key, gpus, weight, nodeGpus, host) => {
+    const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [], hosts: new Set() };
     cur.gpus += gpus;
-    if (gpus > 0) { cur.perGpu.push(weight / gpus); cur.nodeGpus.push(nodeGpus || gpus); }
+    if (gpus > 0) { cur.perGpu.push(weight / gpus); cur.nodeGpus.push(nodeGpus || gpus); cur.hosts.add(host); }
     map.set(key, cur);
   };
 
@@ -155,10 +167,10 @@ async function chainFacts(seed) {
         if (!cls) continue;
         const count = Number(h.count) || 0;
         const part = share * (count / gpus);
-        bump(byClass, cls, count, part, gpus);
+        bump(byClass, cls, count, part, gpus, p.index);
         for (const model of models) {
           if (!model) continue;
-          bump(byClassModel, cls + "|" + model, count / models.length, part / models.length, gpus);
+          bump(byClassModel, cls + "|" + model, count / models.length, part / models.length, gpus, p.index);
         }
       }
     }
@@ -175,18 +187,63 @@ async function chainFacts(seed) {
     vestingEpochs,
     participants: (egd.validation_weights || []).length,
     gnkPerWeight: totalWeight ? mintedGnk / totalWeight : 0,
+    rewardParams: params.bitcoin_reward_params || null,
+    api,
     byClass, byClassModel
   };
 }
 
 /**
+ * What a working host is paid, against its full share of an epoch's reward
+ * (what was minted × its weight ÷ all the weight). A host that missed too much
+ * work, or was left out, is paid nothing, and its share goes to the governance
+ * account rather than to the others — so it says nothing about what a working
+ * rig earns, yet it had been pulling every figure down by 10–40%, depending on
+ * how many others failed that epoch. The hosts that were paid got about 90% of
+ * their full share in every epoch measured (Oct 2026). The median over the hosts
+ * paid in the last three finished epochs, from epochs.json and each epoch's
+ * weights. Null when it cannot be read or does not add up.
+ */
+async function typicalShare(facts) {
+  const url = K.get().epochsUrl, bp = facts.rewardParams;
+  if (!url || !bp || !bp.use_bitcoin_rewards) return null;
+  try {
+    const file = await getJson(url, 20000);
+    const hosts = file.hosts || [];
+    const done = (file.epochs || [])
+      .filter((e) => e.e < facts.epochIndex && (e.r || []).some((r) => Number(r[1]) > 0))
+      .sort((a, b) => b.e - a.e).slice(0, 3);
+    const decay = Number(bp.decay_rate && bp.decay_rate.value) * Math.pow(10, Number(bp.decay_rate && bp.decay_rate.exponent));
+    const ratios = [], epochs = [];
+    for (const ep of done) {
+      const g = await facts.api(`/chain-api/productscience/inference/inference/epoch_group_data/${ep.e}`);
+      const vws = (g && g.epoch_group_data && g.epoch_group_data.validation_weights) || [];
+      const all = vws.reduce((a, v) => a + Math.max(0, Number(v.weight) || 0), 0);
+      const minted = Number(bp.initial_epoch_reward) / 1e9 * Math.exp(decay * (ep.e - Number(bp.genesis_epoch)));
+      if (!(all > 0) || !(minted > 0)) continue;
+      const got = new Map(ep.r.map((r) => [hosts[r[0]], Number(r[1] || 0) / 1e9]));
+      for (const v of vws) {
+        const full = Math.max(0, Number(v.weight) || 0) / all * minted, paid = got.get(v.member_address) || 0;
+        if (full > 0 && paid > 0) ratios.push(paid / full);
+      }
+      epochs.push(ep.e);
+    }
+    if (ratios.length < 5) return null;
+    ratios.sort((a, b) => a - b);
+    const share = ratios.length % 2 ? ratios[(ratios.length - 1) / 2] : (ratios[ratios.length / 2 - 1] + ratios[ratios.length / 2]) / 2;
+    // Outside this range means a misread file or a rule the code here does not know.
+    if (!(share > 0.3 && share < 1.05)) return null;
+    return { share, epochs, hosts: ratios.length };
+  } catch (_) { return null; }
+}
+
+/**
  * What the hosts were actually paid in the last finished epoch, from the
  * record of every host's rewarded coins that the data job publishes
- * (epochs.json). The chain mints an epoch's whole reward, but only part of it
- * reaches the hosts — between 59% and 89% of it in October 2026 — so sharing
- * out what was minted overstated what a rig earns. A host on Discord asked how
- * the weight was turned into GNK, and that is how this was found. Null when the
- * record cannot be read or does not add up, and the minted amount is used.
+ * (epochs.json): between 59% and 89% of what was minted in October 2026. Shown
+ * as it is, and used for the figures only when typicalShare() cannot be read —
+ * most of the gap is hosts paid nothing, which a working rig is not. Null when
+ * the record cannot be read or does not add up.
  */
 async function lastPaid(currentEpoch, mintedGnk) {
   const url = K.get().epochsUrl;
@@ -221,10 +278,13 @@ async function estimate(seed, { force = false } = {}) {
   const rows = repoRows.concat(
     (K.get().curatedConfigs || []).filter((c) => !repoKeys.has(c.model + "|" + c.gpuClass)));
   const perDay = facts.epochHours ? 24 / facts.epochHours : 0;
-  // A rig's share of the network's weight now, times what the network paid its
-  // hosts last epoch: GNK per unit of weight is the amount paid, not minted.
+  // A rig's share of the network's weight now, times what is minted, times the
+  // part of its full share a working host is actually paid. Without that part,
+  // what all hosts were paid last epoch; without either, what was minted.
   const paid = await lastPaid(facts.epochIndex, facts.mintedGnk);
-  if (paid && facts.totalWeight) facts.gnkPerWeight = paid.gnk / facts.totalWeight;
+  const typical = await typicalShare(facts);
+  if (typical && facts.totalWeight) facts.gnkPerWeight = facts.mintedGnk / facts.totalWeight * typical.share;
+  else if (paid && facts.totalWeight) facts.gnkPerWeight = paid.gnk / facts.totalWeight;
 
   const median = (a) => {
     const v = [...a].sort((x, y) => x - y);
@@ -243,20 +303,18 @@ async function estimate(seed, { force = false } = {}) {
   const skipped = new Set();
   const seen = new Set();
   const configs = [];
-  for (const row of rows) {
-    if (!row.gpuClass || !row.model || !row.gpuCount) continue;
-    if (running.size && !running.has(row.model)) { skipped.add(row.model); continue; }
-    const key = `${row.model}|${row.gpuClass}|${row.gpuCount}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const per = weightPerGpu(row.gpuClass, row.model);
-    if (!per) continue;
-    const gnkPerDay = per.w * row.gpuCount * facts.gnkPerWeight * perDay;
-    configs.push({
+  // Setups Gonka publishes for a kind of GPU no host runs now: nothing to
+  // measure, so they are named rather than priced.
+  const noHosts = [];
+  const rig = (row, per, gpuCount, copies) => {
+    const gnkPerDay = per.w * gpuCount * facts.gnkPerWeight * perDay;
+    return {
       model: row.model,
       gpuClass: row.gpuClass,
-      gpuCount: row.gpuCount,
-      weight: Math.round(per.w * row.gpuCount),
+      gpuCount,
+      // How many copies of the setup the ML node runs on this many GPUs.
+      copies,
+      weight: Math.round(per.w * gpuCount),
       gnkPerDay,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       // What the whole rig may cost per hour before it stops paying for itself.
@@ -264,16 +322,33 @@ async function estimate(seed, { force = false } = {}) {
       basis: per.basis,          // "model" = GPUs of this class running this model; "class" = all of this class
       sampleGpus: Math.round(per.gpus),
       deployable: true
-    });
+    };
+  };
+  for (const row of rows) {
+    if (!row.gpuClass || !row.model || !row.gpuCount) continue;
+    if (running.size && !running.has(row.model)) { skipped.add(row.model); continue; }
+    const key = `${row.model}|${row.gpuClass}|${row.gpuCount}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const per = weightPerGpu(row.gpuClass, row.model);
+    if (!per) { noHosts.push({ model: row.model, gpuClass: row.gpuClass, gpuCount: row.gpuCount }); continue; }
+    configs.push(rig(row, per, row.gpuCount, 1));
+    // The same setup on a whole server, when it divides evenly.
+    if (row.gpuCount < FULL_SERVER && FULL_SERVER % row.gpuCount === 0 && !seen.has(`${row.model}|${row.gpuClass}|${FULL_SERVER}`)) {
+      seen.add(`${row.model}|${row.gpuClass}|${FULL_SERVER}`);
+      configs.push(rig(row, per, FULL_SERVER, FULL_SERVER / row.gpuCount));
+    }
   }
 
   // Models the network pays for that no published configuration covers — GLM
   // is one today. People do run them, with a node-config they wrote themselves,
   // so leaving them out of the table looks like the app is hiding something.
   // They are listed exactly as the network shows them, marked not deployable.
+  // Hosts declare their own hardware, so a kind only one host reports is left
+  // out: one host's say-so put an RTX 4090 above an H100 (Oct 2026).
   for (const [key, v] of facts.byClassModel) {
     const [gpuClass, model] = key.split("|");
-    if (!running.has(model) || v.gpus < MIN_OBSERVED_GPUS) continue;
+    if (!running.has(model) || v.gpus < MIN_OBSERVED_GPUS || v.hosts.size < MIN_OBSERVED_HOSTS) continue;
     if (configs.some((c) => c.model === model && c.gpuClass === gpuClass)) continue;
     const gpuCount = Math.round(median(v.nodeGpus)) || 1;
     const w = median(v.perGpu);
@@ -291,7 +366,7 @@ async function estimate(seed, { force = false } = {}) {
   }
   configs.sort((a, b) => b.gnkPerDay - a.gnkPerDay);
 
-  const classes = [...facts.byClass.entries()].map(([id, v]) => ({
+  const classes = [...facts.byClass.entries()].filter(([, v]) => v.hosts.size >= MIN_OBSERVED_HOSTS).map(([id, v]) => ({
     id, gpus: v.gpus, nodes: v.perGpu.length,
     gnkPerGpuPerDay: median(v.perGpu) * facts.gnkPerWeight * perDay
   })).sort((a, b) => b.gnkPerGpuPerDay - a.gnkPerGpuPerDay);
@@ -305,7 +380,10 @@ async function estimate(seed, { force = false } = {}) {
       // What the hosts were paid, and in which epoch: the amount shared out.
       // "minted" when the payout record could not be read (then the figures
       // run high, by as much as the part that does not reach the hosts).
-      basis: paid ? "paid" : "minted",
+      basis: typical ? "typical" : paid ? "paid" : "minted",
+      // The part of its full share a working host was paid, and from which epochs.
+      typicalShare: typical ? typical.share : null,
+      typicalEpochs: typical ? typical.epochs : null,
       paidGnk: paid ? paid.gnk : null,
       paidEpoch: paid ? paid.epoch : null,
       paidHosts: paid ? paid.hosts : null,
@@ -325,7 +403,9 @@ async function estimate(seed, { force = false } = {}) {
     configs,
     // Configurations the repo offers for models the network is not serving this
     // epoch: no observed weight, so they are left out rather than guessed at.
-    withoutData: [...skipped].sort()
+    withoutData: [...skipped].sort(),
+    // Setups Gonka publishes that no host runs now, so nothing can be measured.
+    noHosts
   };
   cache = { at: Date.now(), data };
   return data;

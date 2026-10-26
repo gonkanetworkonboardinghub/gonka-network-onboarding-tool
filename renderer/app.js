@@ -411,9 +411,12 @@ function renderNeeds() {
   const p = WELCOME.pick;
   // Always says which list this is: the general one, or the picked setup's.
   line.classList.toggle("general", !p);
+  // A whole 8-GPU server runs one copy of the setup per set of GPUs.
+  const whole = p && p.count > 0 && p.count < 8 && 8 % p.count === 0 && !p.custom
+    ? " " + esc(t("A server with {n}× {gpu} runs {copies} copies at once and earns {copies} times as much.", { n: 8, gpu: p.gpu, copies: 8 / p.count })) : "";
   line.innerHTML = p ? `<span>${t("For {setup} running {model}.", {
       setup: `<b dir="ltr">${esc(`${p.count} × ${p.gpu}`)}${p.variant ? " " + esc(p.variant) : ""}</b>`,
-      model: `<b>${esc(p.model.split("/").pop())}</b>` })}</span>
+      model: `<b>${esc(p.model.split("/").pop())}</b>` })}${whole}</span>
     <button type="button" id="need-clear">${esc(t("Show the general list"))}</button>`
     : `<span>${esc(t("General needs. Pick a setup above to see the exact ones."))}</span>`;
   if (p) $("#need-clear").onclick = () => pickSetup(null);
@@ -1508,7 +1511,7 @@ RENDER.model = () => {
       .map((c, i) => ({
         ...c, idx: i,
         classOk: !!gpuName && gpuName.includes(c.gpuClass),
-        matchesGpu: !!gpuName && gpuName.includes(c.gpuClass) && c.gpuCount === myCount
+        matchesGpu: !!gpuName && gpuName.includes(c.gpuClass) && myCount >= c.gpuCount
       }));
 
     // A config only fits if the GPU class AND the GPU count match. Matching on
@@ -1522,6 +1525,12 @@ RENDER.model = () => {
       if (!classOk) return { ok: false, text: t("Different GPU class — pick only if you know why") };
       if (!need || !myCount) return { ok: true, text: t("Matches your GPU class") };
       if (need === myCount) return { ok: true, text: t("Fits your machine — {n}× {cls}", { n: need, cls }) };
+      // Gonka's ML node runs as many copies as the GPUs allow (GPUs ÷ GPUs per copy).
+      const copies = Math.floor(myCount / need), idle = myCount - copies * need;
+      if (copies > 1 && !idle) return { ok: true, text: t("Fits your machine — {copies} copies at once, each on {n}× {cls}", { copies, n: need, cls }) };
+      if (copies >= 1) return { ok: true, text: copies === 1
+        ? t("Fits — 1 copy on {used} of your {have} GPUs; {idle} would sit idle", { used: need, have: myCount, idle })
+        : t("Fits — {copies} copies on {used} of your {have} GPUs; {idle} would sit idle", { copies, used: copies * need, have: myCount, idle }) };
       return { ok: false, text: t("Needs {need}× {cls}, but this machine has {have} — won't run here", { need, cls, have: myCount }) };
     };
 
@@ -2639,7 +2648,8 @@ function renderEarnBody(d) {
   if (!body) return;
   const rows = d.configs.map((c) => `
     <tr${c.deployable === false ? ' class="own-config"' : ""} title="${esc(t("Measured on {n} GPUs", { n: c.sampleGpus }))}">
-      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}</td>
+      <td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}${c.copies > 1
+        ? `<span class="per-gpu">${esc(t("{n} copies at once", { n: c.copies }))}</span>` : ""}</td>
       <td>${esc(shortModel(c.model))}</td>
       <td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
       <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
@@ -2664,6 +2674,8 @@ function renderEarnBody(d) {
       ? t("Only rigs this app can set up, for models the network is paying for today. Left out: {list}.",
           { list: d.withoutData.map(shortModel).join(", ") })
       : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
+    ${(d.noHosts || []).length ? `<div class="earn-scope">${esc(t("Gonka publishes a setup for these, but no host runs them now, so there is nothing to measure: {list}.",
+      { list: d.noHosts.map((c) => `${c.gpuCount}× ${c.gpuClass} ${shortModel(c.model)}`).join(", ") }))}</div>` : ""}
 
     <div class="earn-calc">
       <div class="earn-calc-title">${esc(t("Will it pay for itself?"))}</div>
@@ -2682,7 +2694,7 @@ function renderEarnBody(d) {
     </div>
 
     <ul class="earn-notes">
-      <li>${esc(t("A rough estimate, not a promise: this is what the network paid last epoch, shared out over the GPUs that earned it."))}</li>
+      <li>${esc(t("A rough estimate, not a promise: what hosts that did their work were paid in the last epochs, for GPUs like these. Hosts that missed too much were paid nothing; that is not counted against these figures."))}</li>
       <li>${esc(t("Each number is the typical node of that kind this epoch, not the best or the worst."))}</li>
       <li>${esc(t("Mining is not paid out at once: each epoch's reward is released in {epochs} slices, one per epoch, so it arrives over about {days} days.", { epochs: d.vesting.epochs, days: Math.round(d.vesting.days) }))}</li>
       <li>${esc(t("A new node earns less at first, while it proves itself to the network."))}</li>
