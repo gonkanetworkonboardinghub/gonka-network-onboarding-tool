@@ -407,6 +407,8 @@ function needsTiles() {
     }
   }
   return tile("GPUs", gpuVal, gpuSub, !!p)
+    // A spot server can be taken back mid-epoch, and then the epoch pays nothing.
+    + tile("Rental", esc(t("Dedicated")), t("Never spot or interruptible: it can be taken back mid-epoch, and that epoch pays nothing."))
     + tile("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))
     + tile("Memory", ramVal, ramSub)
     + tile("CPU", `${nn.cpuCores}+`, t("CPU cores"))
@@ -508,6 +510,7 @@ RENDER.welcome = () => {
       <div class="need-grid" id="need-grid">${needsTiles()}</div>
       <p class="need-note">${esc(t("Check this list before paying for anything — once you connect, the health check verifies every item automatically."))}</p>
       <details class="more"><summary>${esc(t("More about these"))}</summary><div class="more-body">
+        <p>${esc(t("Providers sell the same GPUs as spot, interruptible or preemptible servers for less, but they can take such a server back at any moment. A node that stops partway through an epoch is paid nothing for that epoch, so the hours already paid for are lost. Rent a dedicated server (also called on-demand)."))}</p>
         <p>${esc(t("Ubuntu is the most common choice; Debian, Rocky and AlmaLinux work too. Windows and macOS cannot run a node. The wizard installs any missing software."))}</p>
         <p>${esc(t("Ports are opened in your rental provider's dashboard (look for firewall, security group or port mapping), not on the server. Many providers leave them open already, and the Verify step at the end tests them from outside."))}</p>
       </div></details>
@@ -2763,6 +2766,7 @@ function renderEarnBody(d) {
     <ul class="earn-notes">
       <li>${esc(t("A rough estimate, not a promise: what hosts that did their work were paid in the last epochs, for GPUs like these. Hosts that missed too much were paid nothing; that is not counted against these figures."))}</li>
       <li>${esc(t("Each number is the typical node of that kind this epoch, not the best or the worst."))}</li>
+      <li>${esc(t("Compare with the price of a dedicated server. Spot, interruptible or preemptible servers look cheaper, but the provider can take them back at any moment, and a node stopped partway through an epoch is paid nothing for it."))}</li>
       <li>${esc(t("Mining is not paid out at once: each epoch's reward is released in {epochs} slices, one per epoch, so it arrives over about {days} days.", { epochs: d.vesting.epochs, days: Math.round(d.vesting.days) }))}</li>
       <li>${esc(t("A new node earns less at first, while it proves itself to the network."))}</li>
       <li>${esc(t("Every GPU that joins lowers what each one earns, because the amount minted per epoch does not grow with them."))}</li>
