@@ -519,22 +519,10 @@ RENDER.welcome = () => {
           ${link(`${S.K.docs.website}/nodes-added`, t("Every node set up with GNOT"))}</div>
       </div>
     </div>
-    <div class="card after-setup">
-      <h3>${esc(t("After setup: your node, in your hands"))}</h3>
-      <p class="small">${esc(t("When setup finishes, your node is added to Gonka Host Monitor/Vote under My nodes, linked to your wallet. That is where you see it and run it from then on:"))}</p>
-      <div class="after-grid">
-        <div><b>${esc(t("How it is doing"))}</b><span>${esc(t("in the epoch or not, its weight, what it earns"))}</span></div>
-        <div><b>${esc(t("Vote with it"))}</b><span>${esc(t("on the network's proposals"))}</span></div>
-        <div><b>${esc(t("Your server"))}</b><span>${esc(t("a command line on it, from this app"))}</span></div>
-        <div><b>${esc(t("Shut down safely"))}</b><span>${esc(t("Gonka's steps for leaving"))}</span></div>
-      </div>
-      <button class="mon-quiet" id="b-see-monitor">${esc(t("See Monitor/Vote"))}</button>
-    </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
   $("#b-start").onclick = () => { markDone(); go(1); };
-  $("#b-see-monitor").onclick = () => showMonitor();
   $("#stage").querySelectorAll(".check-links a").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
   });
