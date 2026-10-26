@@ -412,7 +412,7 @@ function needsTiles() {
     + tile("Disk", `${Number(nn.diskGB).toLocaleString()} GB+`, t("Rentals often start at 500 GB"))
     + tile("Memory", ramVal, ramSub)
     + tile("CPU", `${nn.cpuCores}+`, t("CPU cores"))
-    + tile("System", "Linux", t("with an NVIDIA driver, CUDA {range}", { range: `${req.cudaMin}–${req.cudaMax}` }))
+    + tile("System", "Linux", t("with an NVIDIA driver for CUDA {main} ({driver} or newer), or CUDA {min}", { main: req.cudaMain.replace(/\.0$/, ""), driver: req.driverMain, min: req.cudaMin }))
     + tile("Access", "root", t("the SSH login your provider gives you"))
     + tile("Open ports", "8000 · 5000", t("8443 instead of 8000 for HTTPS"));
 }
@@ -783,7 +783,7 @@ RENDER.welcome = () => {
         <h3>What's supported right now</h3>
         <p class="small">Couldn't reach the network or GitHub from here (${esc(e.message)}). You'll see this again once
           you're connected — for now, the baseline is ${req.networkNode.cpuCores}+ CPU cores, ${req.networkNode.ramGB}+ GB RAM,
-          ${req.networkNode.diskGB}+ GB disk, CUDA ${req.cudaMin}–${req.cudaMax}, on a supported NVIDIA GPU (A100/H100/H200/B200).</p>`;
+          ${req.networkNode.diskGB}+ GB disk, CUDA ${req.cudaMain.replace(/\.0$/, "")} (or ${req.cudaMin}), on a supported NVIDIA GPU (A100/H100/H200/B200).</p>`;
       WELCOME.example = "A100 · H100 · H200 · B200";
       renderNeeds();
     }
@@ -2775,12 +2775,12 @@ function renderRent() {
     box.querySelectorAll(".rent-provider").forEach((b) => { b.onclick = () => { RENT_VIEW = b.dataset.id; renderRent(); }; });
     return;
   }
-  const lacks = (s) => s.map((x) => ({ memory: t("too little memory"), disk: t("too little disk"), driver: t("no CUDA image") })[x] || x).join(", ");
+  const lacks = (s) => s.map((x) => ({ memory: t("too little memory"), disk: t("too little disk"), driver: t("no image with CUDA {min} or newer", { min: (S.K && S.K.requirements.cudaMin) || "12.9" }) })[x] || x).join(", ");
   const small = (s) => `<span class="per-gpu">${esc(s)}</span>`;
   const rows = p.rows.map((row) => {
     const top = row.runs[0];
     const o = row.best;
-    const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(o.region)
+    const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(o.cuda ? `${o.region} · CUDA ${o.cuda}` : o.region)
       : row.cheapest ? `<span class="dim">${esc(t("None with what a node needs"))}</span>`
           + small(t("cheapest: {price}, {lacks}", { price: fmtUsd(row.cheapest.pricePerHour) + "/h", lacks: lacks(row.cheapest.short) }))
       : `<span class="dim">${esc(t("No dedicated offer now"))}</span>`;
@@ -2805,7 +2805,7 @@ function renderRent() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with the NVIDIA driver. Prices change all the time; check on the provider's site before renting.", { providers: p.name, time: time(p.at) }))}</div>`}`;
+    <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with CUDA {min} or newer. Prices change all the time; check on the provider's site before renting.", { providers: p.name, time: time(p.at), min: (S.K && S.K.requirements.cudaMin) || "12.9" }))}</div>`}`;
   $("#rent-back").onclick = (e) => { e.preventDefault(); RENT_VIEW = "list"; renderRent(); };
   $("#rent-site").onclick = (e) => { e.preventDefault(); api("openExternal", { url: p.site }); };
 }

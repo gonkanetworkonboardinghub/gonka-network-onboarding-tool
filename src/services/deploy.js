@@ -313,12 +313,15 @@ async function registerHost(driver, onData) {
  *     it never renders, so dropping the graphics capability changes nothing
  *     except that the broken hook is skipped.
  *
- *  3. The ML node image for an older NVIDIA driver. From mlnode 4.0.0 the
- *     default image needs driver 580 or newer, and Gonka's compose file names
- *     the image for older drivers in a comment ("# NVIDIA driver older than
- *     580 (CUDA 12.x): <image>"). When this server's driver is older, that
- *     image goes into config.env as MLNODE_IMAGE, unless MLNODE_IMAGE is
- *     already set there. Without such a comment nothing changes.
+ *  3. The ML node image for an older NVIDIA driver. The default image needs
+ *     CUDA 13, a driver 580 or newer, and Gonka's compose file names the image
+ *     for older drivers in a comment: "# CUDA 12.9 fallback: <image>" (v0.2.16,
+ *     mlnode 3.0.16), or "# NVIDIA driver older than 580 (CUDA 12.x): <image>"
+ *     (a v0.2.17 test tag). When this server's driver is older, that image goes
+ *     into config.env as MLNODE_IMAGE, unless MLNODE_IMAGE is already set
+ *     there. Without such a comment nothing changes. scripts/check-chain.js
+ *     reads Gonka's live compose file each day and warns when its fallback
+ *     line is one this does not recognise.
  */
 async function ensureMlnodeCompose(driver, gpuCount, onData) {
   const ids = gpuCount > 0
@@ -335,6 +338,8 @@ async function ensureMlnodeCompose(driver, gpuCount, onData) {
     `grep -q 'device_ids' "$F" && echo IDS_OK; ` +
     `L=$(grep -m1 -E '^ *# *NVIDIA driver older than [0-9]+' "$F"); ` +
     `N=$(echo "$L" | grep -oE 'older than [0-9]+' | grep -oE '[0-9]+'); ` +
+    // Gonka's current wording names no driver: the main image is CUDA 13 (driver 580+).
+    `if [ -z "$L" ]; then L=$(grep -m1 -iE '^ *# *CUDA 12(\\.[0-9]+)? fallback:' "$F"); [ -n "$L" ] && N=${Number(K.get().requirements.driverMain) || 580}; fi; ` +
     `I=$(echo "$L" | grep -oE '[^ ]+-cu12[^ ]*' | head -1 | grep -E '^[A-Za-z0-9._/:@-]+$'); ` +
     `D=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | grep -oE '^[0-9]+'); ` +
     `if [ -n "$N" ] && [ -n "$I" ] && [ -n "$D" ] && [ "$D" -lt "$N" ] && [ -f config.env ] && ! grep -qE '^ *(export +)?MLNODE_IMAGE=' config.env; then ` +

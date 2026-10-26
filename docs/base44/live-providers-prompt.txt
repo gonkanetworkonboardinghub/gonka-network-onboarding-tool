@@ -5,7 +5,7 @@ The "Compare with providers" section on /mine-or-buy shows prices that can be
 hours old, because they come from a file published a few times a day. The app
 reads them live, so the two disagree. A web page cannot read Spheron's prices
 itself (Spheron refuses requests from other websites), but a backend function
-on this site can. Please do these four things, and change nothing else.
+on this site can. Please do these five things, and change nothing else.
 
 1. CREATE A BACKEND FUNCTION named gnot-rentals, with EXACTLY the code below,
    unchanged — not rewritten, not shortened, not reformatted. It is generated
@@ -36,7 +36,19 @@ on this site can. Please do these four things, and change nothing else.
      what a node needs is on offer for this right now."
    - If there is no row for that rig at all, show nothing.
 
-4. TWO SMALL FIXES in the same section:
+4. THE CUDA VERSION. Gonka's ML node images need CUDA 13, or 12.9 for the
+   older one, so the function now also tells which CUDA each offer comes
+   with. In a provider's table:
+   - under a "best" price, write "{best.region} · CUDA {best.cuda}" instead
+     of just the region (just the region when best.cuda is empty);
+   - in the list of what an offer lacks, "driver" now reads "no image with
+     CUDA 12.9 or newer" (instead of "no CUDA image");
+   - the grey line under the table ends: "… 1,000 GB of disk and a system
+     image with CUDA 12.9 or newer. Prices change all the time; check on the
+     provider's site before renting." (instead of "… a system image with the
+     NVIDIA driver. …").
+
+5. TWO SMALL FIXES in the same section:
    a. The grey line under a provider's table ("From {name}'s public price
       list, read at …") writes the time like the provider card does: "today,
       12:04 PM EDT" when it is today, "yesterday, 9:15 PM EDT" when it was

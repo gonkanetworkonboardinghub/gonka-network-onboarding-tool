@@ -57,6 +57,8 @@ const Rentals = (() => {
   let cache = null;
   ${R.getJson.toString()}
   const kindOf = ${R.kindOf.toString()};
+  ${R.cudaAtLeast.toString()}
+  ${R.newestCuda.toString()}
   ${R.spheron.toString()}
   const PROVIDERS = [${R.PROVIDERS.map((p) => `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, site: ${JSON.stringify(p.site)}, read: ${p.read.name} }`).join(", ")}];
   ${R.shortOf.toString()}

@@ -193,25 +193,11 @@ async function runScan(driver) {
     const cudaLine = await driver.exec("nvidia-smi | grep -o 'CUDA Version: [0-9.]*' | head -1");
     const cuda = (cudaLine.stdout.match(/([0-9]+\.[0-9]+)/) || [])[1];
     facts.cuda = cuda || null;
+    const drv = await driver.exec("nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1");
+    facts.driverVersion = (drv.stdout.match(/(\d+(?:\.\d+)*)/) || [])[1] || null;
     if (cuda) {
-      // Too-old and too-new are very different situations: an old driver
-      // genuinely can't run Gonka's CUDA 12.6+ containers (blocker, but
-      // fixable by upgrading the driver); a newer driver is backward-
-      // compatible and usually fine, just untested.
-      const tooOld = !verLte(k.requirements.cudaMin, cuda);
-      const tooNew = !verLte(cuda, k.requirements.cudaMax);
-      if (tooOld) {
-        add("cuda", `CUDA ${k.requirements.cudaMin}–${k.requirements.cudaMax}`, "fail",
-          `CUDA ${cuda} detected — the NVIDIA driver is too old to run Gonka's containers. ` +
-          `The Fix upgrades the driver and reboots the server (fine on a rental — reconnect afterwards).`,
-          facts.hasApt && driver.kind === "ssh");
-      } else if (tooNew) {
-        add("cuda", `CUDA ${k.requirements.cudaMin}–${k.requirements.cudaMax}`, "warn",
-          `CUDA ${cuda} detected — newer than the tested range. NVIDIA drivers are backward-compatible, ` +
-          `so this usually works fine; it just hasn't been validated by Gonka yet.`);
-      } else {
-        add("cuda", `CUDA ${k.requirements.cudaMin}–${k.requirements.cudaMax}`, "pass", `CUDA ${cuda} detected`);
-      }
+      const v = cudaVerdict(cuda, facts.driverVersion, facts.gpuClass, k.requirements);
+      add("cuda", v.label, v.status, v.detail, v.fixable && facts.hasApt && driver.kind === "ssh");
     } else {
       add("cuda", "CUDA version", "warn", "Couldn't read the CUDA version from nvidia-smi.");
     }
@@ -264,4 +250,30 @@ async function runScan(driver) {
   return { items, facts, ok: failCount === 0 };
 }
 
-module.exports = { runScan };
+/**
+ * What this server's CUDA means for Gonka's ML node images: the main one
+ * needs CUDA 13 (driver 580+), the fallback CUDA 12.9 (GNOT picks it by itself
+ * for an older driver); below 12.9 is untested, below 12.6 cannot work. The
+ * Fix upgrades the driver to 580 (fixes.js "cuda").
+ */
+function cudaVerdict(cuda, driverVersion, gpuClass, req) {
+  const label = `CUDA ${req.cudaMain.replace(/\.0$/, "")}, or ${req.cudaMin}`;
+  const major = parseInt(driverVersion, 10) || 0;
+  if (verLte(req.cudaMain, cuda)) {
+    // Gonka's own tests: driver 595 hung a B200 before the weights loaded; 580 worked.
+    if (gpuClass === "B200" && major >= 595) return { label, status: "warn", fixable: false,
+      detail: `CUDA ${cuda}, driver ${driverVersion}. In Gonka's own tests driver 595 hung a B200 before the model loaded, while driver 580 worked. If the model never finishes loading, use a server with driver 580.` };
+    return { label, status: "pass", fixable: false, detail: `CUDA ${cuda} detected — Gonka's main ML node image runs on it` };
+  }
+  if (verLte(req.cudaMin, cuda)) return { label, status: "pass", fixable: false,
+    detail: `CUDA ${cuda} detected — GNOT uses Gonka's CUDA ${req.cudaMin} image for this server` };
+  if (verLte(req.cudaFloor, cuda)) return { label, status: "warn", fixable: true,
+    detail: `CUDA ${cuda} detected — older than both of Gonka's ML node images (CUDA ${req.cudaMain.replace(/\.0$/, "")}, and ${req.cudaMin}). ` +
+      `The ${req.cudaMin} image often still runs on it, but Gonka has not tested that. ` +
+      `The Fix upgrades the NVIDIA driver to ${req.driverMain} and reboots the server (fine on a rental — reconnect afterwards).` };
+  return { label, status: "fail", fixable: true,
+    detail: `CUDA ${cuda} detected — the NVIDIA driver is too old to run Gonka's containers. ` +
+      `The Fix upgrades the driver to ${req.driverMain} and reboots the server (fine on a rental — reconnect afterwards).` };
+}
+
+module.exports = { runScan, cudaVerdict };

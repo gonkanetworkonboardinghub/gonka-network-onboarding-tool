@@ -8,9 +8,11 @@
  *
  * Each offer is checked against what a node needs before it counts: RAM of at
  * least 1.5 × the GPUs' memory (5% leeway, as the health check allows), the
- * disk Gonka asks for, and a system image that comes with the NVIDIA driver
- * and CUDA. The app works this out live; the data job publishes the same for
- * the website (scripts/rentals-snapshot.js). Same code, same numbers.
+ * disk Gonka asks for, and a system image with an NVIDIA driver new enough for
+ * Gonka's ML node images (CUDA 12.9 or newer; knowledge.requirements). The
+ * app works this out live; the website's Base44 function is built from this
+ * very code (scripts/build-base44-rentals.js), and the data job publishes the
+ * same as a fallback (scripts/rentals-snapshot.js). Same code, same numbers.
  *
  * Spheron first: its documented GET /api/gpu-offers needs no key
  * (docs.spheron.ai/api-reference), and every price there is for the whole
@@ -38,6 +40,25 @@ async function getJson(url, timeout = 20000) {
 
 const kindOf = (name) => (NOT_THESE.test(name) ? null : (KINDS.find(([re]) => re.test(name)) || [, null])[1]);
 
+/** Is CUDA version a at least b? ("13.0" vs "12.9") */
+function cudaAtLeast(a, b) {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+/** The newest CUDA version named in a list of system images, or null. */
+function newestCuda(images) {
+  let best = null;
+  for (const name of images) {
+    const m = /CUDA\s*(\d+\.\d+)/i.exec(name);
+    if (m && (!best || cudaAtLeast(m[1], best))) best = m[1];
+  }
+  return best;
+}
+
 /** Spheron's dedicated offers, in the shared shape. */
 async function spheron() {
   const j = await getJson("https://app.spheron.ai/api/gpu-offers?page=1&limit=200&computeType=gpu");
@@ -60,8 +81,9 @@ async function spheron() {
         // Some regions carry an internal prefix: "ce32df2f:tokyo-japan-5".
         region: String((o.clusters || [])[0] || "").replace(/^[0-9a-f]{6,}:/i, ""),
         pricePerHour: Number(o.price) || 0,
-        // The images on offer say whether the NVIDIA driver and CUDA come installed.
-        cuda: (o.os_options || []).some((x) => /CUDA/i.test(x))
+        // The newest CUDA among the images on offer ("Ubuntu 24.04 LTS (CUDA 13.0)",
+        // "Ubuntu Server 22.04 LTS R570 CUDA 12.8"), or null when none comes with it.
+        cuda: newestCuda(o.os_options || [])
       });
     }
   }
@@ -77,7 +99,8 @@ function shortOf(o) {
   const needRam = o.gpus * o.gpuGB * req.mlNodeRamToVramRatio;
   if (o.ramGB < needRam * 0.95) short.push("memory");
   if (o.diskGB < req.networkNode.diskGB) short.push("disk");
-  if (!o.cuda) short.push("driver");
+  // Gonka's images need CUDA 13, or 12.9 for the fallback one (knowledge.requirements).
+  if (!o.cuda || !cudaAtLeast(o.cuda, req.cudaMin)) short.push("driver");
   return short;
 }
 
@@ -165,4 +188,4 @@ async function estimate(earnings, { force = false } = {}) {
 module.exports = { estimate, compare, spheron, shortOf };
 // The pieces the website's Base44 function is built from (scripts/build-base44-rentals.js),
 // so the website compares with exactly this code.
-module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, spheron, PROVIDERS, shortOf, compare, estimate };
+module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, cudaAtLeast, newestCuda, spheron, PROVIDERS, shortOf, compare, estimate };

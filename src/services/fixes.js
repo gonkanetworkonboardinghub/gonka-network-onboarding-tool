@@ -96,10 +96,10 @@ function planFix(id, facts) {
       };
 
     case "cuda":
-      if (!facts.hasApt) return manualOnly("Upgrade the NVIDIA driver to one supporting CUDA 12.6+ using your distribution's packages, then reboot.");
+      if (!facts.hasApt) return manualOnly("Upgrade the NVIDIA driver to 580 or newer (CUDA 13) using your distribution's packages, then reboot.");
       return {
         description:
-          "Upgrade the NVIDIA driver to a version supporting CUDA 12.6+ and REBOOT the server. " +
+          "Upgrade the NVIDIA driver to 580 (CUDA 13, what Gonka's main ML node image needs) and REBOOT the server. " +
           "The connection will drop; wait ~2 minutes, then connect again and re-run the health check.",
         cmd:
           sudo +
@@ -114,7 +114,9 @@ function planFix(id, facts) {
           `$SUDO apt-get -y autoremove 2>/dev/null; ` +
           `$SUDO apt-get install -y "linux-headers-$(uname -r)" 2>/dev/null; ` +
           `inst=""; ` +
-          `for p in nvidia-driver-570-open nvidia-driver-570-server nvidia-open-570 nvidia-driver-565-open nvidia-open-560 nvidia-driver-560-open nvidia-open; do ` +
+          // Gonka tested its images on drivers 580 and 590 (580 = CUDA 13), so 580 first; 575 is CUDA 12.9,
+          // for the fallback image; older ones only if nothing newer installs.
+          `for p in nvidia-driver-580-open nvidia-driver-580-server-open nvidia-driver-580-server nvidia-open-580 nvidia-driver-575-open nvidia-open-575 nvidia-driver-570-open nvidia-driver-570-server nvidia-open-570 nvidia-open; do ` +
           `  if $SUDO apt-get install -y "$p"; then inst="$p"; break; fi; ` +
           `done; ` +
           `if [ -z "$inst" ]; then $SUDO apt-get install -y ubuntu-drivers-common && $SUDO ubuntu-drivers install && inst="auto"; fi; ` +
@@ -122,7 +124,7 @@ function planFix(id, facts) {
           // rebooting — don't trust a fallback's exit code like last time.
           `if dpkg -l 2>/dev/null | grep -qE '^ii +nvidia-(driver|open|dkms)'; then ` +
           `  echo DRIVER_INSTALLED_REBOOTING && ($SUDO sh -c '(sleep 2 && reboot) >/dev/null 2>&1 &'); ` +
-          `else echo "DRIVER_INSTALL_FAILED — this image has no clean recent driver available. Fastest fix: destroy this rental and start one whose image already ships CUDA 12.6+ (e.g. a CUDA 12.8 image)."; exit 1; fi`
+          `else echo "DRIVER_INSTALL_FAILED — this image has no clean recent driver available. Fastest fix: destroy this rental and start one whose image already ships CUDA 13 (driver 580), or at least CUDA 12.9."; exit 1; fi`
       };
 
     case "hf-home": {

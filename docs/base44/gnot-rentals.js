@@ -54,7 +54,7 @@ const gnkPrice = (() => {
 
 // The comparison, as the app does it.
 const Rentals = (() => {
-  const K = { get: () => ({ requirements: {"cudaMin":"12.6","cudaMax":"12.9","networkNode":{"cpuCores":16,"ramGB":64,"diskGB":1000},"mlNodeRamToVramRatio":1.5} }) };
+  const K = { get: () => ({ requirements: {"cudaMin":"12.9","cudaMain":"13.0","driverMain":580,"cudaFloor":"12.6","networkNode":{"cpuCores":16,"ramGB":64,"diskGB":1000},"mlNodeRamToVramRatio":1.5} }) };
   const KINDS = [[/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"]];
   const NOT_THESE = /\bG[BH]\d00\b|\bCC\b/i;
   const MIN_GPU_GB = {"A100":75};
@@ -69,6 +69,22 @@ const Rentals = (() => {
   return res.json();
 }
   const kindOf = (name) => (NOT_THESE.test(name) ? null : (KINDS.find(([re]) => re.test(name)) || [, null])[1]);
+  function cudaAtLeast(a, b) {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+  function newestCuda(images) {
+  let best = null;
+  for (const name of images) {
+    const m = /CUDA\s*(\d+\.\d+)/i.exec(name);
+    if (m && (!best || cudaAtLeast(m[1], best))) best = m[1];
+  }
+  return best;
+}
   async function spheron() {
   const j = await getJson("https://app.spheron.ai/api/gpu-offers?page=1&limit=200&computeType=gpu");
   const out = [];
@@ -90,8 +106,9 @@ const Rentals = (() => {
         // Some regions carry an internal prefix: "ce32df2f:tokyo-japan-5".
         region: String((o.clusters || [])[0] || "").replace(/^[0-9a-f]{6,}:/i, ""),
         pricePerHour: Number(o.price) || 0,
-        // The images on offer say whether the NVIDIA driver and CUDA come installed.
-        cuda: (o.os_options || []).some((x) => /CUDA/i.test(x))
+        // The newest CUDA among the images on offer ("Ubuntu 24.04 LTS (CUDA 13.0)",
+        // "Ubuntu Server 22.04 LTS R570 CUDA 12.8"), or null when none comes with it.
+        cuda: newestCuda(o.os_options || [])
       });
     }
   }
@@ -104,7 +121,8 @@ const Rentals = (() => {
   const needRam = o.gpus * o.gpuGB * req.mlNodeRamToVramRatio;
   if (o.ramGB < needRam * 0.95) short.push("memory");
   if (o.diskGB < req.networkNode.diskGB) short.push("disk");
-  if (!o.cuda) short.push("driver");
+  // Gonka's images need CUDA 13, or 12.9 for the fallback one (knowledge.requirements).
+  if (!o.cuda || !cudaAtLeast(o.cuda, req.cudaMin)) short.push("driver");
   return short;
 }
   function compare(earnings, offers) {

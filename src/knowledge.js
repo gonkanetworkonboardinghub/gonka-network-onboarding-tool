@@ -128,8 +128,18 @@ const overridable = {
 
   // Hardware guidance shown in the scan step.
   requirements: {
-    cudaMin: "12.6",
-    cudaMax: "12.9",
+    // Gonka's ML node images (deploy/join/docker-compose.mlnode.yml, and its
+    // release notes in docs/release-candidate-gpu-profile.md, Oct 2026): the
+    // main one is built for CUDA 13, an NVIDIA driver 580 or newer; a CUDA
+    // 12.9 image is the fallback for older drivers, which GNOT picks by itself
+    // (deploy.ensureMlnodeCompose). The quickstart's prerequisites still say
+    // "between 12.6 and 12.9", but its model sections say CUDA 13, or 12.9
+    // with the -cu129 image, and GLM needs CUDA 13. Below 12.9 is untested.
+    cudaMin: "12.9",
+    cudaMain: "13.0",
+    driverMain: 580,
+    // Below this a driver cannot run either image at all.
+    cudaFloor: "12.6",
     networkNode: { cpuCores: 16, ramGB: 64, diskGB: 1000 },
     mlNodeRamToVramRatio: 1.5
   },

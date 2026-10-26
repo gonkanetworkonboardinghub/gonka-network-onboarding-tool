@@ -343,6 +343,16 @@ function commandsIn(html) {
   } else if (compose.status === 404) problem("compose-gone", "docker-compose.yml is no longer in Gonka's deploy folder.");
   else unknown.push("docker-compose.yml: could not be fetched");
   if (mlnode.status === 404) problem("mlnode-gone", "docker-compose.mlnode.yml is no longer in Gonka's deploy folder.");
+  // The image for older NVIDIA drivers is named in a comment, and the app finds
+  // it only by its wording (deploy.ensureMlnodeCompose). In October 2026 the
+  // wording changed and servers with a CUDA 12 driver would have been given the
+  // CUDA 13 image; this catches the next change the day it happens.
+  if (mlnode.status === 200 && /-cu12\d*\b/.test(mlnode.text)) {
+    const line = (mlnode.text.match(/^ *# *NVIDIA driver older than [0-9]+.*$/m) || mlnode.text.match(/^ *# *CUDA 12(\.[0-9]+)? fallback:.*$/im) || [])[0];
+    if (!line || !/[^ ]+-cu12[^ ]*/.test(line)) {
+      problem("mlnode-fallback", "Gonka's docker-compose.mlnode.yml names an image for older NVIDIA drivers in a way the app does not recognise, so a server with a CUDA 12 driver would be given the main image and fail. Update deploy.ensureMlnodeCompose.");
+    }
+  }
 
   const commits = await github(`commits?path=${dir}&per_page=1`);
   const last = Array.isArray(commits.json) && commits.json[0];
