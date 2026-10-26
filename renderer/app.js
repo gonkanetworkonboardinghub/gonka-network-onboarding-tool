@@ -2694,8 +2694,11 @@ function renderEarnBody(d) {
   const rigCell = (c) => `<td class="mono">${c.gpuCount}× ${esc(c.gpuClass)}${c.deployable === false ? " †" : ""}${c.copies > 1
     ? `<span class="per-gpu">${esc(t("{n} copies at once", { n: c.copies }))}</span>` : ""}</td>`;
   // Machines running exactly this rig now, read from what each host publishes.
-  const nowCell = (c) => `<td class="num">${c.machines == null ? "—" : esc(String(c.machines))}${c.hosts
-    ? `<span class="per-gpu">${esc(t("hosts: {n}", { n: c.hosts }))}</span>` : ""}</td>`;
+  // No machine of exactly this size, yet a figure: it is measured per GPU, on
+  // the other machines with this kind of GPU.
+  const nowCell = (c) => `<td class="num now">${c.machines == null ? "—" : esc(String(c.machines))}${c.hosts
+    ? `<span class="per-gpu">${esc(t("hosts: {n}", { n: c.hosts }))}</span>`
+    : c.machines === 0 && c.gnkPerDay ? `<span class="per-gpu">${esc(t("measured on other {gpu} machines", { gpu: c.gpuClass }))}</span>` : ""}</td>`;
   const rows = d.configs.map((c) => `
     <tr${c.deployable === false ? ' class="own-config"' : ""} title="${esc(t("Measured on {n} GPUs", { n: c.sampleGpus }))}">
       ${rigCell(c)}
