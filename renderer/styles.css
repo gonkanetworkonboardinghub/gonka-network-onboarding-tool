@@ -311,9 +311,24 @@ button.tool-card:focus-visible { outline: 2px solid var(--focus); outline-offset
 .earn-rent-table .dim { color: var(--muted); }
 .earn-rent-table b.ahead { color: var(--green); }
 .earn-rent-table b.behind { color: var(--red); font-weight: 600; }
-.earn-rent-table td:last-child { white-space: nowrap; }
+.earn-rent-table td:last-child { white-space: nowrap; padding-left: 18px; }
 #earn-rent-hint { margin-top: 8px; }
 #earn-rent-hint:empty { display: none; }
+/* Compare with providers: one line that opens a list of providers, each opening its prices. */
+button.rent-open { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; min-height: 0; }
+button.rent-open:hover .earn-calc-title { text-decoration: underline; }
+.rent-open-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.rent-open-text .earn-calc-lead { margin: 0; }
+.rent-chev { font-size: 20px; color: var(--muted); transition: transform 0.15s; }
+button.rent-open.open .rent-chev { transform: rotate(90deg); }
+#earn-rent-body { margin-top: 12px; }
+.rent-providers { display: flex; flex-direction: column; gap: 8px; }
+button.rent-provider { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--text); text-align: left; cursor: pointer; min-height: 0; }
+button.rent-provider:hover { border-color: var(--text); }
+.rent-provider-sub { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.rent-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.rent-head b { font-size: 14px; }
+.rent-head #rent-site { margin-left: auto; }
 .earn-notes { margin: 18px 0 0; padding-inline-start: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .earn-notes li { margin-bottom: 6px; }
 .earn-src { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.6; }

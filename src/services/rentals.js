@@ -137,20 +137,24 @@ function compare(earnings, offers) {
   return rows;
 }
 
-/** Every provider's dedicated offers, read now, compared with the earnings figures. */
+/**
+ * Every provider's dedicated offers, read now, each compared on its own with
+ * the earnings figures: one list per provider, so people can look at them one
+ * provider at a time.
+ */
 async function estimate(earnings, { force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < CACHE_MS && cache.epoch === (earnings.epoch && earnings.epoch.index)) return cache.data;
-  const providers = [], offers = [];
+  const providers = [];
   for (const p of PROVIDERS) {
+    const at = new Date().toISOString();
     try {
       const list = await p.read();
-      offers.push(...list);
-      providers.push({ id: p.id, name: p.name, site: p.site, offers: list.length, error: null });
+      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: compare(earnings, list) });
     } catch (e) {
-      providers.push({ id: p.id, name: p.name, site: p.site, offers: 0, error: e.message });
+      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: 0, error: e.message, rows: [] });
     }
   }
-  const data = { asOf: new Date().toISOString(), providers, rows: compare(earnings, offers) };
+  const data = { asOf: new Date().toISOString(), providers };
   cache = { at: Date.now(), epoch: earnings.epoch && earnings.epoch.index, data };
   return data;
 }
