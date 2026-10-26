@@ -306,6 +306,14 @@ button.tool-card:focus-visible { outline: 2px solid var(--focus); outline-offset
 .earn-calc-row #earn-pick { flex: 2 1 240px; }
 .earn-out { margin-top: 12px; font-size: 13px; line-height: 1.7; color: var(--muted); }
 .earn-out b { color: var(--text); }
+/* Renting it now: providers' cheapest dedicated server per rig. */
+.earn-rent .earn-rent-table { margin-top: 8px; }
+.earn-rent-table .dim { color: var(--muted); }
+.earn-rent-table b.ahead { color: var(--green); }
+.earn-rent-table b.behind { color: var(--red); font-weight: 600; }
+.earn-rent-table td:last-child { white-space: nowrap; }
+#earn-rent-hint { margin-top: 8px; }
+#earn-rent-hint:empty { display: none; }
 .earn-notes { margin: 18px 0 0; padding-inline-start: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .earn-notes li { margin-bottom: 6px; }
 .earn-src { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.6; }

@@ -2601,6 +2601,15 @@ function setTheme(value) {
    paying for itself. All of it measured from the chain (src/services/
    earnings.js); the numbers change on their own as the network does. */
 let EARN = null, EARN_AT = 0;
+/** What renting each rig costs right now (src/services/rentals.js), read after the earnings. */
+let RENT = null, RENT_AT = 0;
+async function loadRentals(force) {
+  if (RENT && !force && Date.now() - RENT_AT < 10 * 60 * 1000) return RENT;
+  if (!S.seed) S.seed = await api("seed");
+  RENT = await api("rentals", { seed: S.seed, force: !!force });
+  RENT_AT = Date.now();
+  return RENT;
+}
 /** Open Mine it or buy it at its calculator (from Host Setup's "What it earns"). */
 let EARN_TO_CALC = false;
 
@@ -2672,8 +2681,68 @@ function openEarnings() {
   $("#sheet-close").focus();
 
   loadEarnings()
-    .then((d) => { renderEarnBody(d); refreshPrice(d.price); })
+    .then((d) => {
+      renderEarnBody(d); refreshPrice(d.price);
+      return loadRentals().then(renderRent).catch((e) => {
+        const r = $("#earn-rent-body"); if (r) r.textContent = t("Could not read the providers' prices right now.") + " " + (e.message || "");
+      });
+    })
     .catch((e) => { const b = $("#earn-body"); if (b) b.textContent = t("Could not read the network right now.") + " " + (e.message || ""); });
+}
+
+/** "Renting it now": the cheapest dedicated server for each rig, against what it earns. */
+function renderRent(r) {
+  const box = $("#earn-rent-body");
+  if (!box || !r) return;
+  const lacks = (s) => s.map((x) => ({ memory: t("too little memory"), disk: t("too little disk"), driver: t("no CUDA image") })[x] || x).join(", ");
+  const small = (s) => `<span class="per-gpu">${esc(s)}</span>`;
+  const rows = r.rows.map((row) => {
+    const top = row.runs[0];
+    const o = row.best;
+    const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(`${o.provider} · ${o.region}`)
+      : row.cheapest ? `<span class="dim">${esc(t("None with what a node needs"))}</span>`
+          + small(t("cheapest: {price}, {lacks}", { price: fmtUsd(row.cheapest.pricePerHour) + "/h", lacks: lacks(row.cheapest.short) }))
+      : `<span class="dim">${esc(t("No dedicated offer now"))}</span>`;
+    const under = top.breakEvenPerHour == null ? `<span class="dim">${esc(t("not measured"))}</span>`
+      : esc(fmtUsd(top.breakEvenPerHour)) + "/h" + small(shortModel(top.model) + (top.copies > 1 ? " · " + t("{n} copies at once", { n: top.copies }) : ""));
+    const day = row.gapPerDay == null ? "—"
+      : `<b class="${row.gapPerDay >= 0 ? "ahead" : "behind"}">${esc(row.gapPerDay >= 0
+        ? t("Ahead by {usd} a day", { usd: fmtUsd(row.gapPerDay) }) : t("Short by {usd} a day", { usd: fmtUsd(-row.gapPerDay) }))}</b>`;
+    return `<tr><td class="mono">${row.gpuCount}× ${esc(row.gpuClass)}</td><td class="num">${offer}</td><td class="num">${under}</td><td class="num">${day}</td></tr>`;
+  }).join("");
+  const names = r.providers.map((p) => p.name).join(", ");
+  const time = new Date(r.asOf).toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit" });
+  const failed = r.providers.filter((p) => p.error);
+  box.innerHTML = `
+    <table class="earn-table earn-rent-table">
+      <thead><tr>
+        <th>${esc(t("Rig"))}</th><th class="num">${esc(t("Cheapest dedicated"))}</th>
+        <th class="num">${esc(t("Pays for itself under"))}</th><th class="num">${esc(t("Each day"))}</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${failed.length ? `<div class="earn-scope">${esc(t("Could not read: {list}.", { list: failed.map((p) => p.name).join(", ") }))}</div>` : ""}
+    <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with the NVIDIA driver. Prices change all the time; check on the provider's site before renting.", { providers: names, time }))}</div>`;
+  renderRentHint();
+}
+
+/** Under the calculator: the cheapest dedicated server for the picked rig, with a way to use its price. */
+function renderRentHint() {
+  const el = $("#earn-rent-hint"), pick = $("#earn-pick");
+  if (!el || !pick || !RENT) return;
+  const opt = pick.options[pick.selectedIndex];
+  const row = opt && RENT.rows.find((r) => r.gpuClass === opt.dataset.gpu && r.gpuCount === Number(opt.dataset.count));
+  if (!row) { el.innerHTML = ""; return; }
+  if (!row.best) { el.textContent = t("No dedicated server with what a node needs is on offer for this right now."); return; }
+  el.innerHTML = esc(t("Cheapest dedicated server for this right now: {price} at {provider} ({region}).", {
+    price: fmtUsd(row.best.pricePerHour) + "/h", provider: row.best.provider, region: row.best.region
+  })) + ` <a href="#" id="earn-use-rent">${esc(t("Use this price"))}</a>`;
+  $("#earn-use-rent").onclick = (e) => {
+    e.preventDefault();
+    $("#earn-cost").value = row.best.pricePerHour.toFixed(2);
+    $("#earn-unit").value = "24";
+    $("#earn-cost").dispatchEvent(new Event("input"));
+  };
 }
 
 /** The live price line at the top of the panel. Re-reads the sources on a timer. */
@@ -2751,7 +2820,7 @@ function renderEarnBody(d) {
       <div class="earn-calc-lead">${esc(t("Pick a rig, type what you pay for it, and see whether what it mines covers the cost."))}</div>
       <div class="earn-calc-row">
         <select id="earn-pick">${calcRigs.map(({ c, v, none }) =>
-          `<option value="${v}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${none
+          `<option value="${v}" data-gpu="${esc(c.gpuClass)}" data-count="${c.gpuCount}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${none
             ? ` (${esc(t("no host runs it yet"))})` : ""}</option>`).join("")}</select>
         <input id="earn-cost" type="number" min="0" step="0.01" placeholder="${esc(t("what you pay"))}" />
         <select id="earn-unit">
@@ -2760,7 +2829,14 @@ function renderEarnBody(d) {
           <option value="0.0333333">${esc(t("per month"))}</option>
         </select>
       </div>
+      <div id="earn-rent-hint" class="earn-scope"></div>
       <div id="earn-out" class="earn-out"></div>
+    </div>
+
+    <div class="earn-calc earn-rent">
+      <div class="earn-calc-title">${esc(t("Renting it now"))}</div>
+      <div class="earn-calc-lead">${esc(t("The cheapest dedicated server for each rig at the providers right now, against what it earns."))}</div>
+      <div id="earn-rent-body"><div class="earn-scope">${esc(t("Reading the providers' prices…"))}</div></div>
     </div>
 
     <ul class="earn-notes">
@@ -2830,10 +2906,12 @@ function renderEarnBody(d) {
     }
     out.innerHTML = lines.map((l) => `<div>${l.startsWith("<b>") ? l : esc(l)}</div>`).join("");
   };
-  pick.onchange = recalc;
+  pick.onchange = () => { recalc(); renderRentHint(); };
   unit.onchange = recalc;
   cost.oninput = recalc;
   if (start) recalc();
+  // Rental prices arrive after this; when they are already here, show them at once.
+  if (RENT) { renderRent(RENT); }
   if (EARN_TO_CALC) {
     EARN_TO_CALC = false;
     $(".earn-calc").scrollIntoView({ block: "start" });

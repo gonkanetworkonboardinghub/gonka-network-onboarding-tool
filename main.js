@@ -30,6 +30,7 @@ const netdata = require("./src/services/netdata");
 const monitor = require("./src/services/monitor");
 const mynode = require("./src/services/mynode");
 const earnings = require("./src/services/earnings");
+const rentals = require("./src/services/rentals");
 const usage = require("./src/services/usage");
 const updates = require("./src/update");
 const updater = require("./src/updater");
@@ -355,6 +356,8 @@ ipcMain.handle("net:collateralOf", wrap(async ({ seed, address }) => netdata.col
 ipcMain.handle("net:repoGpuConfigs", wrap(async () => netdata.repoGpuConfigs()));
 ipcMain.handle("net:earnings", wrap(async ({ seed, force }) => earnings.estimate(seed, { force })));
 ipcMain.handle("net:gnkPrice", wrap(async () => earnings.gnkPrice()));
+// What renting each setup costs right now, against what it earns (dedicated servers only).
+ipcMain.handle("net:rentals", wrap(async ({ seed, force }) => rentals.estimate(await earnings.estimate(seed), { force })));
 ipcMain.handle("net:probe", wrap(async ({ url }) => netdata.probeUrl(url)));
 ipcMain.handle("net:nextPoc", wrap(async ({ seed }) => netdata.nextPoc(seed)));
 ipcMain.handle("net:modelActivity", wrap(async ({ seed }) => netdata.modelActivity(seed)));
