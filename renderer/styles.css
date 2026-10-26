@@ -314,13 +314,8 @@ button.tool-card:focus-visible { outline: 2px solid var(--focus); outline-offset
 .earn-rent-table td:last-child { white-space: nowrap; padding-left: 18px; }
 #earn-rent-hint { margin-top: 8px; }
 #earn-rent-hint:empty { display: none; }
-/* Compare with providers: one line that opens a list of providers, each opening its prices. */
-button.rent-open { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; min-height: 0; }
-button.rent-open:hover .earn-calc-title { text-decoration: underline; }
-.rent-open-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.rent-open-text .earn-calc-lead { margin: 0; }
+/* Compare with providers: a list of providers, each opening its prices. */
 .rent-chev { font-size: 20px; color: var(--muted); transition: transform 0.15s; }
-button.rent-open.open .rent-chev { transform: rotate(90deg); }
 #earn-rent-body { margin-top: 12px; }
 .rent-providers { display: flex; flex-direction: column; gap: 8px; }
 button.rent-provider { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--text); text-align: left; cursor: pointer; min-height: 0; }

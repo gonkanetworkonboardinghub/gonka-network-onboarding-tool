@@ -2603,8 +2603,8 @@ function setTheme(value) {
 let EARN = null, EARN_AT = 0;
 /** What renting each rig costs right now (src/services/rentals.js), read after the earnings. */
 let RENT = null, RENT_AT = 0, RENT_ERROR = null;
-/** "Compare with providers": null (closed), "list", or the id of the provider being shown. */
-let RENT_VIEW = null;
+/** "Compare with providers": "list", or the id of the provider being shown. */
+let RENT_VIEW = "list";
 async function loadRentals(force) {
   if (RENT && !force && Date.now() - RENT_AT < 10 * 60 * 1000) return RENT;
   if (!S.seed) S.seed = await api("seed");
@@ -2691,19 +2691,14 @@ function openEarnings() {
 }
 
 /**
- * "Compare with providers": closed to one line at first; open, it lists the
- * providers, and each provider opens its own list of what renting each rig
- * costs there now. RENT_VIEW is null (closed), "list", or a provider's id.
+ * "Compare with providers": the list of providers, and each provider opens its
+ * own list of what renting each rig costs there now, cheapest first.
+ * RENT_VIEW is "list" or the id of the provider being shown.
  */
 function renderRent() {
-  const box = $("#earn-rent-body"), open = $("#rent-open");
-  if (!box || !open) return;
-  open.onclick = () => { RENT_VIEW = RENT_VIEW ? null : "list"; renderRent(); };
-  open.setAttribute("aria-expanded", RENT_VIEW ? "true" : "false");
-  open.classList.toggle("open", !!RENT_VIEW);
-  box.hidden = !RENT_VIEW;
+  const box = $("#earn-rent-body");
+  if (!box) return;
   renderRentHint();
-  if (!RENT_VIEW) return;
   if (!RENT) {
     box.innerHTML = `<div class="earn-scope">${esc(RENT_ERROR != null
       ? t("Could not read the providers' prices right now.") + " " + RENT_ERROR : t("Reading the providers' prices…"))}</div>`;
@@ -2713,11 +2708,15 @@ function renderRent() {
   const p = RENT.providers.find((x) => x.id === RENT_VIEW);
   if (!p) {
     box.innerHTML = `<div class="rent-providers">${RENT.providers.map((x) => {
-      const onOffer = x.rows.filter((r) => r.best).length;
+      // The rigs that can be rented there as they are, and the cheapest of them.
+      const ok = x.rows.filter((r) => r.best);
+      const from = ok.length ? Math.min(...ok.map((r) => r.best.pricePerHour)) : null;
       return `<button type="button" class="rent-provider" data-id="${esc(x.id)}">
         <span><b>${esc(x.name)}</b><span class="rent-provider-sub">${esc(x.error
-          ? t("Could not read right now.")
-          : t("Server sizes on offer with what a node needs: {n} of {m} · read at {time}", { n: onOffer, m: x.rows.length, time: time(x.at) }))}</span></span>
+          ? t("Could not read their prices right now.")
+          : ok.length
+            ? t("Rigs you can rent there now: {n}, from {price} · prices as of {time}", { n: ok.length, price: fmtUsd(from) + "/h", time: time(x.at) })
+            : t("Nothing with what a node needs on offer there now · prices as of {time}", { time: time(x.at) }))}</span></span>
         <span class="rent-chev" aria-hidden="true">›</span></button>`;
     }).join("")}</div>`;
     box.querySelectorAll(".rent-provider").forEach((b) => { b.onclick = () => { RENT_VIEW = b.dataset.id; renderRent(); }; });
@@ -2868,12 +2867,9 @@ function renderEarnBody(d) {
     </div>
 
     <div class="earn-calc earn-rent">
-      <button type="button" class="rent-open" id="rent-open" aria-expanded="false">
-        <span class="rent-open-text"><span class="earn-calc-title">${esc(t("Compare with providers"))}</span>
-        <span class="earn-calc-lead">${esc(t("What renting each rig costs at a provider right now, against what it earns. Dedicated servers only."))}</span></span>
-        <span class="rent-chev" aria-hidden="true">›</span>
-      </button>
-      <div id="earn-rent-body" hidden></div>
+      <div class="earn-calc-title">${esc(t("Compare with providers"))}</div>
+      <div class="earn-calc-lead">${esc(t("What renting each rig costs at a provider right now, against what it earns. Dedicated servers only."))}</div>
+      <div id="earn-rent-body"></div>
     </div>
 
     <ul class="earn-notes">
@@ -2948,7 +2944,7 @@ function renderEarnBody(d) {
   cost.oninput = recalc;
   if (start) recalc();
   // Rental prices arrive after this; when they are already here, show them at once.
-  RENT_VIEW = null;
+  RENT_VIEW = "list";
   renderRent();
   if (EARN_TO_CALC) {
     EARN_TO_CALC = false;

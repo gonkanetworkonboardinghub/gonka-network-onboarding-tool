@@ -130,9 +130,12 @@ function compare(earnings, offers) {
       gapPerDay: best && top != null ? (top - best.pricePerHour) * 24 : null
     });
   }
+  // Cheapest first: what can be rented as it is, then offers lacking something,
+  // then sizes nobody offers, each from the cheapest to the most expensive.
   const order = ["B300", "B200", "H200", "H100", "A100"];
-  rows.sort((a, b) => (b.best ? 1 : 0) - (a.best ? 1 : 0)
-    || (b.gapPerDay ?? -Infinity) - (a.gapPerDay ?? -Infinity)
+  const rank = (r) => (r.best ? 0 : r.cheapest ? 1 : 2);
+  const price = (r) => (r.best || r.cheapest || { pricePerHour: Infinity }).pricePerHour;
+  rows.sort((a, b) => rank(a) - rank(b) || price(a) - price(b)
     || order.indexOf(a.gpuClass) - order.indexOf(b.gpuClass) || a.gpuCount - b.gpuCount);
   return rows;
 }
