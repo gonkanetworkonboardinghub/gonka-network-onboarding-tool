@@ -122,7 +122,7 @@ function setBusy(b, title) {
         const s = Math.floor((Date.now() - busyStart) / 1000);
         const mm = Math.floor(s / 60), ss = s % 60;
         const clock = mm ? `${mm}m ${String(ss).padStart(2, "0")}s` : `${ss}s`;
-        titleEl.innerHTML = `<span class="working">●</span> ${esc(busyLabel)} · ${clock} · ${t("working — watch the log below for details")}`;
+        titleEl.innerHTML = `${CHAIN_MINI} ${esc(busyLabel)} · ${clock} · ${t("working — watch the log below for details")}`;
       }, 1000);
     } else if (title) {
       busyStart = Date.now();  // new sub-step: reset the timer + label
@@ -502,7 +502,7 @@ RENDER.welcome = () => {
     ${chainNotice()}
     <div class="card" id="right-now-card">
       <h3>${esc(t("Choose a model and hardware"))}</h3>
-      <span class="small">Checking the live network and repository…</span>
+      ${loadingHtml(t("Checking the live network and repository…"))}
     </div>
     <div class="card" id="needs-card">
       <h3>${esc(t("What your server needs"))}</h3>
@@ -1020,7 +1020,7 @@ RENDER.scan = () => {
     try {
       setBusy(true, "Scanning server…");
       const card0 = $("#scan-card");
-      if (card0) card0.innerHTML = '<span class="small">Scanning… this takes ~20 seconds.</span>';
+      if (card0) card0.innerHTML = loadingHtml(t("Scanning the server…"), t("This takes about 20 seconds."));
       S.scan = await api("scan");
       if (S.scan.facts.publicIp && !S.net.host) S.net.host = S.scan.facts.publicIp;
       if (!$("#scan-card")) return;          // user navigated away — result is stored in S.scan
@@ -1317,7 +1317,7 @@ RENDER.wallet = () => {
         ${copyLine(w.address, "w-addr")}
         ${more("Public key", `<p>${esc(t("The pubkey goes into your server's configuration automatically. The key itself stays here."))}</p>${copyLine(w.pubkey, "w-pub")}`)}
       </div>
-      <div id="bal-area"><div class="info-banner">${esc(t("Checking your GNK balance…"))}</div></div>
+      <div id="bal-area"><div class="info-banner">${loadingInline(t("Checking your GNK balance…"))}</div></div>
       <div class="btn-row">
         <button id="b-back">Back</button>
         <button class="primary" id="b-next">Continue</button>
@@ -1488,7 +1488,7 @@ RENDER.model = () => {
   stage(`
     ${header("Step 7", "Pick your model configuration",
       "Gonka's ready-made configurations, from its official repository. Pick the one for your server's GPUs.")}
-    <div class="card" id="model-card"><span class="small">Fetching the Gonka repository and the live model list…</span></div>
+    <div class="card" id="model-card">${loadingHtml(t("Fetching the Gonka repository and the live model list…"))}</div>
     <div class="btn-row">
       <button id="b-back">Back</button>
       <button class="primary" id="b-next" ${S.chosenConfigFile ? "" : "disabled"}>Continue</button>
@@ -1499,7 +1499,7 @@ RENDER.model = () => {
   async function load() {
     try {
       setBusy(true, "Preparing repository…");
-      $("#model-card").innerHTML = '<span class="small">Fetching the Gonka repository and the live model list…</span>';
+      $("#model-card").innerHTML = loadingHtml(t("Fetching the Gonka repository and the live model list…"));
       if (!S.repoReady) { await api("clone"); S.repoReady = true; }
       const files = await api("listNodeConfigs");
       S.nodeConfigFiles = files;
@@ -1983,8 +1983,8 @@ RENDER.verify = () => {
       </div>
       ${more("Which dashboard?", `<p>${t("Both dashboards list every participant — search for your address there. gonka.gg is community-run and usually the quickest to update; the original dashboard is the network's own.")}</p>`)}
     </div>
-    <div class="card" id="v-card"><span class="small">${t("Checking…")}</span></div>
-    <div class="card" id="fee-card"><span class="small">${t("Checking…")}</span></div>
+    <div class="card" id="v-card">${loadingHtml(t("Checking…"))}</div>
+    <div class="card" id="fee-card">${loadingHtml(t("Checking…"))}</div>
     <div class="card">
       <p class="need-note" style="margin-top:0">${t("Keep the server switched on. If you stop it, your node drops out and has to catch up again — and it earns nothing while it is off.")}</p>
       ${more("What each line means", `<ul>
@@ -2223,7 +2223,7 @@ RENDER.verify = () => {
 
   async function check() {
     const card = $("#v-card");
-    card.innerHTML = '<span class="small">Checking…</span>';
+    card.innerHTML = loadingHtml(t("Checking…"));
     try {
       if (!S.seed) S.seed = await api("seed");
       const p = await api("participant", { seed: S.seed, address: S.wallet.address });
@@ -2268,7 +2268,7 @@ RENDER.verify = () => {
           ])}
           <hr class="sep">
           <p class="small">${t("Registering no longer waits for the node to finish syncing, so keep watching this until every line is ticked — your node can only take part in Proof of Compute once it's caught up.")}</p>
-          <div id="sync-meter"><span class="small">${t("Reading your node's sync state…")}</span></div>
+          <div id="sync-meter"><span class="small">${loadingInline(t("Reading your node's sync state…"))}</span></div>
           ${more("Containers on the server", `<pre class="preview mono" style="max-height:180px">${esc(containers || "(couldn't read)")}</pre>`)}`;
         markDone();
         // Registration can now land BEFORE the node is synced (the wizard signs
@@ -2284,7 +2284,7 @@ RENDER.verify = () => {
             ? t("Your wallet is already registered, but the network still has the address of a previous server ({old}). It needs to be updated to this one ({new}) — the wizard does that automatically; no new wallet is needed and you keep your existing record.",
                 { old: `<code>${esc(chainUrl)}</code>`, new: `<code>${esc(wantUrl)}</code>` })
             : t("Your participant record isn't on the chain yet. The usual reason: a brand-new node first has to catch up with the network before it can register — watch it happen below.")}</p>
-          <div id="sync-meter"><span class="small">${t("Reading your node's sync state…")}</span></div>`;
+          <div id="sync-meter"><span class="small">${loadingInline(t("Reading your node's sync state…"))}</span></div>`;
         startSyncMeter();
       }
     } catch (e) {
@@ -2381,7 +2381,7 @@ RENDER.collateral = () => {
   // it straight away. Waiting is a link, not an equal option.
   (async () => {
     const body = $("#col-body");
-    body.innerHTML = '<div class="card"><span class="small">Reading live network parameters…</span></div>';
+    body.innerHTML = `<div class="card">${loadingHtml(t("Reading live network parameters…"))}</div>`;
     try {
       if (!S.seed) S.seed = await api("seed");
       // If our own weight is already visible, prefer it (precise Option B).
@@ -2652,6 +2652,21 @@ function chainLoaderHtml() {
       <div class="chain-load-step">${esc(t(CHAIN_STEPS[0]))}</div>
     </div>
     <div class="chain-skeleton" aria-hidden="true">${row.repeat(6)}</div>`;
+}
+/** A card or page still waiting for its data: the chain of blocks, what is being read, and a line under it. */
+function loadingHtml(text, sub = "", { page = false } = {}) {
+  // A whole page waiting gets the full-size chain; a card the compact one.
+  return `<div class="chain-load ${page ? "page" : "compact"}" role="status" aria-live="polite">
+      <div class="chain-blocks" aria-hidden="true">${"<i></i>".repeat(5)}</div>
+      <div class="chain-load-text">${esc(text)}</div>
+      ${sub ? `<div class="chain-load-step">${esc(sub)}</div>` : ""}
+    </div>`;
+}
+/** The small chain on its own: for a figure still on its way. */
+const CHAIN_MINI = '<span class="chain-mini" aria-hidden="true"><i></i><i></i><i></i></span>';
+/** A line, a status or a button that is working: the small chain and its words. */
+function loadingInline(text) {
+  return `<span class="chain-inline" role="status">${CHAIN_MINI}${esc(text)}</span>`;
 }
 /** Turn the step line over every so often until the loader is replaced. */
 function startChainSteps(root) {
@@ -3230,12 +3245,12 @@ async function runUpdate(u, trigger, status) {
     window.gonka.onUpdateProgress(({ got, total }) => {
       if (!runUpdate.status || runUpdate.done) return;
       const mb = (n) => Math.round(n / 1e6);
-      runUpdate.status.textContent = total
+      runUpdate.status.innerHTML = loadingInline(total
         ? t("Downloading update… {pct}% ({got} of {total} MB)", { pct: Math.floor((got * 100) / total), got: mb(got), total: mb(total) })
-        : t("Downloading update… {got} MB", { got: mb(got) });
+        : t("Downloading update… {got} MB", { got: mb(got) }));
     });
   }
-  status.textContent = t("Downloading update…");
+  status.innerHTML = loadingInline(t("Downloading update…"));
   try {
     await api("installUpdate");
     runUpdate.done = true;

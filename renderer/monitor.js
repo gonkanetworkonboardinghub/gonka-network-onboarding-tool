@@ -243,7 +243,7 @@ function monHubHtml() {
       <span class="mon-door-icon">${MON_ICONS[go]}</span>
       <span class="mon-door-title">${esc(title)}</span>
       <span class="mon-door-text">${esc(text)}</span>
-      <span class="mon-door-foot"><span class="mon-door-figure">${esc(figure)}</span><span class="mon-door-sub">${esc(sub || "")}</span></span>
+      <span class="mon-door-foot"><span class="mon-door-figure">${figure === null ? CHAIN_MINI : esc(figure)}</span><span class="mon-door-sub">${esc(sub || "")}</span></span>
       <span class="mon-door-go" aria-hidden="true">→</span>
     </button>`;
   const mineFigure = MON.nodes.length ? t(MON.nodes.length === 1 ? "1 node" : "{n} nodes", { n: monNum(MON.nodes.length) }) : t("Add your node");
@@ -258,10 +258,10 @@ function monHubHtml() {
     <div class="mon-doors">
       ${door("mine", t("My nodes"), t("How your nodes are doing, what they earn, and what you can do with them."), mineFigure, mineSub)}
       ${door("network", t("The network"), t("Every host, its GPUs and what it is paid, epoch by epoch."),
-        o ? t("{n} hosts", { n: monNum(o.hosts.length) }) : "…",
+        o ? t("{n} hosts", { n: monNum(o.hosts.length) }) : null,
         o ? [o.gpus ? t("{n} GPUs", { n: monNum(o.gpus.total) }) : "", t("epoch {n}", { n: o.epoch.index })].filter(Boolean).join(" · ") : "")}
       ${door("votes", t("Votes"), t("What the network is deciding, what each proposal asks for, and your vote."),
-        open === null ? "…" : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }),
+        open === null ? null : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }),
         g && g.proposals ? t("{n} proposals so far", { n: monNum(g.proposals.length) }) : "")}
     </div>
     <p class="small mon-hub-foot">${esc(MON.nodes.some(monOwn)
@@ -597,7 +597,7 @@ function monNetworkHtml() {
   const o = MON.overview;
   const head = `<div class="mon-title-row"><h1>${esc(t("The Gonka network"))}</h1>
   </div>`;
-  if (!o) return head + (MON.overviewError ? `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.overviewError }))}</div>` : `<div class="info-banner">${esc(t("Reading the network…"))}</div>`);
+  if (!o) return head + (MON.overviewError ? `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.overviewError }))}</div>` : loadingHtml(t("Reading the network…"), "", { page: true }));
   const { tiles, paid, supply } = monNetworkTop(o);
   const g = o.gpus;
   const past = o.past;
@@ -792,7 +792,7 @@ function monMineHtml() {
     const fig = (label, value) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
     return `
       <button class="mon-node-card" data-go-node="${esc(n.address)}">
-        <span class="mon-nc-top"><span class="mon-nc-state ${state[0]}"><i></i>${esc(state[1])}</span>${monOwn(n) ? `<span class="pill ok mon-yours">${esc(t("Yours"))}</span>` : ""}</span>
+        <span class="mon-nc-top"><span class="mon-nc-state ${state[0]}">${state[0] === "wait" ? CHAIN_MINI : "<i></i>"}${esc(state[1])}</span>${monOwn(n) ? `<span class="pill ok mon-yours">${esc(t("Yours"))}</span>` : ""}</span>
         <span class="mon-nc-name">${esc(monName(n))}</span>
         <span class="mon-nc-addr mono">${esc(monShort(n.address))}</span>
         <span class="mon-nc-figs">
@@ -891,7 +891,7 @@ function monNodePageHtml() {
     </div>`;
   let body;
   if (MON.error && !MON.data) body = `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.error }))}</div>`;
-  else if (!MON.data) body = `<div class="info-banner">${esc(t("Reading what the network says about this node…"))}</div>`;
+  else if (!MON.data) body = loadingHtml(t("Reading what the network says about this node…"), "", { page: true });
   else body = monNodeHtml(MON.data);
   // Your own node can act; a kept one whose wallet may be here can be linked to it.
   const acts = kept ? monActionsHtml(kept) : "";
@@ -989,7 +989,7 @@ function monLinkHtml(node) {
             <input type="password" id="mon-link-pass2" autocomplete="off"></label>`}
         </div>
         <p class="small">${esc(t("The words are checked against this node first: nothing is saved unless they are its wallet. The wallet is then kept on this computer, locked with the passphrase, the same way Host Setup does it. The words themselves are not kept, and never leave this computer."))}</p>`}
-      <div class="btn-row"><button class="primary" id="mon-link-go" ${l.busy ? "disabled" : ""}>${esc(l.busy ? t("Checking…") : t("Link"))}</button></div>
+      <div class="btn-row"><button class="primary" id="mon-link-go" ${l.busy ? "disabled" : ""}>${l.busy ? loadingInline(t("Checking…")) : esc(t("Link"))}</button></div>
       ${l.error ? `<p class="small mon-err">${esc(l.error)}</p>` : ""}
     </div>`;
 }
@@ -1080,7 +1080,7 @@ function monServerHtml(node) {
         <div id="mon-s-passbox" ${auth === "password" ? "" : "hidden"}>
           <label class="field"><span class="lbl">${esc(t("Password"))}</span><input type="password" id="mon-s-pass" autocomplete="off"></label>
         </div>`}
-        <div class="btn-row"><button class="primary" id="mon-s-connect" ${v.busy ? "disabled" : ""}>${esc(v.busy ? t("Connecting…") : t("Connect"))}</button></div>
+        <div class="btn-row"><button class="primary" id="mon-s-connect" ${v.busy ? "disabled" : ""}>${v.busy ? loadingInline(t("Connecting…")) : esc(t("Connect"))}</button></div>
         ${v.error ? `<p class="small mon-err">${esc(v.error)}</p>` : ""}
         <p class="small">${esc(t("Passwords and passphrases are used to connect and then forgotten. The address and username are kept for next time."))}</p>
       </div>`;
@@ -1200,7 +1200,7 @@ function monShutdownHtml(node) {
   const head = `<div class="mon-card-head"><h3>${esc(t("Shut down safely"))}</h3>
     <button class="mon-quiet" id="mon-down-refresh">${esc(t("Check again"))}</button></div>
     <p class="small mon-panel-lede">${t("Four steps, as in {guide}. Leaving early can lose the last epoch's reward.", { guide })}</p>`;
-  if (!d || (!d.data && d.busy)) return `<div class="card mon-panel">${head}<div class="info-banner">${esc(t("Reading where your node stands…"))}</div></div>`;
+  if (!d || (!d.data && d.busy)) return `<div class="card mon-panel">${head}${loadingHtml(t("Reading where your node stands…"))}</div>`;
   if (!d.data) return `<div class="card mon-panel">${head}<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: d.error }))}</div></div>`;
   const s = d.data;
   const step = (state, title, text, extra = "") => `
@@ -1618,7 +1618,7 @@ function monVotesHtml() {
   const g = MON.gov;
   const head = `<div class="mon-title-row"><h1>${esc(t("Votes"))}</h1>
     <span class="mon-title-sub">${esc(t("What the network is deciding, and what each proposal asks for."))}</span></div>`;
-  if (!g) return head + `<div class="info-banner">${esc(t("Reading the proposals…"))}</div>`;
+  if (!g) return head + loadingHtml(t("Reading the proposals…"), "", { page: true });
   if (g.error) return head + `<div class="warn-banner">${esc(t("Couldn't read the proposals: {why}", { why: g.error }))}</div>`;
   const live = g.proposals.filter((p) => p.status === "VOTING_PERIOD");
   const past = g.proposals.filter((p) => p.status !== "VOTING_PERIOD");
@@ -1726,13 +1726,13 @@ function monBallotHtml(p) {
       <div class="mon-ballot-flow">
         <label>${esc(t("Vote {option} with {name}. Wallet passphrase:", { option: monVoteWord(b.option), name: monName(n) }))}
           <input type="password" id="mon-b-pass" autocomplete="off" ${b.stage === "checking" ? "disabled" : ""}></label>
-        <button class="primary" id="mon-b-check" ${b.stage === "checking" ? "disabled" : ""}>${esc(b.stage === "checking" ? t("Checking…") : t("Continue"))}</button>
+        <button class="primary" id="mon-b-check" ${b.stage === "checking" ? "disabled" : ""}>${b.stage === "checking" ? loadingInline(t("Checking…")) : esc(t("Continue"))}</button>
         <button id="mon-b-cancel">${esc(t("Cancel"))}</button>
       </div>`;
     else if (b && (b.stage === "confirm" || b.stage === "sending")) flow = `
       <div class="mon-ballot-flow">
         <span>${esc(t("The network accepts this vote. The fee is about {fee}.", { fee: monGnk(b.fee) }))}</span>
-        <button class="primary" id="mon-b-send" ${b.stage === "sending" ? "disabled" : ""}>${esc(b.stage === "sending" ? t("Sending…") : t("Send the vote: {option}", { option: monVoteWord(b.option) }))}</button>
+        <button class="primary" id="mon-b-send" ${b.stage === "sending" ? "disabled" : ""}>${b.stage === "sending" ? loadingInline(t("Sending…")) : esc(t("Send the vote: {option}", { option: monVoteWord(b.option) }))}</button>
         <button id="mon-b-cancel" ${b.stage === "sending" ? "disabled" : ""}>${esc(t("Cancel"))}</button>
       </div>`;
     else if (b && b.stage === "done") flow = `<div class="mon-ballot-flow ok">${esc(t("Voted {option}. You can change the vote until it ends; the last one counts.", { option: monVoteWord(b.option) }))}</div>`;

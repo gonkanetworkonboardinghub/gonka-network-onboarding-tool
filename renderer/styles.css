@@ -322,6 +322,24 @@ button.tool-card:focus-visible { outline: 2px solid var(--focus); outline-offset
 .chain-mini i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes chain-mini { 0%, 55%, 100% { background: var(--led-off); box-shadow: none; } 20% { background: var(--accent); box-shadow: 0 0 6px var(--accent); } }
 .rent-loading { display: flex; align-items: center; gap: 10px; }
+/* The smaller loader, for a card or a page waiting for its data. */
+.chain-load.compact { padding: 16px 0 14px; gap: 8px; }
+.chain-load.page { padding: 90px 0 60px; }
+.chain-load.compact .chain-blocks i { width: 12px; height: 12px; border-radius: 4px; }
+.chain-load.compact .chain-blocks i + i { margin-left: 12px; }
+.chain-load.compact .chain-blocks i + i::before { width: 12px; }
+.chain-load.compact .chain-load-text { font-size: 13px; font-weight: 500; }
+.info-banner .chain-load.compact, .mon-panel .chain-load.compact { padding: 10px 0 8px; }
+/* A line, a status or a button that is working. */
+.chain-inline { display: inline-flex; align-items: center; gap: 8px; }
+/* On a button the small chain takes the button's own colour, so it shows on any button. */
+button .chain-mini i { background: currentColor; opacity: 0.25; animation-name: chain-mini-btn; }
+@keyframes chain-mini-btn { 0%, 55%, 100% { opacity: 0.25; } 20% { opacity: 1; } }
+/* A node card still being read: the small chain where its status dot goes. */
+.mon-nc-state .chain-mini i { width: 6px; height: 6px; border-radius: 2px; background: var(--led-off); box-shadow: none; }
+.mon-door-figure .chain-mini { gap: 4px; vertical-align: middle; }
+.mon-door-figure .chain-mini i { width: 8px; height: 8px; }
+@media (prefers-reduced-motion: reduce) { button .chain-mini i { animation: none; opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) {
   .chain-blocks i, .chain-blocks i + i::before, .chain-mini i, .chain-skeleton span { animation: none; }
   .chain-load-step { transition: none; }
@@ -482,7 +500,6 @@ button:disabled:hover { border-color: var(--line-strong); background: transparen
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.12em;
 }
 .resume-bar { border-color: var(--line-strong); background: var(--wash); }
-.working { color: var(--text); animation: pulse 1.1s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* hardware/model table */
