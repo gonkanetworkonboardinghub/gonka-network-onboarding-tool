@@ -388,8 +388,6 @@ function monWire(main) {
   if (MON.view === "node") monWireNode();
   if (MON.view === "votes") { monWireVotes(main); monWireBallots(main); }
   if ($("#mon-undo")) $("#mon-undo").onclick = monUndoForget;
-  main.querySelectorAll("[data-go-node-mine]").forEach((b) => { b.onclick = () => monGo("node", b.dataset.goNodeMine, "mine"); });
-  if ($("#mon-to-setup")) $("#mon-to-setup").onclick = () => { leaveMonitor(); showHostSetup(); };
 }
 
 /* ---- the network ------------------------------------------------------- */
@@ -634,7 +632,7 @@ function monNetworkHtml() {
       <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
       ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
     </div>`;
-  return head + monYourNodesHtml(o) + tiles + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
+  return head + tiles + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
 }
 
 /** The network page's figures: tiles, what hosts were paid, and GNK supply. */
@@ -656,20 +654,28 @@ function monNetworkTop(o) {
         <div class="mon-tile-sub">${esc(t("See them under Votes →"))}</div></button>
     </div>`;
 
-  // What hosts were paid, in plain words. Per GPU is over the GPUs that took
-  // part in that epoch when they are known, else over today's count.
+  // What hosts were paid, and in plain words why not all that was minted.
   let paid = "";
   if (l) {
-    const took = (o.capacity || []).find((c) => c.epoch === l.epoch);
-    const perGpu = took && took.gpus ? l.rewards / took.gpus : l.perGpu;
+    const p = l.payout;
+    const why = p ? `
+        <div class="mon-paid-of">${esc(t("{pct} of the {minted} the network minted for that epoch", { pct: monPct(p.paid / p.minted, 0), minted: monGnkShort(p.minted) }))}</div>
+        <div class="mon-paid-bar" role="img" aria-label="${esc(t("{pct} of the {minted} the network minted for that epoch", { pct: monPct(p.paid / p.minted, 0), minted: monGnkShort(p.minted) }))}"><i style="width:${(p.paid / p.minted * 100).toFixed(1)}%"></i></div>
+        ${p.notPaid > 0 ? `
+        <div class="mon-paid-why">
+          <b>${esc(t("Why not all of it"))}</b>
+          ${p.nothing > 0 ? `<div class="mon-paid-row"><b>${esc(monGnkShort(p.nothing))}</b><span>${esc(t(p.nothingHosts === 1
+            ? "1 host was paid nothing: it missed too many of its requests, or was left out of the epoch."
+            : "{n} hosts were paid nothing: they missed too many of their requests, or were left out of the epoch.", { n: p.nothingHosts }))}</span></div>` : ""}
+          ${p.rest > 0 ? `<div class="mon-paid-row"><b>${esc(monGnkShort(p.rest))}</b><span>${esc(t("{n} hosts were paid part of their share: some of their weight did not pass the network's checks during the epoch, or one host was over the limit of 30% of all the weight.", { n: p.partHosts }))}</span></div>` : ""}
+          <p class="small">${esc(t("What is not paid is not shared out among the other hosts. It goes to the network's governance account, which the hosts decide on by vote."))}</p>
+        </div>` : ""}` : "";
     paid = `
       <div class="card mon-paid">
         <h3>${esc(t("What hosts were paid in epoch {n}", { n: l.epoch }))}</h3>
-        <div class="mon-paid-figs">
-          <div><b>${esc(monGnkShort(l.rewards))}</b><span>${esc([monUsd(l.rewards), t("to the {n} hosts that took part", { n: l.hosts })].filter(Boolean).join(" · "))}</span></div>
-          ${perGpu ? `<div><b>${esc(monGnk(perGpu))}</b><span>${esc([monUsd(perGpu), t("for each GPU, on average")].filter(Boolean).join(" · "))}</span></div>` : ""}
-        </div>
-        <p class="small">${esc(t("Each epoch the network mints new GNK and shares it among the hosts by the work their GPUs proved. A host receives it a slice at a time over the following 180 epochs, about six months."))}</p>
+        <div class="mon-paid-main"><b>${esc(monGnkShort(l.rewards))}</b><span>${esc([monUsd(l.rewards), t("to the {n} hosts that took part", { n: l.hosts })].filter(Boolean).join(" · "))}</span></div>
+        ${why}
+        ${more("How are hosts paid?", `<p>${esc(t("Each epoch the network mints new GNK and shares it among the hosts by the weight their GPUs proved. A host receives it a slice at a time over the following 180 epochs, about six months."))}</p>`)}
       </div>`;
   }
   return { tiles, paid, supply: monSupplyCard(o) };
@@ -682,36 +688,6 @@ function monKindsGrouped(kinds) {
   const out = {};
   for (const [type, n] of Object.entries(kinds || {})) { const k = (MON_KINDS.find(([re]) => re.test(type)) || [, t("Other")])[1]; out[k] = (out[k] || 0) + n; }
   return Object.entries(out).sort((a, b) => b[1] - a[1]);
-}
-
-/* Your nodes, at the top of the network page: where they stand among the
-   hosts, or, before there is one, where it will appear. */
-function monYourNodesHtml(o) {
-  if (!MON.nodes.length) {
-    return `
-      <div class="mon-yournet empty">
-        <span class="mon-yv-icon">${MON_ICONS.mine}</span>
-        <div class="mon-yv-body"><b>${esc(t("Your node shows up here"))}</b>
-          <span>${esc(t("Set up a node with Host Setup, and once it runs it appears here with its place among the hosts. Already run one? Add it by its address."))}</span></div>
-        <div class="mon-yournet-acts"><button class="primary" id="mon-to-setup">${esc(t("Set up a node"))}</button><button data-go="add">${esc(t("Add a node"))}</button></div>
-      </div>`;
-  }
-  const chip = (n) => {
-    const h = o.hosts.find((x) => x.address === n.address);
-    const state = h ? (h.excluded ? "bad" : "ok") : "bad";
-    const where = h ? t("{share} of the network · #{rank} of {of}", { share: monPct(h.share, 2), rank: o.hosts.indexOf(h) + 1, of: o.hosts.length }) : t("Not in epoch {n}", { n: o.epoch.index });
-    return `<button class="mon-yournode" data-go-node-mine="${esc(n.address)}">
-      <span class="mon-nc-state ${state}"><i></i></span>
-      <span class="mon-yournode-name">${esc(monName(n))}${monOwn(n) ? ` <span class="pill ok mon-yours">${esc(t("Yours"))}</span>` : ""}</span>
-      <span class="mon-yournode-where">${esc(where)}</span>
-      <span class="mon-yournode-go" aria-hidden="true">→</span></button>`;
-  };
-  return `
-    <div class="mon-yournet">
-      <div class="mon-yournet-head"><b>${esc(MON.nodes.length === 1 ? t("Here is your node") : t("Here are your nodes"))}</b>
-        <button class="mon-quiet" data-go="mine">${esc(t("Open My nodes"))}</button></div>
-      <div class="mon-yournet-list">${MON.nodes.slice(0, 6).map(chip).join("")}</div>
-    </div>`;
 }
 
 /* How much GNK exists, out of the 1 billion there will ever be, and where it
@@ -839,7 +815,7 @@ function monMineHtml() {
         <span class="mon-nc-addr">${esc(t("Any node on the network, by its address"))}</span>
       </button>
     </div>
-    ${linkable ? `<p class="small mon-mine-hint">${esc(t("To vote, reach the server and shut down from here, open your node and link its wallet."))}</p>` : ""}`;
+    ${linkable ? `<p class="small mon-mine-hint">${esc(t("To vote from here, open your node and link its wallet."))}</p>` : ""}`;
 }
 
 /** Before there is a node: what My nodes will hold, locked, and the way in. */
@@ -865,7 +841,7 @@ function monMineEmptyHtml() {
     <div class="mon-locked">
       ${what.map(([a, b]) => `<div class="mon-lock-tile">${MON_LOCK}<b>${esc(a)}</b><span>${esc(b)}</span></div>`).join("")}
     </div>
-    <p class="small" style="margin-top:12px">${esc(t("Voting, the command line and shutting down work for a node whose wallet is on this computer, such as one set up with GNOT here."))}</p>`;
+    <p class="small" style="margin-top:12px">${esc(t("Voting works for a node whose wallet is on this computer, such as one set up with GNOT here. The command line and shutting down use the server's login."))}</p>`;
 }
 
 /* ---- adding a node ----------------------------------------------------- */
@@ -918,7 +894,7 @@ function monNodePageHtml() {
   else if (!MON.data) body = `<div class="info-banner">${esc(t("Reading what the network says about this node…"))}</div>`;
   else body = monNodeHtml(MON.data);
   // Your own node can act; a kept one whose wallet may be here can be linked to it.
-  const acts = own ? monActionsHtml(kept) : kept ? monLinkHtml(kept) : "";
+  const acts = kept ? monActionsHtml(kept) : "";
   return head + acts + body;
 }
 function monWireNode() {
@@ -927,8 +903,7 @@ function monWireNode() {
   if ($("#mon-keep")) $("#mon-keep").onclick = async () => { await monKeep(MON.address, ""); monRenderMain(); };
   if ($("#mon-remove")) $("#mon-remove").onclick = () => monForget(MON.address);
   if ($("#mon-rename")) $("#mon-rename").onclick = () => monRename(node);
-  if (monOwn(node)) monWireActions(node);
-  else if ($("#mon-link") || $("#mon-link-go")) monWireLink(node);
+  if (MON.nodes.some((n) => n.address === node.address)) monWireActions(node);
 }
 
 /* ---- your own node: vote, its server, the way out ---------------------- */
@@ -938,10 +913,11 @@ function monActionsHtml(node) {
   const on = MON.srv.address === node.address;
   const act = (id, title, sub, lit) => `
     <button class="mon-action${lit ? " on" : ""}" data-act="${id}" aria-expanded="${lit ? "true" : "false"}"><b>${esc(title)}</b><span>${esc(sub)}</span></button>`;
-  const panel = MON.panel === "server" ? monServerHtml(node) : MON.panel === "shutdown" ? monShutdownHtml(node) : "";
+  const panel = MON.panel === "server" ? monServerHtml(node) : MON.panel === "shutdown" ? monShutdownHtml(node) : MON.panel === "link" ? monLinkHtml(node) : "";
+  const linked = monOwn(node);
   return `
     <div class="mon-actions">
-      ${act("vote", t("Vote"), open === null ? t("on the network's proposals") : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }), false)}
+      ${act("vote", t("Vote"), !linked ? t("link your wallet first") : open === null ? t("on the network's proposals") : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }), MON.panel === "link")}
       ${act("server", t("Your server"), on ? t("connected") : t("a command line on your server"), MON.panel === "server")}
       ${act("shutdown", t("Shut down safely"), t("Gonka's steps for leaving"), MON.panel === "shutdown")}
     </div>
@@ -951,14 +927,18 @@ function monWireActions(node) {
   document.querySelectorAll("[data-act]").forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
-      if (a === "vote") { monGo("votes"); return; }
-      MON.panel = MON.panel === a ? null : a;
+      // Voting signs with the node's wallet: until it is linked, Vote opens the link form.
+      if (a === "vote" && monOwn(node)) { monGo("votes"); return; }
+      const want = a === "vote" ? "link" : a;
+      MON.panel = MON.panel === want ? null : want;
+      if (MON.panel === "link") MON.link = { address: node.address, open: true };
       if (MON.panel === "shutdown") monLoadShutdown(node);
       monRenderMain();
     };
   });
   if (MON.panel === "server") monWireServer(node);
   if (MON.panel === "shutdown") monWireShutdown(node);
+  if (MON.panel === "link") { monWireLink(node); monFocusLink(); }
 }
 
 /* Linking a node to its wallet, so it can vote, reach its server and shut
@@ -976,7 +956,7 @@ function monLinkHtml(node) {
         <span class="mon-yv-icon">${MON_KEY_ICON}</span>
         <div class="mon-yv-body">
           <b>${esc(t("Link your wallet"))}</b>
-          <span>${esc(t("Is this your node? Voting, the command line and shutting down sign with its own wallet. Link it once, and they work from here."))}</span>
+          <span>${esc(t("Voting signs with the node's own wallet. Link it once, and you vote from here."))}</span>
         </div>
         <button class="primary" id="mon-link">${esc(t("Link your wallet"))}</button>
       </div>`;
@@ -987,6 +967,7 @@ function monLinkHtml(node) {
   return `
     <div class="card mon-link-form">
       <div class="mon-card-head"><h3>${esc(t("Link your wallet"))}</h3><button class="mon-quiet" id="mon-link-cancel">${esc(t("Cancel"))}</button></div>
+      <p class="small mon-panel-lede">${esc(t("Voting signs with the node's own wallet. Link it once, and you vote from here."))}</p>
       <div class="seg" role="radiogroup">
         ${saved ? tab("saved", t("A wallet on this computer")) : ""}
         ${tab("words", t("Bring it here with its 24 words"))}
@@ -1019,7 +1000,7 @@ function monWireLink(node) {
     $("#mon-link").onclick = () => { MON.link = { address: node.address, open: true }; monRenderMain(); monFocusLink(); };
     return;
   }
-  $("#mon-link-cancel").onclick = () => { MON.link = null; monRenderMain(); };
+  $("#mon-link-cancel").onclick = () => { MON.link = null; MON.panel = null; monRenderMain(); };
   document.querySelectorAll("[data-link-mode]").forEach((b) => { b.onclick = () => { l.mode = b.dataset.linkMode; l.error = null; monRenderMain(); monFocusLink(); }; });
   const mode = l.mode || (MON.keyNames.length ? "saved" : "words");
   const go = async () => {
@@ -1050,6 +1031,7 @@ function monWireLink(node) {
       }
       await monSave();
       MON.link = null;
+      MON.panel = null;
     } catch (e) { l.busy = false; l.error = e.message; }
     monRenderMain();
   };
@@ -1826,6 +1808,7 @@ function monWireVotes(main) {
     const left = MON.nodes.filter((n) => !monOwn(n));
     if (left.length !== 1) { monGo("mine"); return; }
     monGo("node", left[0].address, "mine");
+    MON.panel = "link";
     MON.link = { address: left[0].address, open: true };
     monRenderMain();
     monFocusLink();

@@ -519,10 +519,22 @@ RENDER.welcome = () => {
           ${link(`${S.K.docs.website}/nodes-added`, t("Every node set up with GNOT"))}</div>
       </div>
     </div>
+    <div class="card after-setup">
+      <h3>${esc(t("After setup: your node, in your hands"))}</h3>
+      <p class="small">${esc(t("When setup finishes, your node is added to Gonka Host Monitor/Vote under My nodes, linked to your wallet. That is where you see it and run it from then on:"))}</p>
+      <div class="after-grid">
+        <div><b>${esc(t("How it is doing"))}</b><span>${esc(t("in the epoch or not, its weight, what it earns"))}</span></div>
+        <div><b>${esc(t("Vote with it"))}</b><span>${esc(t("on the network's proposals"))}</span></div>
+        <div><b>${esc(t("Your server"))}</b><span>${esc(t("a command line on it, from this app"))}</span></div>
+        <div><b>${esc(t("Shut down safely"))}</b><span>${esc(t("Gonka's steps for leaving"))}</span></div>
+      </div>
+      <button class="mon-quiet" id="b-see-monitor">${esc(t("See Monitor/Vote"))}</button>
+    </div>
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
   $("#b-start").onclick = () => { markDone(); go(1); };
+  $("#b-see-monitor").onclick = () => showMonitor();
   $("#stage").querySelectorAll(".check-links a").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
   });
@@ -2418,6 +2430,11 @@ RENDER.done = () => {
   stage(`
     ${header("Complete", "Your node is live", `
       Registration is done, permissions are granted, and your services are running.`)}
+    <div class="card after-setup">
+      <h3>${esc(t("Your node is in My nodes"))}</h3>
+      <p class="small">${esc(t("It is in Gonka Host Monitor/Vote, linked to your wallet. Open it any time from the home screen to see how it is doing, vote with it, use a command line on its server, or shut it down safely."))}</p>
+      <button class="primary" id="b-watch">${esc(t("Open your node"))}</button>
+    </div>
     <div class="card">
       <h3>${t("The only three things that matter from here")}</h3>
       <ul class="plain">
@@ -2435,37 +2452,40 @@ source config.env && docker compose -f docker-compose.yml -f docker-compose.mlno
 
 # stop everything (read the "stopping your node" guide first!)
 docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
-      <p>${t("Before stopping for good, follow the graceful shutdown guide so you don't lose rewards or reputation — see the {link}.", { link: `<a href="#" id="d-doc">${esc(t("official docs"))}</a>` })}</p>`)}
+      <p>${t("Before stopping for good, follow the graceful shutdown guide so you don't lose rewards or reputation — see the {link}.", { link: `<a href="#" id="d-doc">${esc(t("official docs"))}</a>` })}</p>
+      <p>${esc(t("Or use Shut down safely on your node's page in Monitor/Vote, which takes those steps with you."))}</p>`)}
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
-      <button class="primary" id="b-watch">Watch your node</button>
       <button id="b-again">Set up another node</button>
-    </div>
-    <p class="small">${esc(t("Watch your node opens it in Gonka Host Monitor/Vote: how it is doing, its earnings, voting with it, a command line on its server, and shutting it down safely."))}</p>`);
+    </div>`);
   $("#b-back").onclick = () => go(11);
-  // Add the node to My nodes as yours: its wallet's name and how to reach its
-  // server. Never a password or a passphrase.
-  $("#b-watch").onclick = async () => {
-    const server = S.mode === "local" ? { mode: "local" } : {
-      mode: "ssh", host: S.ssh.host, port: S.ssh.port, username: S.ssh.username,
-      auth: S.ssh.auth === "password" ? "password" : "key", privateKeyPath: S.ssh.privateKeyPath
-    };
-    const mine = { address: S.wallet.address, wallet: S.wallet.name, server };
-    try {
-      const nodes = await api("monitorNodes");
-      const i = nodes.findIndex((n) => n.address === mine.address);
-      if (i >= 0) nodes[i] = { ...nodes[i], ...mine }; else nodes.unshift({ ...mine, name: t("My node") });
-      await api("monitorSaveNodes", { nodes });
-    } catch (e) { logLine("\nCouldn't add the node to Monitor/Vote: " + e.message + "\n", "stderr"); }
-    showMonitor(S.wallet.address);
-  };
+  // The node goes into My nodes by itself, as yours: its wallet's name and
+  // how to reach its server. Never a password or a passphrase.
+  const added = addToMyNodes();
+  $("#b-watch").onclick = async () => { await added; showMonitor(S.wallet.address); };
   const seed = S.seed || S.K.seedNodes[0];
   $("#d-part").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + S.K.api.participants + S.wallet.address }); };
   $("#d-dash").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + "/dashboard/gonka/validator" }); };
   $("#d-doc").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.quickstart }); };
   $("#b-again").onclick = () => location.reload();
 };
+
+/** Put the node just set up into Monitor/Vote's My nodes, linked to its wallet. */
+async function addToMyNodes() {
+  if (!S.wallet.address) return;
+  const server = S.mode === "local" ? { mode: "local" } : {
+    mode: "ssh", host: S.ssh.host, port: S.ssh.port, username: S.ssh.username,
+    auth: S.ssh.auth === "password" ? "password" : "key", privateKeyPath: S.ssh.privateKeyPath
+  };
+  const mine = { address: S.wallet.address, wallet: S.wallet.name, server };
+  try {
+    const nodes = await api("monitorNodes");
+    const i = nodes.findIndex((n) => n.address === mine.address);
+    if (i >= 0) nodes[i] = { ...nodes[i], ...mine }; else nodes.unshift({ ...mine, name: t("My node") });
+    await api("monitorSaveNodes", { nodes });
+  } catch (e) { logLine("\nCouldn't add the node to Monitor/Vote: " + e.message + "\n", "stderr"); }
+}
 
 /* ------------------------------------------------------------------ */
 /* Boot                                                                */

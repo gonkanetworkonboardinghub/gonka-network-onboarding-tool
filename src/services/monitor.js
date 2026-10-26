@@ -491,6 +491,44 @@ async function capacityFile() {
 }
 
 /**
+ * What an epoch minted for its hosts, what they were paid, and why the rest
+ * was not, as the chain's reward code works (x/inference/keeper
+ * bitcoin_rewards.go): the schedule mints initial × e^(decay × epochs since
+ * genesis); each host's share is its weight over ALL the epoch's weight; a
+ * host that fails the missed-requests test, or was left out, gets nothing;
+ * weight not confirmed during the epoch, and anything over the 30% cap on one
+ * host, is cut. What is cut is not shared among the others: it goes to the
+ * governance account. `nothing` is the full share of the hosts paid nothing;
+ * `rest` is everything else that was not paid. Null when it cannot be worked out.
+ */
+let rewardParams = { at: 0, p: null };
+async function epochPayout(seeds, e, rows) {
+  if (!rewardParams.p || Date.now() - rewardParams.at > 60 * 60 * 1000) {
+    const j = await ask(seeds, K.get().api.inferenceParams);
+    rewardParams = { at: Date.now(), p: j && j.params && j.params.bitcoin_reward_params };
+  }
+  const bp = rewardParams.p;
+  const g = await ask(seeds, `${INF}/inference/epoch_group_data/${e}`);
+  const vws = (g && g.epoch_group_data && g.epoch_group_data.validation_weights) || [];
+  if (!bp || !bp.use_bitcoin_rewards || !vws.length || !rows.length) return null;
+  const decay = num(bp.decay_rate && bp.decay_rate.value) * Math.pow(10, num(bp.decay_rate && bp.decay_rate.exponent));
+  const minted = num(bp.initial_epoch_reward) * Math.exp(decay * (e - num(bp.genesis_epoch)));
+  const total = vws.reduce((a, v) => a + Math.max(0, num(v.weight)), 0);
+  const paid = rows.reduce((a, r) => a + r.rewarded, 0);
+  if (!(minted > 0) || !(total > 0) || paid > minted * 1.01) return null;
+  let nothing = 0, nothingHosts = 0, partHosts = 0;
+  for (const v of vws) {
+    const full = Math.max(0, num(v.weight)) / total * minted;
+    const got = (rows.find((r) => r.address === v.member_address) || { rewarded: 0 }).rewarded;
+    if (full > 0 && got === 0) { nothing += full; nothingHosts++; }
+    else if (got < full * 0.98) partHosts++;
+  }
+  const notPaid = Math.max(0, minted - paid);
+  nothing = Math.min(nothing, notPaid);
+  return { minted, paid, notPaid, nothing, nothingHosts, rest: notPaid - nothing, partHosts };
+}
+
+/**
  * The network page: where the epoch is, who is in it, what they run, what was
  * paid out, what exists, and how all of it moved over the recent epochs.
  */
@@ -544,7 +582,7 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     totalWeight,
     gpus: totals ? { total: totals.gpus, working: totals.gpusWorking, machines: totals.machines, kinds: totals.kinds, countedAt: file.asOf, epoch: file.epoch } : null,
     models: Object.entries(models).map(([model, n]) => ({ model, hosts: n })).sort((a, b) => b.hosts - a.hosts),
-    last: lastEpoch ? { epoch: lastEpoch, rewards: lastRewards, hosts: lastRows.length, perGpu: totals && totals.gpus ? lastRewards / totals.gpus : null } : null,
+    last: lastEpoch ? { epoch: lastEpoch, rewards: lastRewards, hosts: lastRows.length, payout: await soft(epochPayout(seeds, lastEpoch, lastRows)) } : null,
     supply: file ? file.supply : null,
     communityPool: file ? file.communityPool : null,
     past,

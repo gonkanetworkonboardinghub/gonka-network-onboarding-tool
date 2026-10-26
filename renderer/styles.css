@@ -1169,26 +1169,20 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 /* the network page: GPUs by kind on their tile */
 .mon-tile-kinds { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .mon-tile-kinds b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-/* your nodes among the hosts, or where yours will appear */
-.mon-yournet { margin-bottom: 16px; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--wash); }
-.mon-yournet.empty { display: flex; align-items: center; gap: 16px; border-style: dashed; }
-.mon-yournet-acts { display: flex; flex: none; gap: 8px; }
-.mon-yournet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.mon-yournet-head b { font-size: 15px; }
-.mon-yournet-list { display: flex; flex-wrap: wrap; gap: 10px; }
-.mon-yournode {
-  display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px;
-  border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
-}
-.mon-yournode:hover { border-color: var(--accent); }
-.mon-yournode-name { font-weight: 700; }
-.mon-yournode-where { font-size: 13px; color: var(--muted); }
-.mon-yournode-go { color: var(--muted); }
 /* what hosts were paid, and how much GNK there is */
 .mon-two.mon-two-top { margin-top: 0; }
-.mon-paid-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 6px 0 12px; }
-.mon-paid-figs b { display: block; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.mon-paid-figs span { display: block; margin-top: 3px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.mon-paid-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 4px; }
+.mon-paid-main b { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mon-paid-main span { font-size: 13.5px; color: var(--muted); }
+.mon-paid-of { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.mon-paid-bar { height: 10px; border-radius: 5px; background: var(--wash-strong); overflow: hidden; margin-bottom: 12px; }
+.mon-paid-bar i { display: block; height: 100%; border-radius: 5px; background: var(--accent); }
+.mon-paid-why { padding-top: 10px; border-top: 1px solid var(--line); }
+.mon-paid-why > b { display: block; margin-bottom: 6px; font-size: 14px; }
+.mon-paid-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 6px 0; font-size: 13px; line-height: 1.5; }
+.mon-paid-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mon-paid-row span { color: var(--muted); }
+.mon-paid-why .small { margin: 8px 0 4px; }
 .mon-supply-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 10px; }
 .mon-supply-big b { font-size: 26px; font-weight: 700; }
 .mon-supply-big span { font-size: 13.5px; color: var(--muted); }
@@ -1215,3 +1209,11 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 .mon-gnk-top em { font-style: normal; font-size: 12.5px; color: var(--muted); }
 .mon-gnk-part p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .mon-gnk-chart { margin-top: 10px; }
+
+/* Host Setup: where the node lives after setup */
+.card.after-setup { border-color: var(--accent); background: var(--accent-dim); }
+.after-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 14px; }
+.after-grid div { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel); }
+.after-grid b { font-size: 14px; }
+.after-grid span { font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+@media (max-width: 1000px) { .after-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
