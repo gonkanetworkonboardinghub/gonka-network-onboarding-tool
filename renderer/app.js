@@ -2704,19 +2704,27 @@ function renderRent() {
       ? t("Could not read the providers' prices right now.") + " " + RENT_ERROR : t("Reading the providers' prices…"))}</div>`;
     return;
   }
-  const time = (iso) => new Date(iso).toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit" });
+  // This computer's clock, with its time zone named, so nobody wonders whose time it is.
+  const time = (iso) => new Date(iso).toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  const when = (iso) => {
+    const d = new Date(iso), yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === new Date().toDateString()) return t("today, {time}", { time: time(iso) });
+    if (d.toDateString() === yesterday.toDateString()) return t("yesterday, {time}", { time: time(iso) });
+    return d.toLocaleString(window.I18N.lang(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  };
   const p = RENT.providers.find((x) => x.id === RENT_VIEW);
   if (!p) {
     box.innerHTML = `<div class="rent-providers">${RENT.providers.map((x) => {
-      // The rigs that can be rented there as they are, and the cheapest of them.
-      const ok = x.rows.filter((r) => r.best);
-      const from = ok.length ? Math.min(...ok.map((r) => r.best.pricePerHour)) : null;
+      // How many of the configurations GNOT can set up are on offer there with all a node needs.
+      const ok = x.rows.filter((r) => r.best).length;
       return `<button type="button" class="rent-provider" data-id="${esc(x.id)}">
         <span><b>${esc(x.name)}</b><span class="rent-provider-sub">${esc(x.error
           ? t("Could not read their prices right now.")
-          : ok.length
-            ? t("Rigs you can rent there now: {n}, from {price} · prices as of {time}", { n: ok.length, price: fmtUsd(from) + "/h", time: time(x.at) })
-            : t("Nothing with what a node needs on offer there now · prices as of {time}", { time: time(x.at) }))}</span></span>
+          : ok
+            ? t("{n} of the {m} configurations GNOT can set up for you are available at {provider}, with everything a node needs.", { n: ok, m: x.rows.length, provider: x.name })
+            : t("None of the {m} configurations GNOT can set up for you is available at {provider} right now with everything a node needs.", { m: x.rows.length, provider: x.name }))}</span>
+        ${x.error ? "" : `<span class="rent-provider-sub">${esc(t("Prices as of {when}.", { when: when(x.at) }))}</span>`}</span>
         <span class="rent-chev" aria-hidden="true">›</span></button>`;
     }).join("")}</div>`;
     box.querySelectorAll(".rent-provider").forEach((b) => { b.onclick = () => { RENT_VIEW = b.dataset.id; renderRent(); }; });
