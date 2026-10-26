@@ -1,12 +1,12 @@
 {
-  "asOf": "2026-10-26T18:29:55.728Z",
+  "asOf": "2026-10-26T21:53:13.562Z",
   "providers": [
     {
       "id": "spheron",
       "name": "Spheron",
       "site": "https://www.spheron.network/",
-      "at": "2026-10-26T18:29:55.314Z",
-      "offers": 49,
+      "at": "2026-10-26T21:53:11.843Z",
+      "offers": 53,
       "error": null,
       "rows": [
         {
@@ -44,12 +44,12 @@
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 1,
-              "breakEvenPerHour": 2.5541615150132047
+              "breakEvenPerHour": 2.5861122293689367
             },
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 1,
-              "breakEvenPerHour": 2.5171502518057705
+              "breakEvenPerHour": 2.5486379820112304
             }
           ],
           "offers": 3,
@@ -68,7 +68,7 @@
             "short": []
           },
           "cheapest": null,
-          "gapPerDay": -344.78012363968315
+          "gapPerDay": -344.01330649514557
         },
         {
           "gpuClass": "H200",
@@ -77,12 +77,12 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 4,
-              "breakEvenPerHour": 14.302866011626561
+              "breakEvenPerHour": 14.481784527045278
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 4,
-              "breakEvenPerHour": 14.293177620186029
+              "breakEvenPerHour": 14.471974940830782
             }
           ],
           "offers": 1,
@@ -101,7 +101,7 @@
             "short": []
           },
           "cheapest": null,
-          "gapPerDay": -578.3312157209625
+          "gapPerDay": -574.0371713509132
         },
         {
           "gpuClass": "A100",
@@ -113,7 +113,7 @@
               "breakEvenPerHour": null
             }
           ],
-          "offers": 1,
+          "offers": 2,
           "best": null,
           "cheapest": {
             "provider": "Spheron",
@@ -121,14 +121,13 @@
             "gpuName": "A100 80G PCIe",
             "gpus": 4,
             "gpuGB": 80,
-            "ramGB": 300,
-            "diskGB": 3072,
-            "cpus": 60,
-            "region": "us-central-3",
-            "pricePerHour": 5.904,
-            "cuda": null,
+            "ramGB": 480,
+            "diskGB": 3300,
+            "cpus": 124,
+            "region": "CANADA-1",
+            "pricePerHour": 5.7095,
+            "cuda": "12.8",
             "short": [
-              "memory",
               "driver"
             ]
           },
@@ -141,12 +140,12 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 1,
-              "breakEvenPerHour": 3.5757165029066402
+              "breakEvenPerHour": 3.6204461317613195
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 1,
-              "breakEvenPerHour": 3.573294405046507
+              "breakEvenPerHour": 3.6179937352076954
             }
           ],
           "offers": 2,
@@ -177,12 +176,12 @@
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 2,
-              "breakEvenPerHour": 5.108323030026409
+              "breakEvenPerHour": 5.172224458737873
             },
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 2,
-              "breakEvenPerHour": 5.034300503611541
+              "breakEvenPerHour": 5.097275964022461
             }
           ],
           "offers": 1,
@@ -213,12 +212,12 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 1,
-              "breakEvenPerHour": 5.276158413527681
+              "breakEvenPerHour": 5.3421593415721
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 1,
-              "breakEvenPerHour": 3.796723995495969
+              "breakEvenPerHour": 3.844218268334473
             }
           ],
           "offers": 0,
@@ -233,12 +232,12 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 8,
-              "breakEvenPerHour": 42.20926730822145
+              "breakEvenPerHour": 42.7372747325768
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 8,
-              "breakEvenPerHour": 30.37379196396775
+              "breakEvenPerHour": 30.753746146675784
             }
           ],
           "offers": 0,
