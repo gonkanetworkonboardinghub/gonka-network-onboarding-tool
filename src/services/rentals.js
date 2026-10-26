@@ -163,3 +163,6 @@ async function estimate(earnings, { force = false } = {}) {
 }
 
 module.exports = { estimate, compare, spheron, shortOf };
+// The pieces the website's Base44 function is built from (scripts/build-base44-rentals.js),
+// so the website compares with exactly this code.
+module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, spheron, PROVIDERS, shortOf, compare, estimate };

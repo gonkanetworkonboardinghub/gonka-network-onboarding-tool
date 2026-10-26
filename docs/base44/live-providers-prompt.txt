@@ -1,0 +1,46 @@
+PROMPT FOR BASE44 — Mine or buy: live provider prices, the same as the app
+(paste everything below into Base44, then publish)
+
+The "Compare with providers" section on /mine-or-buy shows prices that can be
+hours old, because they come from a file published a few times a day. The app
+reads them live, so the two disagree. A web page cannot read Spheron's prices
+itself (Spheron refuses requests from other websites), but a backend function
+on this site can. Please do these four things, and change nothing else.
+
+1. CREATE A BACKEND FUNCTION named gnot-rentals, with EXACTLY the code below,
+   unchanged — not rewritten, not shortened, not reformatted. It is generated
+   from the app's own code so the website compares exactly as the app does.
+   It takes no input and needs no login; it answers a GET with JSON.
+
+----- code for gnot-rentals (start) -----
+{{CODE}}----- code for gnot-rentals (end) -----
+
+2. "COMPARE WITH PROVIDERS" READS THE FUNCTION. When the page loads, get the
+   section's data by calling the gnot-rentals function. Its answer has the
+   same shape as the rentals.json file the section reads today
+   ({ asOf, providers: [...] }), plus a "price" field, so nothing else about
+   how the section is drawn changes. Only if the call fails, answers with an
+   "error" field, or takes longer than 20 seconds, use the rentals.json file
+   from GitHub instead, as today.
+
+3. UNDER THE CALCULATOR, like the app: when a rig is picked in "Will it pay
+   for itself?", look up the row with the same gpuClass and gpuCount in the
+   providers' data (all providers; take the one whose "best" has the lowest
+   pricePerHour).
+   - If there is one, show a small grey line right under the calculator's
+     inputs: "Cheapest dedicated server for this right now: ${price}/h at
+     {provider} ({region})." followed by a link "Use this price". Clicking it
+     fills the price box with that number, sets the unit to "per hour", and
+     updates the result.
+   - If that rig has rows but none with a "best": "No dedicated server with
+     what a node needs is on offer for this right now."
+   - If there is no row for that rig at all, show nothing.
+
+4. TWO SMALL FIXES in the same section:
+   a. The grey line under a provider's table ("From {name}'s public price
+      list, read at …") writes the time like the provider card does: "today,
+      12:04 PM EDT" when it is today, "yesterday, 9:15 PM EDT" when it was
+      yesterday, otherwise the date and time.
+   b. On phones, in each row's card, leave out the EACH DAY line when
+      gapPerDay is null, instead of showing a lone "—". On a computer the
+      table keeps its "—".

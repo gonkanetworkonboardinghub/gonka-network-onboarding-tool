@@ -434,3 +434,5 @@ async function estimate(seed, { force = false } = {}) {
 }
 
 module.exports = { estimate, gnkPrice, WGNK };
+// For the website's Base44 function (scripts/build-base44-rentals.js): the same price code.
+module.exports._parts = { getJson, gnkPrice, WGNK };
