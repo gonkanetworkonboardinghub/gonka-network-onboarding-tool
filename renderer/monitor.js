@@ -388,6 +388,8 @@ function monWire(main) {
   if (MON.view === "node") monWireNode();
   if (MON.view === "votes") { monWireVotes(main); monWireBallots(main); }
   if ($("#mon-undo")) $("#mon-undo").onclick = monUndoForget;
+  main.querySelectorAll("[data-go-node-mine]").forEach((b) => { b.onclick = () => monGo("node", b.dataset.goNodeMine, "mine"); });
+  if ($("#mon-to-setup")) $("#mon-to-setup").onclick = () => { leaveMonitor(); showHostSetup(); };
 }
 
 /* ---- the network ------------------------------------------------------- */
@@ -598,24 +600,8 @@ function monNetworkHtml() {
   const head = `<div class="mon-title-row"><h1>${esc(t("The Gonka network"))}</h1>
   </div>`;
   if (!o) return head + (MON.overviewError ? `<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: MON.overviewError }))}</div>` : `<div class="info-banner">${esc(t("Reading the network…"))}</div>`);
-  const g = o.gpus, l = o.last;
-  const tiles = `
-    <div class="mon-tiles">
-      ${monTile(t("GNK price"), MON.price ? "$" + monNum(MON.price, 4) : "—", t("from several markets"))}
-      ${monTile(t("Hosts"), monNum(o.hosts.length), t("in epoch {n}", { n: o.epoch.index }))}
-      ${monTile(t("GPUs"), g ? monNum(g.total) : "—", g ? t("{n} working", { n: monNum(g.working) }) : "")}
-      ${monTile(t("Epoch {n}", { n: o.epoch.index }), monPct(o.epoch.progress, 0), t("about {h} hours an epoch", { h: monNum(o.epoch.hours, 0) }))}
-      ${monTile(t("Paid out last epoch"), l ? monGnkShort(l.rewards) : "—", l ? [monUsd(l.rewards), t("epoch {n}", { n: l.epoch })].filter(Boolean).join(" · ") : "")}
-      ${monTile(t("Per GPU, last epoch"), l && l.perGpu ? monGnk(l.perGpu) : "—", l && l.perGpu ? monUsd(l.perGpu) : "")}
-      ${monTile(t("GNK in existence"), o.supply ? monGnkShort(o.supply) : "—", o.supply ? monUsd(o.supply) : "")}
-      ${(() => {
-        // The community pool lives on the Votes page now, with where its money went.
-        const open = MON.gov && MON.gov.proposals ? MON.gov.proposals.filter((p) => p.status === "VOTING_PERIOD").length : null;
-        return `<button class="mon-tile mon-tile-link" data-go="votes"><div class="mon-tile-label">${esc(t("Open votes"))}</div>
-          <div class="mon-tile-num">${open === null ? "—" : esc(monNum(open))}</div>
-          <div class="mon-tile-sub">${esc(t("See them under Votes →"))}</div></button>`;
-      })()}
-    </div>`;
+  const { tiles, paid, supply } = monNetworkTop(o);
+  const g = o.gpus;
   const past = o.past;
   const charts = past.length ? `
     <div class="mon-two">
@@ -648,7 +634,120 @@ function monNetworkHtml() {
       <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
       ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
     </div>`;
-  return head + tiles + charts + runs + hosts;
+  return head + monYourNodesHtml(o) + tiles + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
+}
+
+/** The network page's figures: tiles, what hosts were paid, and GNK supply. */
+function monNetworkTop(o) {
+  const g = o.gpus, l = o.last;
+  const open = MON.gov && MON.gov.proposals ? MON.gov.proposals.filter((p) => p.status === "VOTING_PERIOD").length : null;
+  // GPUs by kind, a few at a time: a count alone treats an H100 and a B300 alike.
+  const kindsNow = g ? monKindsGrouped(g.kinds) : [];
+  const tiles = `
+    <div class="mon-tiles">
+      ${monTile(t("GNK price"), MON.price ? "$" + MON.price.toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—", t("from several markets"))}
+      ${monTile(t("Hosts"), monNum(o.hosts.length), t("in epoch {n}", { n: o.epoch.index }))}
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs in epoch {n}", { n: o.epoch.index }))}</div>
+        <div class="mon-tile-num">${g ? esc(monNum(g.total)) : "—"}</div>
+        <div class="mon-tile-sub">${g ? esc(t("{n} working", { n: monNum(g.working) })) : "&nbsp;"}</div>
+        ${kindsNow.length ? `<div class="mon-tile-kinds">${kindsNow.slice(0, 6).map(([k, n]) => `<span><b>${esc(monNum(n))}</b> ${esc(k)}</span>`).join("")}${kindsNow.length > 6 ? `<span>+${esc(monNum(kindsNow.slice(6).reduce((a, x) => a + x[1], 0)))} ${esc(t("other"))}</span>` : ""}</div>` : ""}</div>
+      <button class="mon-tile mon-tile-link" data-go="votes"><div class="mon-tile-label">${esc(t("Open votes"))}</div>
+        <div class="mon-tile-num">${open === null ? "—" : esc(monNum(open))}</div>
+        <div class="mon-tile-sub">${esc(t("See them under Votes →"))}</div></button>
+    </div>`;
+
+  // What hosts were paid, in plain words. Per GPU is over the GPUs that took
+  // part in that epoch when they are known, else over today's count.
+  let paid = "";
+  if (l) {
+    const took = (o.capacity || []).find((c) => c.epoch === l.epoch);
+    const perGpu = took && took.gpus ? l.rewards / took.gpus : l.perGpu;
+    paid = `
+      <div class="card mon-paid">
+        <h3>${esc(t("What hosts were paid in epoch {n}", { n: l.epoch }))}</h3>
+        <div class="mon-paid-figs">
+          <div><b>${esc(monGnkShort(l.rewards))}</b><span>${esc([monUsd(l.rewards), t("to the {n} hosts that took part", { n: l.hosts })].filter(Boolean).join(" · "))}</span></div>
+          ${perGpu ? `<div><b>${esc(monGnk(perGpu))}</b><span>${esc([monUsd(perGpu), t("for each GPU, on average")].filter(Boolean).join(" · "))}</span></div>` : ""}
+        </div>
+        <p class="small">${esc(t("Each epoch the network mints new GNK and shares it among the hosts by the work their GPUs proved. A host receives it a slice at a time over the following 180 epochs, about six months."))}</p>
+      </div>`;
+  }
+  return { tiles, paid, supply: monSupplyCard(o) };
+}
+
+/* The kinds of GPU, grouped the way people talk about them. */
+const MON_KINDS = [[/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/H20\b/i, "H20"], [/A100/i, "A100"],
+  [/RTX|GeForce/i, "RTX"], [/AMD|Instinct|MI\d{3}/i, "AMD"], [/Tenstorrent|Wormhole/i, "Tenstorrent"]];
+function monKindsGrouped(kinds) {
+  const out = {};
+  for (const [type, n] of Object.entries(kinds || {})) { const k = (MON_KINDS.find(([re]) => re.test(type)) || [, t("Other")])[1]; out[k] = (out[k] || 0) + n; }
+  return Object.entries(out).sort((a, b) => b[1] - a[1]);
+}
+
+/* Your nodes, at the top of the network page: where they stand among the
+   hosts, or, before there is one, where it will appear. */
+function monYourNodesHtml(o) {
+  if (!MON.nodes.length) {
+    return `
+      <div class="mon-yournet empty">
+        <span class="mon-yv-icon">${MON_ICONS.mine}</span>
+        <div class="mon-yv-body"><b>${esc(t("Your node shows up here"))}</b>
+          <span>${esc(t("Set up a node with Host Setup, and once it runs it appears here with its place among the hosts. Already run one? Add it by its address."))}</span></div>
+        <div class="mon-yournet-acts"><button class="primary" id="mon-to-setup">${esc(t("Set up a node"))}</button><button data-go="add">${esc(t("Add a node"))}</button></div>
+      </div>`;
+  }
+  const chip = (n) => {
+    const h = o.hosts.find((x) => x.address === n.address);
+    const state = h ? (h.excluded ? "bad" : "ok") : "bad";
+    const where = h ? t("{share} of the network · #{rank} of {of}", { share: monPct(h.share, 2), rank: o.hosts.indexOf(h) + 1, of: o.hosts.length }) : t("Not in epoch {n}", { n: o.epoch.index });
+    return `<button class="mon-yournode" data-go-node-mine="${esc(n.address)}">
+      <span class="mon-nc-state ${state}"><i></i></span>
+      <span class="mon-yournode-name">${esc(monName(n))}${monOwn(n) ? ` <span class="pill ok mon-yours">${esc(t("Yours"))}</span>` : ""}</span>
+      <span class="mon-yournode-where">${esc(where)}</span>
+      <span class="mon-yournode-go" aria-hidden="true">→</span></button>`;
+  };
+  return `
+    <div class="mon-yournet">
+      <div class="mon-yournet-head"><b>${esc(MON.nodes.length === 1 ? t("Here is your node") : t("Here are your nodes"))}</b>
+        <button class="mon-quiet" data-go="mine">${esc(t("Open My nodes"))}</button></div>
+      <div class="mon-yournet-list">${MON.nodes.slice(0, 6).map(chip).join("")}</div>
+    </div>`;
+}
+
+/* How much GNK exists, out of the 1 billion there will ever be, and where it
+   is. The split of the total is Gonka's own (gonka.ai tokenomics paper): 200
+   million to the founders and 120 million to the Community Pool from the
+   start, 680 million mined for the hosts over time, halving about every four
+   years. Where it is now comes from governance.json. */
+const MON_TOTAL_GNK = 1e9;
+function monSupplyCard(o) {
+  if (!o.supply) return "";
+  const have = o.supply / MON_NGONKA;
+  const m = MON.gov && MON.gov.money;
+  const parts = m ? [
+    { k: "pool", label: t("Community pool"), gnk: m.pool.ngonka / MON_NGONKA, text: t("spent only when the hosts vote for it") },
+    { k: "sale", label: t("Community sale"), gnk: ((m.sale || [])[0] || { ngonka: 0 }).ngonka / MON_NGONKA, text: t("sold for USDT to pay grants and bounties") },
+    { k: "gov", label: t("Governance account"), gnk: m.govAccount.ngonka / MON_NGONKA, text: t("pays compensation, when the hosts vote for it") }
+  ].filter((p) => p.gnk > 0) : [];
+  const rest = have - parts.reduce((a, p) => a + p.gnk, 0);
+  if (parts.length) parts.push({ k: "rest", label: t("Everyone else"), gnk: rest, text: t("hosts' rewards, the founders' share and every other wallet") });
+  const pct = (x) => (x / MON_TOTAL_GNK * 100).toFixed(3) + "%";
+  const short = (g) => monShortNum(g) + " GNK";
+  return `
+    <div class="card mon-supply">
+      <h3>${esc(t("GNK: how much there is, and where"))}</h3>
+      <div class="mon-supply-big"><b>${esc(short(have))}</b>
+        <span>${esc(t("exist now, of the 1 billion there will ever be ({pct})", { pct: monPct(have / MON_TOTAL_GNK, 0) }))}</span></div>
+      <div class="mon-supply-bar" role="img" aria-label="${esc(t("exist now, of the 1 billion there will ever be ({pct})", { pct: monPct(have / MON_TOTAL_GNK, 0) }))}">
+        ${parts.length ? parts.map((p) => `<i class="${p.k}" style="width:${pct(p.gnk)}" title="${esc(p.label + ": " + short(p.gnk))}"></i>`).join("") : `<i class="rest" style="width:${pct(have)}"></i>`}
+      </div>
+      <div class="mon-supply-axis"><span>0</span><span>${esc(t("{n} still to be mined", { n: short(MON_TOTAL_GNK - have) }))}</span><span>1B</span></div>
+      ${parts.length ? `<div class="mon-supply-rows">${parts.map((p) => `
+        <div class="mon-supply-row"><i class="${p.k}"></i><span class="mon-supply-what"><b>${esc(p.label)}</b><span>${esc(p.text)}</span></span><b>${esc(short(p.gnk))}</b></div>`).join("")}</div>` : ""}
+      ${more("Where does GNK come from?", `
+        <p>${esc(t("The total is fixed at 1 billion GNK. 200 million went to Gonka's founders and 120 million to the Community Pool at the start. The other 680 million are mined: each epoch the network mints new GNK for the hosts, and that amount halves about every four years, so the last of it is mined decades from now."))}</p>
+        <p><a href="#" data-open="https://gonka.ai/tokenomics.pdf">${esc(t("Gonka's tokenomics paper"))}</a></p>`)}
+    </div>`;
 }
 
 /* The GPUs that took part, epoch by epoch. A count of cards treats an H100
@@ -1249,9 +1348,9 @@ function monNodeHtml(d) {
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
         <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t("{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Next Proof of Compute"))}</div>
-        <div class="mon-tile-num">${esc(monSpan(ep.secondsToNextPoc))}</div>
-        <div class="mon-tile-sub">${esc(t("epoch {n} is {pct} through", { n: ep.index, pct: monPct(ep.progress, 0) }))}</div></div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}</div>
+        <div class="mon-tile-num">${esc(monGnkShort(d.money.vesting.total))}</div>
+        <div class="mon-tile-sub">${esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs || 0 })].filter(Boolean).join(" · "))}</div></div>
     </div>`;
 
   return verdict + monAttentionCard(d) + tiles + monRewardsCard(d) + `<div class="mon-two">${monWorkCard(d)}${monMoneyCard(d)}</div>` + monHardwareCard(d) + monPocCard(d);
@@ -1339,37 +1438,44 @@ function monWorkCard(d) {
     </div>`;
 }
 
+/* The node's GNK, in plain words: what its wallet holds, what is still on its
+   way, what it may spend on fees, and what it has locked as collateral. Each
+   part is one figure with one sentence saying what it means. */
 function monMoneyCard(d) {
   const m = d.money, v = m.vesting;
   const stream = v.next;
+  const part = (title, figure, sub, text, extra = "") => `
+    <div class="mon-gnk-part">
+      <div class="mon-gnk-top"><span>${esc(title)}</span><b>${figure}</b>${sub ? `<em>${esc(sub)}</em>` : ""}</div>
+      <p>${esc(text)}</p>${extra}
+    </div>`;
   let chart = "";
   if (stream.length) {
     // Slice n arrives about n-1 epochs after the next Proof of Compute.
     const when = (i) => new Date(Date.now() + (d.epoch.secondsToNextPoc + i * d.epoch.hours * 3600) * 1000).toISOString();
-    chart = monPlot("vesting", { label: t("Still to arrive"), kind: stream.length > 48 ? "line" : "bars", unit: "GNK", height: 150, fmt: (x) => monShortNum(x),
+    chart = monPlot("vesting", { label: t("GNK arriving each epoch"), kind: stream.length > 48 ? "line" : "bars", unit: "GNK", height: 140, fmt: (x) => monShortNum(x),
       points: stream.map((a, i) => ({ y: a / MON_NGONKA, x: monDay(when(i)),
         tip: [monGnk(a), t(i === 0 ? "In 1 epoch, about {when}" : "In {n} epochs, about {when}", { n: i + 1, when: monWhenFull(when(i)) })] })) });
   }
+  const wallet = part(t("In its wallet"), esc(monGnk(m.balance)), monUsd(m.balance),
+    t("Rewards land here as they unlock, and the node's network fees are paid from it."),
+    m.paidElsewhere ? `<p class="small">${esc(t("Its rewards are paid to another address, {who}, which holds {gnk}.", { who: monShort(m.recipient), gnk: monGnk(m.recipientBalance) }))}</p>` : "");
+  const coming = v.epochs
+    ? part(t("Still on its way"), esc(monGnk(v.total)), monUsd(v.total),
+        t("Each epoch's reward is paid a slice at a time over the next {n} epochs, about six months. About {now} arrives each epoch now.", { n: v.epochs, now: monGnk(stream[0] || 0) }),
+        chart ? `<div class="mon-gnk-chart"><span class="small">${esc(t("GNK arriving each epoch"))}</span>${chart}</div>` : "")
+    : part(t("Still on its way"), esc(monGnk(0)), "", t("Nothing is waiting to be released."));
+  const fees = m.allowance
+    ? part(t("Left for fees"), m.allowance.limited ? esc(monGnk(m.allowance.left)) : esc(t("no limit")), m.allowance.expires ? t("until {date}", { date: monDate(m.allowance.expires) }) : "",
+        t("Since Gonka v0.2.16 the node pays a small fee for each Proof of Compute, from its wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."))
+    : (d.standing.known ? `<div class="warn-banner">${esc(t("No fee allowance was found for this wallet. Since Gonka v0.2.16 a node needs one to pay its fees, or it is left out of the epoch."))}</div>` : "");
+  const unbonding = m.unbonding.reduce((a, u) => a + u.amount, 0);
+  const collateral = part(t("Collateral"), esc(monGnk(m.collateral)), unbonding ? t("{gnk} being withdrawn", { gnk: monGnk(unbonding) }) : "",
+    t("GNK the host has locked in the node's name. The network counts more of a node's weight when it has collateral. It can be withdrawn later, and part of it is taken if the node does bad work or is down too long."));
   return `
-    <div class="card">
-      <h3>${esc(t("Money"))}</h3>
-      <div class="mon-kv">${esc(t("In the node's wallet"))} <b>${esc(monGnk(m.balance))}</b></div>
-      ${m.allowance
-        ? `<div class="mon-kv">${esc(t("Left for fees"))} <b>${m.allowance.limited ? esc(monGnk(m.allowance.left)) : esc(t("no limit"))}</b>${m.allowance.expires ? ` <span class="small">${esc(t("until {date}", { date: monDate(m.allowance.expires) }))}</span>` : ""}</div>
-           ${more("How does the fee allowance work?", `<p>${esc(t("Since Gonka v0.2.16 the node pays network fees out of the wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."))}</p>`)}`
-        : (d.standing.known ? `<div class="warn-banner">${esc(t("No fee allowance was found for this wallet. Since Gonka v0.2.16 a node needs one to pay its fees, or it is left out of the epoch."))}</div>` : "")}
-      <div class="mon-kv">${esc(t("Collateral"))} <b>${esc(monGnk(m.collateral))}</b></div>
-      ${m.unbonding.length ? `<div class="mon-kv">${esc(t("Being withdrawn"))} <b>${esc(monGnk(m.unbonding.reduce((a, u) => a + u.amount, 0)))}</b></div>` : ""}
-      ${m.paidElsewhere ? `<div class="mon-kv">${esc(t("Rewards are paid to"))} <b class="mono">${esc(monShort(m.recipient))}</b></div>
-        <div class="mon-kv">${esc(t("That address holds"))} <b>${esc(monGnk(m.recipientBalance))}</b></div>` : ""}
-      <div class="mon-sep"></div>
-      <div class="mon-kv">${esc(t("Still to arrive"))} <b>${esc(monGnk(v.total))}</b> <span class="small">${esc(monUsd(v.total))}</span></div>
-      ${v.epochs ? `
-        <div class="mon-kv">${esc(t("In the next 7 epochs"))} <b>${esc(monGnk(v.next7))}</b></div>
-        <div class="mon-kv">${esc(t("In the next 30 epochs"))} <b>${esc(monGnk(v.next30))}</b></div>
-        ${chart}
-        ${more("When do the rewards arrive?", `<p>${esc(t("Rewards are released a slice each epoch. This is what is already earned and still on its way, over the next {n} epochs{where}.", { n: v.epochs, where: m.paidElsewhere ? t(", at the address the rewards are paid to") : "" }))}</p>`)}`
-        : `<p class="small">${esc(t("Nothing is waiting to be released."))}</p>`}
+    <div class="card mon-gnk">
+      <h3>${esc(t("Its GNK"))}</h3>
+      ${wallet}${coming}${fees}${collateral}
     </div>`;
 }
 

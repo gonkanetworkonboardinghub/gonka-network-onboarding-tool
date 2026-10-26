@@ -1165,3 +1165,53 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .two-col > .card { margin-bottom: 14px; }
 @media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
+
+/* the network page: GPUs by kind on their tile */
+.mon-tile-kinds { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.mon-tile-kinds b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* your nodes among the hosts, or where yours will appear */
+.mon-yournet { margin-bottom: 16px; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--wash); }
+.mon-yournet.empty { display: flex; align-items: center; gap: 16px; border-style: dashed; }
+.mon-yournet-acts { display: flex; flex: none; gap: 8px; }
+.mon-yournet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.mon-yournet-head b { font-size: 15px; }
+.mon-yournet-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.mon-yournode {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+}
+.mon-yournode:hover { border-color: var(--accent); }
+.mon-yournode-name { font-weight: 700; }
+.mon-yournode-where { font-size: 13px; color: var(--muted); }
+.mon-yournode-go { color: var(--muted); }
+/* what hosts were paid, and how much GNK there is */
+.mon-two.mon-two-top { margin-top: 0; }
+.mon-paid-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 6px 0 12px; }
+.mon-paid-figs b { display: block; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mon-paid-figs span { display: block; margin-top: 3px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.mon-supply-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 10px; }
+.mon-supply-big b { font-size: 26px; font-weight: 700; }
+.mon-supply-big span { font-size: 13.5px; color: var(--muted); }
+.mon-supply-bar { display: flex; gap: 2px; height: 14px; border-radius: 7px; background: var(--wash-strong); overflow: hidden; }
+.mon-supply-bar i, .mon-supply-row > i { display: block; background: var(--accent); }
+.mon-supply-bar .rest, .mon-supply-row > i.rest { opacity: 0.9; }
+.mon-supply-bar .pool, .mon-supply-row > i.pool { opacity: 0.6; }
+.mon-supply-bar .sale, .mon-supply-row > i.sale { opacity: 0.4; }
+.mon-supply-bar .gov, .mon-supply-row > i.gov { opacity: 0.25; }
+.mon-supply-axis { display: flex; justify-content: space-between; margin: 5px 0 10px; font-size: 12px; color: var(--muted); }
+.mon-supply-rows { display: flex; flex-direction: column; }
+.mon-supply-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.mon-supply-row > i { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+.mon-supply-what { flex: 1 1 auto; min-width: 0; }
+.mon-supply-what b { margin-right: 6px; }
+.mon-supply-what span { color: var(--muted); font-size: 12.5px; }
+.mon-supply-row > b { flex: none; font-variant-numeric: tabular-nums; }
+/* a node's GNK, one figure and one sentence a part */
+.mon-gnk-part { padding: 12px 0; border-top: 1px solid var(--line); }
+.mon-gnk-part:first-of-type { border-top: none; padding-top: 4px; }
+.mon-gnk-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.mon-gnk-top span { flex: 1 1 auto; font-size: 13.5px; color: var(--muted); }
+.mon-gnk-top b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mon-gnk-top em { font-style: normal; font-size: 12.5px; color: var(--muted); }
+.mon-gnk-part p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.mon-gnk-chart { margin-top: 10px; }

@@ -48,26 +48,27 @@ const onData = (t, s) => log(t, s);
 
 /* How big the window opens, and how big everything in it is drawn. At a fixed
    1120 × 760 and actual size the app looked small on an ordinary screen, so it
-   opens at most of the screen and draws everything a quarter larger on a
-   full-size screen (a little less on a smaller one, actual size on a small
-   laptop screen, where that leaves more room). Ctrl + / Ctrl − /
+   opens at most of the screen and draws everything an eighth larger on a
+   full-size screen (a little less on a smaller one, a tenth smaller on a small
+   laptop screen). A quarter larger and 90% of the screen turned out a size
+   too big, so both came down by a tenth in October 2026. Ctrl + / Ctrl − /
    Ctrl 0 change it (the window has no menu, so nothing did before), and the
    choice is kept in ui.json. */
 const uiFile = () => path.join(app.getPath("userData"), "ui.json");
 function readUi() { try { return JSON.parse(fs.readFileSync(uiFile(), "utf8")) || {}; } catch (_) { return {}; } }
 function saveUi(patch) { try { fs.writeFileSync(uiFile(), JSON.stringify({ ...readUi(), ...patch })); } catch (_) {} }
 const ZOOM_MIN = 0.8, ZOOM_MAX = 1.5;
-/** A quarter larger than actual size on a full-size screen, less on a smaller one. */
+/** An eighth larger than actual size on a full-size screen, less on a smaller one (a quarter was a size too big, October 2026). */
 function defaultZoom() {
   const wa = screen.getPrimaryDisplay().workAreaSize;
-  if (wa.width >= 1800 && wa.height >= 1000) return 1.25;
-  if (wa.width >= 1500 && wa.height >= 860) return 1.15;
-  return 1;
+  if (wa.width >= 1800 && wa.height >= 1000) return 1.125;
+  if (wa.width >= 1500 && wa.height >= 860) return 1.04;
+  return 0.9;
 }
 function windowSize() {
   const wa = screen.getPrimaryDisplay().workAreaSize;
-  const width = Math.min(wa.width, Math.max(980, Math.min(1600, Math.round(wa.width * 0.9))));
-  const height = Math.min(wa.height, Math.max(680, Math.min(1000, Math.round(wa.height * 0.9))));
+  const width = Math.min(wa.width, Math.max(880, Math.min(1440, Math.round(wa.width * 0.81))));
+  const height = Math.min(wa.height, Math.max(610, Math.min(900, Math.round(wa.height * 0.81))));
   const saved = Number(readUi().zoom);
   return { width, height, zoom: saved >= ZOOM_MIN && saved <= ZOOM_MAX ? saved : defaultZoom() };
 }
@@ -77,8 +78,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: size.width,
     height: size.height,
-    minWidth: 920,
-    minHeight: 640,
+    minWidth: 830,
+    minHeight: 580,
     backgroundColor: "#0e131c",
     title: "The Gonka Network Onboarding Tool",
     webPreferences: {
