@@ -372,6 +372,15 @@ function machinesOn(model, gpu) {
     .filter((s) => s.gpus.length && s.gpus.every((g) => re.test(g.kind)))
     .reduce((a, s) => a + s.machines, 0);
 }
+/** ...of them, the machines with exactly n GPUs of that class. */
+function machinesOnSize(model, gpu, n) {
+  const re = classRe(gpu);
+  return ((WELCOME.hw && WELCOME.hw.models[model]) || [])
+    .filter((s) => s.gpus.length === 1 && re.test(s.gpus[0].kind) && Number(s.gpus[0].count) === n)
+    .reduce((a, s) => a + s.machines, 0);
+}
+/** A whole server, as most are rented: Gonka's ML node runs one copy of a setup per set of GPUs. */
+const WHOLE_SERVER = 8;
 /** The tiles under "What your server needs": the general list, or the picked setup's. */
 function needsTiles() {
   const req = S.K.requirements, nn = req.networkNode, p = WELCOME.pick;
@@ -386,6 +395,7 @@ function needsTiles() {
   if (p) {
     gpuVal = esc(`${p.count} × ${p.gpu}`) + (p.variant ? `<span class="var">${esc(p.variant)}</span>` : "");
     gpuSub = p.custom ? t("No ready-made configuration: you would write your own node-config.json.")
+      : p.per ? (p.machines ? t("Machines like this running it now: {n}", { n: p.machines }) : t("A ready-made configuration from Gonka"))
       : p.machines ? t("Machines running it on {gpu} now: {n}", { gpu: p.gpu, n: p.machines })
       : t("A ready-made configuration from Gonka");
     const per = vramOf(p.kind || p.gpu);
@@ -412,8 +422,12 @@ function renderNeeds() {
   // Always says which list this is: the general one, or the picked setup's.
   line.classList.toggle("general", !p);
   // A whole 8-GPU server runs one copy of the setup per set of GPUs.
-  const whole = p && p.count > 0 && p.count < 8 && 8 % p.count === 0 && !p.custom
-    ? " " + esc(t("A server with {n}× {gpu} runs {copies} copies at once and earns {copies} times as much.", { n: 8, gpu: p.gpu, copies: 8 / p.count })) : "";
+  const whole = !p || p.custom ? ""
+    : p.per ? " " + esc(p.per === 1
+      ? t("It runs Gonka's {setup} setup on each GPU: {copies} copies at once, earning {copies} times as much.", { setup: `1 × ${p.gpu}`, copies: p.count })
+      : t("It runs Gonka's {setup} setup once for every {n} GPUs: {copies} copies at once, earning {copies} times as much.", { setup: `${p.per} × ${p.gpu}`, n: p.per, copies: p.count / p.per }))
+    : p.count > 0 && p.count < WHOLE_SERVER && WHOLE_SERVER % p.count === 0
+      ? " " + esc(t("A server with {n}× {gpu} runs {copies} copies at once and earns {copies} times as much.", { n: WHOLE_SERVER, gpu: p.gpu, copies: WHOLE_SERVER / p.count })) : "";
   line.innerHTML = p ? `<span>${t("For {setup} running {model}.", {
       setup: `<b dir="ltr">${esc(`${p.count} × ${p.gpu}`)}${p.variant ? " " + esc(p.variant) : ""}</b>`,
       model: `<b>${esc(p.model.split("/").pop())}</b>` })}${whole}</span>
@@ -427,7 +441,9 @@ function pickSetup(chip) {
   const same = d && WELCOME.pick && WELCOME.pick.key === d.key;
   WELCOME.pick = !d || same ? null : {
     key: d.key, model: d.model, gpu: d.gpu, kind: d.kind || null, count: Number(d.count),
-    variant: d.variant || "", custom: d.custom === "1", machines: Number(d.machines) || 0
+    variant: d.variant || "", custom: d.custom === "1", machines: Number(d.machines) || 0,
+    // A whole server: the GPU count of the Gonka setup it runs copies of.
+    per: Number(d.per) || 0
   };
   document.querySelectorAll("#stage .gpu-chip").forEach((c) => {
     const on = !!WELCOME.pick && c.dataset.key === WELCOME.pick.key;
@@ -441,12 +457,12 @@ function pickSetup(chip) {
   }
 }
 /** A clickable GPU setup. */
-function chipHtml({ model, gpu, kind = "", count, variant = "", custom = false, machines = 0 }) {
-  const key = [model, count, gpu, variant, custom ? "own" : ""].join("|");
+function chipHtml({ model, gpu, kind = "", count, variant = "", custom = false, machines = 0, per = 0 }) {
+  const key = [model, count, gpu, variant, custom ? "own" : "", per ? "whole" : ""].join("|");
   const sel = WELCOME.pick && WELCOME.pick.key === key;
   return `<button type="button" class="gpu-chip${sel ? " sel" : ""}" dir="ltr" aria-pressed="${sel ? "true" : "false"}"
     data-key="${esc(key)}" data-model="${esc(model)}" data-gpu="${esc(gpu)}" data-kind="${esc(kind)}" data-count="${count}"
-    data-variant="${esc(variant)}" data-custom="${custom ? "1" : ""}" data-machines="${machines}"><span class="tick" aria-hidden="true">✓</span>${count ? `${count} × ` : ""}${esc(gpu)}${variant ? `<span class="var">${esc(variant)}</span>` : ""}</button>`;
+    data-variant="${esc(variant)}" data-custom="${custom ? "1" : ""}" data-machines="${machines}" data-per="${per}"><span class="tick" aria-hidden="true">✓</span>${count ? `${count} × ` : ""}${esc(gpu)}${variant ? `<span class="var">${esc(variant)}</span>` : ""}</button>`;
 }
 /** Start 2–3 hours before the next Proof of Compute: when that is, in words. */
 function pocAdviceText() {
@@ -646,6 +662,28 @@ RENDER.welcome = () => {
       for (const r of ready) { if (!byModel.has(r.model)) byModel.set(r.model, []); byModel.get(r.model).push(r); }
       const chip = (r) => chipHtml({ model: r.model, gpu: r.gpuClass || "—", count: r.gpuCount || 0,
         variant: variantOf(r), machines: r.gpuClass ? machinesOn(r.model, r.gpuClass) : 0 });
+      // The same setups on a whole 8-GPU server, one box per GPU kind: it runs
+      // the plain setup (a variant only when there is no plain one) with the
+      // fewest GPUs that divides the server evenly.
+      const wholes = (rs) => {
+        const best = new Map();
+        for (const r of rs) {
+          const n = r.gpuCount || 0;
+          if (!r.gpuClass || !n || n >= WHOLE_SERVER || WHOLE_SERVER % n) continue;
+          if (rs.some((x) => x.gpuClass === r.gpuClass && x.gpuCount === WHOLE_SERVER)) continue;
+          const was = best.get(r.gpuClass);
+          const better = !was || (variantOf(was) && !variantOf(r)) || (!variantOf(was) === !variantOf(r) && n < was.gpuCount);
+          if (better) best.set(r.gpuClass, r);
+        }
+        return [...best.values()];
+      };
+      const wholeChip = (r) => chipHtml({ model: r.model, gpu: r.gpuClass, count: WHOLE_SERVER, variant: variantOf(r),
+        machines: machinesOnSize(r.model, r.gpuClass, WHOLE_SERVER), per: r.gpuCount });
+      const wholeRow = (rs) => {
+        const w = wholes(rs);
+        return w.length ? `<div class="chips-label">${esc(t("Whole 8-GPU servers:"))}</div>
+          <div class="gpu-chips">${w.map(wholeChip).join("")}</div>` : "";
+      };
       // A model with no ready-made setup: what the network's machines run it on
       // (only setups with memory enough for the model — a few machine records
       // list fewer GPUs than they have), or else what it fits on by memory alone.
@@ -688,6 +726,7 @@ RENDER.welcome = () => {
               <div class="model-name">${esc(name)}</div>
               ${org ? `<div class="model-org">${esc(org)}</div>` : ""}
               <div class="gpu-chips">${rs.map(chip).join("")}</div>
+              ${wholeRow(rs)}
             </div>
             ${hostsBox(id)}
           </div>`;
@@ -695,7 +734,7 @@ RENDER.welcome = () => {
           `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>`}
         ${inactive.length ? `<div class="warn-banner">⚠ ${ids(inactive.map((m) => m.id))} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : ""}
         <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
-          <p>${esc(t("Each line is a model the network pays hosts to run. The boxes are the GPU setups Gonka has a ready-made configuration for: rent exactly that many of that GPU, for example 2 × H200."))}</p>
+          <p>${esc(t("Each line is a model the network pays hosts to run. The boxes are the GPU setups Gonka has a ready-made configuration for, for example 2 × H200. A server with more of the same GPU runs the setup once for every set, which is why whole 8-GPU servers are listed too."))}</p>
           <p>${esc(t("A word after the GPU, such as nvfp4, marks a variant of the same setup. nvfp4, for example, is a 4-bit build."))}</p>
           <p>${esc(t("Hosts now: how many hosts run that model in this epoch, read live from the chain. One host can run several models."))}</p>
           <p>${esc(t("The list comes live from the network and Gonka's repository, so it changes by itself when Gonka adds a model or a GPU."))}</p>
@@ -1564,7 +1603,8 @@ RENDER.model = () => {
     const wp = WELCOME.pick && !WELCOME.pick.custom ? WELCOME.pick : null;
     if (wp && !S.chosenConfigFile && !S.welcomePickTried) {
       S.welcomePickTried = true;
-      const match = entries.find((e) => e.model === wp.model && e.gpu === wp.gpu && e.count === wp.count && (e.variant || "") === (wp.variant || ""));
+      // A whole server picked there runs copies of the setup with wp.per GPUs.
+      const match = entries.find((e) => e.model === wp.model && e.gpu === wp.gpu && e.count === (wp.per || wp.count) && (e.variant || "") === (wp.variant || ""));
       if (match && match.fit.ok) { setTimeout(() => choose(match), 0); }
       else if (match) {
         fromWelcome = `<div class="warn-banner">${t("On the first step you picked {setup}. {fit}", {
