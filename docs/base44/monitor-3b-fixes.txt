@@ -1,0 +1,70 @@
+PROMPT FOR BASE44 — Monitor/Vote: fixes to the price and the network page
+(no pictures; paste everything below and publish)
+
+1. BACKEND FUNCTION gnot-monitor: the GNK price sites refuse this server
+   from time to time (they limit how often one address may ask, and this
+   server shares its address with many others). Then the function must use
+   the price the GitHub data job read last. In gnot-monitor, replace the
+   whole function priceNow (from "async function priceNow() {" to its
+   closing "}") with EXACTLY this, comment included, and change nothing
+   else in the function:
+
+----- start -----
+// The markets limit how often one address may ask, and this server shares its
+// address with many others: when none of them answers, the price the data job
+// read last (earnings.json) stands in, with when it was read ("published").
+const EARNINGS_URL = KNOWLEDGE.epochsUrl.replace(/epochs\.json$/, "earnings.json");
+async function priceNow() {
+  const fresh = price.p && Date.now() - price.at < (price.p.usd && !price.p.published ? 5 * 60 * 1000 : 60 * 1000);
+  if (fresh) return price.p;
+  let p = null;
+  try { p = await gnkPrice(); } catch (_) { /* none answered */ }
+  if (!p || !p.usd) {
+    try {
+      const f = await (await fetch(EARNINGS_URL, { signal: AbortSignal.timeout(15000) })).json();
+      if (f.price && f.price.usd) p = { usd: f.price.usd, sources: f.price.sources || [], published: f.asOf };
+    } catch (_) { /* keep the last one */ }
+  }
+  if (p && p.usd) price = { at: Date.now(), p };
+  else if (!price.p) price = { at: Date.now(), p: { usd: null, sources: [] } };
+  return price.p;
+}
+----- end -----
+
+2. BACKEND FUNCTION gnot-rentals, the same reason: replace the one line
+       const price = await gnkPrice();
+   with EXACTLY these lines, and change nothing else in the function:
+
+----- start -----
+    let price = await gnkPrice();
+    // The markets limit how often one address may ask, and this server shares
+    // its address with many others: when none of them answers, the price the
+    // data job read last (in earnings.json) stands in, with when it was read.
+    if (!price.usd && earnings.price && earnings.price.usd) price = { usd: earnings.price.usd, sources: earnings.price.sources || [], published: earnings.asOf };
+----- end -----
+
+3. THE NETWORK PAGE (/monitor/network):
+   a. GPU tile: the last item counts the GPUs in the kinds not shown, not the
+      number of kinds: "+287 other", not "+3 other".
+   b. "hostsCount" shows where "{n} hosts" belongs: in "Models served" and in
+      the box when pointing at the "Hosts, epoch by epoch" chart. Write "{n}
+      hosts" ("1 host" for one), in every language; check every other
+      Monitor/Vote text for the same mistake.
+   c. An amount of zero is "0 GNK", never "0.000000 GNK" (the "Last epoch"
+      column shows it for hosts paid nothing).
+   d. Short numbers drop a trailing ".0": "19k GNK", not "19.0k GNK"; the
+      same with M and B. The same short form is used for dollars: "≈ $31.5k",
+      "≈ $33k".
+   e. The price: every dollar figure and the GNK PRICE tile use only the
+      price that comes from gnot-monitor (price.usd), never another source.
+      The tile shows it rounded to 2 decimals ("$0.18"). When the answer's
+      price has "published", the tile's grey line says "as read {time}"
+      (full time, the visitor's time zone) instead of "from several
+      markets". Without a price: "—" and no dollar figures.
+   f. The box that appears when pointing at a chart stays inside the chart's
+      card: it wraps a long line (the GPU kinds) instead of running past the
+      edge, and opens to the left of the pointer near the right edge.
+   g. On phones, each host card shows its place ("#2") before the address,
+      as the table does on a computer.
+
+Change nothing else on the site.

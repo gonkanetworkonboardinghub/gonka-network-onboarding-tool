@@ -1,0 +1,117 @@
+PROMPT FOR BASE44 — Monitor/Vote, part 5 of 6: Votes
+(attach m13-votes-top.png, m14-votes-one-open.png and m15-votes-shared-money.png
+from the folder "monitor-reference-pictures", then paste everything below and
+publish)
+
+First, two small fixes to how Monitor/Vote writes amounts, everywhere in it:
+   a. Short amounts below 10,000 are written in full, with separators, not
+      shortened: "≈ $3,956", not "≈ $3.9k"; "≈ $8,895", not "≈ $8.9k". From
+      10,000 up they are shortened, ROUNDED to the nearest, not cut off:
+      102,654 is "102.7k", not "102.3k". This is the same rule for GNK and
+      for dollars.
+   b. Full GNK amounts drop trailing zeros: "1 GNK", not "1.000 GNK";
+      "5.017 GNK" and "0.05 GNK" stay as they are.
+
+Then build the page /monitor/votes inside the Monitor/Vote frame, as the app
+shows it in the attached pictures (references for the layout only; do not
+put them on the site). Its data is the gnot-monitor answer for
+{ "view": "votes" } — "g" below — and the price from the network answer
+(price.usd). While it reads, show the loading animation with "Reading the
+proposals…". Use the number rules from the earlier Monitor/Vote prompt. USDT
+amounts: divide by 10 to the power g.money.usdt.decimals (6 when missing),
+written "1,295,000 USDT", or short "1.3M USDT" where it says short. Top to
+bottom:
+
+1. TITLE "Votes" and beside it, grey: "What the network is deciding, and
+   what each proposal asks for."
+
+2. A CARD ABOUT VOTING (in place of the app's "Link your node to vote from
+   here"): the ballot-box icon in a rounded square, "Vote with your node in
+   GNOT" in bold, and "A host votes with its node, and the vote counts by the
+   node's weight. The vote is signed with the node's wallet, which stays on
+   your own computer, so voting happens in the GNOT app." On the right a
+   filled button "Vote with GNOT" that opens the "Needs GNOT" window (the
+   voting words).
+
+3. VOTING NOW. The proposals whose status is VOTING_PERIOD, under the heading
+   "Voting now", each as an open card (part 5) that also shows:
+   - a turnout bar: filled to turnout (0 to 1), with a thin mark at quorum,
+     and "{turnout} of the network's weight has voted. It needs {quorum} to
+     count." (both percentages without decimals);
+   - a row "Vote:" with four buttons — Yes · No · No, with veto · Abstain —
+     each opening the "Needs GNOT" window (the voting words);
+   - for each node this browser keeps (localStorage "gnot-monitor-nodes"),
+     how it has voted, read with { "view": "vote", "id", "address" }: "{name}:
+     Yes" (or No / No, with veto / Abstain), or "{name}: has not voted";
+     joined with " · ".
+   With none open: a dashed box "Nothing is being voted on right now."
+
+4. A fold-out "How does voting work?": "A host votes with its node; a
+   proposal passes when at least {quorum} of the network's weight votes and
+   more than {threshold} of those votes are yes." (g.rules.quorum and
+   g.rules.threshold as percentages without decimals)
+
+5. EVERY PROPOSAL. The heading "Every proposal ({n})" (n = all of them), then:
+   - chips: "All {n}", "Ask for money {n}", "Passed {n}", "Rejected {n}" —
+     counting the proposals not being voted on now; "Ask for money" are those
+     whose pays has any of pool, gov, toSale or usdt above 0; "Rejected" is
+     every status other than PASSED. The chosen chip is filled.
+   - beside them a search box "Find a proposal by its number or words in
+     it": "12" or "#12" finds proposal 12; anything else finds the words in
+     its title or summary, within the chosen chip. "No proposal matches."
+   - the proposals, newest first, each a card that folds open and shut on a
+     click anywhere on it (links inside still work):
+     • top line: "#{id}", a pill — "VOTING NOW" (green) for an open one, or
+       the outcome: PASSED → "Passed" (green), REJECTED → "Rejected", FAILED →
+       "Failed", DEPOSIT_PERIOD → "Waiting for its deposit" (red/grey) — and
+       the date: "ends {date of ends}" for an open one, otherwise the date
+       of ends;
+     • the title in bold, and under it, grey, what it does, from "does",
+       joined with " · ": upgrade → "Upgrades the network to {upgradeTo.name}"
+       (or "Upgrades the network's software" without upgradeTo); settings →
+       "Changes the network's settings"; spend → "Spends from the community
+       pool"; contract → "Runs a contract, often a payment"; payout → "Pays
+       out coins that unlock over time"; model-add → "Adds a model";
+       model-remove → "Removes a model"; other → "Other";
+     • on the right, when it asks for money: a small box with the label
+       "Paid" (PASSED), "Asks for" (open) or "Asked for" (the rest); the GNK
+       (pays.pool + pays.gov + pays.toSale) in full, with "≈ $…" at today's
+       price (tooltip "at today's price"), and/or the USDT (pays.usdt) in
+       full;
+     • a chevron on the right of closed cards;
+     • a tally bar when tally.voted > 0: green for yes, red for no, dark red
+       for veto, grey for abstain, each as wide as its share of tally.voted
+       (tooltip "Yes {y} · No {n} · Veto {v} · Abstain {a}"); otherwise
+       "Nobody has voted yet.";
+     • when open, below: a small table Vote · Weight · Share of the votes
+       with the rows Yes, No, No with veto, Abstain (each with its colour,
+       the weight with separators, its share) and Total; for a REJECTED one
+       where yesShare > threshold but turnout < quorum: "Most votes were yes,
+       but too few voted for it to count."; what it pays, one line each:
+       pays.toSale → "Moves {GNK} from the community pool into the community
+       sale"; pays.pool → "Pays {GNK} from the community pool"; pays.gov →
+       "Pays {GNK} from the governance account, unlocking over time";
+       pays.usdt → "Pays {USDT} from the community sale" — written "Would
+       move" / "Would pay" when it has not passed — and "recipients: {n}"
+       when pays.recipients > 0; for an upgrade with upgradeTo.height: "At
+       block {height}."; then the summary text, with up to 3 of the links
+       in it as clickable links (new tab).
+
+6. "The network's shared money" (from g.money), as a heading and four tiles:
+   - Community pool: money.pool.ngonka short GNK; "≈ $…"
+   - Community sale: money.sale[0].ngonka short GNK; "left to sell · {short
+     USDT of money.sale[0].usdt} in hand"
+   - Governance account: money.govAccount.ngonka short GNK; "≈ $…"
+   - Paid out by proposals: money.paid.usdt as short USDT; "and {short GNK of
+     money.paid.fromPool + money.paid.fromGov}"
+   and a fold-out "How does this money work?": "Only a passed proposal can
+   spend from the community pool, the governance account or the community
+   sale." Then, for the first entry of money.payouts with toSale: "Proposal
+   #{id} ({date of ended}) moved {toSale in full GNK} from the community pool
+   into the community sale, a contract that sells it for USDT. Grants and
+   bounties are paid in that USDT." Then "The governance account pays
+   compensation and restitution, in coins that unlock over time."
+
+Read again every 2 minutes while the page is open, but never while the
+"Needs GNOT" window is open. Add the new words to every language the site
+offers. Change nothing else on the site.

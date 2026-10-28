@@ -1,0 +1,149 @@
+PROMPT FOR BASE44 — Monitor/Vote, part 2 of 6: the section, its frame and start page
+(attach the picture m01-start.png from the folder "monitor-reference-pictures",
+then paste everything below and publish)
+
+Add a new section to the site, "Monitor/Vote": the website version of Gonka
+Host Monitor/Vote from the GNOT app. Everything in it is public information,
+read live from the Gonka network through the backend function gnot-monitor
+(already created). The attached picture is the app's start page. It is a
+reference for the layout only — do not put the picture on the site. Build it
+in the site's own style: the same dark look, fonts and card style as the
+other pages.
+
+The website shows the network, any node and every proposal, exactly as the
+app does. It does NOT do what needs a node's wallet or its server: linking a
+wallet, voting, the command line on a server, shutting a node down. Those
+stay in the app; on the website each of them opens the "Needs GNOT" window
+(part 5 below).
+
+1. MENU. Add "Monitor/Vote" to the top menu and the phone menu, between
+   "Mine or buy" and "FAQ", linking to /monitor. Add it to the footer's
+   links in the same place.
+
+2. PAGES:
+     /monitor                   the start page (this prompt)
+     /monitor/network           The network (next prompt)
+     /monitor/node/<address>    one node's page (prompt 4)
+     /monitor/votes             Votes (prompt 5)
+     /monitor/my-nodes          My nodes (prompt 6)
+   Until a page is built, it shows the frame (part 4) and one line: "This
+   page is on its way."
+
+3. READING THE DATA. Call the backend function gnot-monitor with a JSON body:
+   - { "view": "network" }  — the network's figures. The start page, the
+     epoch strip and several pages use it.
+   - { "view": "votes" }    — every proposal and the network's shared money.
+   - { "view": "node", "address": "gonka1…", "epochs": 30 } — one node.
+   - { "view": "vote", "id": 12, "address": "gonka1…" } — how an address
+     voted on an open proposal: { "vote": "YES" | "NO" | "NO_WITH_VETO" |
+     "ABSTAIN" | null }.
+   An answer with an "error" field means the network could not be read:
+   show "Couldn't read the network: {error}" in a warning box where the
+   figures go, never a blank page. While a page reads, show the site's
+   existing loading animation (as on Mine or buy) with "Reading the
+   network…". Read again every 2 minutes while a page is open, without
+   jumping the scroll or clearing anything typed. Share one reading between
+   the pages (moving between them does not read again if the last reading
+   is under 2 minutes old).
+
+4. THE FRAME ON EVERY MONITOR PAGE, under the site's header (see the picture):
+   a. THE BAR:
+      - on /monitor: the title "Gonka Host Monitor/Vote" on the left, a quiet
+        "Refresh" button on the right;
+      - on every other monitor page: a back button on the left that says
+        where it goes ("← Monitor/Vote"; on a node's page "← The network" or
+        "← My nodes", whichever it was opened from), three tabs in the middle
+        — My nodes · The network · Votes — the current one highlighted (a
+        node's page highlights the tab it was opened from), and "Refresh" on
+        the right. Refresh reads the page's figures again at once.
+   b. THE EPOCH STRIP, under the bar, from the network answer's "epoch":
+      - "Epoch {index}" in bold;
+      - a small pill: "Serving inference" with a green dot, or "Proof of
+        Compute now" with an amber dot when phase contains "poc" (any case);
+      - a thin progress bar filled to "progress" (0 to 1), and the
+        percentage with one decimal ("92.8%");
+      - on the right: "Next Proof of Compute 1h 38m 40s · Mon, 5:48 PM EDT":
+        the countdown in bold, ticking every second down from
+        secondsToNextPoc (counted from when it was read), then the clock
+        time it reaches in the visitor's own time zone (weekday, time, zone
+        name). At zero: "Proof of Compute is starting".
+      On phones the strip wraps onto two lines.
+
+5. THE "NEEDS GNOT" WINDOW. One window used wherever the app would act with
+   a node's wallet or its server: a dialog over a dark backdrop that closes
+   with Esc, the × or a click outside. It shows the GNOT logo mark, a title,
+   the text, a filled "Download GNOT" button (to /download) and a quiet
+   "Not now". The words depend on what opened it:
+   - Vote, "Link your wallet", or any Yes / No / No, with veto / Abstain button:
+       Title: Voting happens in GNOT
+       Text:  A vote is signed with your node's wallet, and that wallet stays
+              on your own computer. No website should ever ask for your 24
+              words or your wallet's passphrase, so this one doesn't: open
+              Monitor/Vote in GNOT, link your node's wallet once, and vote
+              there.
+   - "Your server":
+       Title: The command line is in GNOT
+       Text:  GNOT opens a command line on your server from your own
+              computer, with your server's login. This website never asks
+              for that login.
+   - "Shut down safely":
+       Title: Shutting down is in GNOT
+       Text:  GNOT takes your node off the network the way Gonka's guide
+              says to, step by step on your server, with your server's
+              login. This website never asks for that login.
+   Under the text, small and grey, in every case: "GNOT is the app this
+   website is about: it sets up a Gonka node, and it has this same
+   Monitor/Vote with voting and your server included."
+
+6. THE START PAGE (/monitor), as in the picture:
+   - a small grey eyebrow "GNOT", the title "Gonka Host Monitor/Vote" and
+     the line "Follow your nodes, see the whole network, and vote on what it
+     decides.";
+   - three big cards side by side (stacked on phones). Each has an icon in a
+     rounded square, a title, a sentence, a big figure, a small grey line
+     under the figure, and an arrow; the whole card is a link:
+     • My nodes — "How your nodes are doing, what they earn, and what you
+       can do with them." Figure: "Add your node" when this browser keeps no
+       nodes, otherwise "1 node" or "{n} nodes". Grey line: "Follow it, vote
+       with it, reach its server" when none, otherwise "{n} in this epoch"
+       (how many of them are among the network answer's hosts).
+       → /monitor/my-nodes
+     • The network — "Every host, its GPUs and what it is paid, epoch by
+       epoch." Figure: "{n} hosts" (the number of hosts). Grey line:
+       "{gpus.total} GPUs · epoch {epoch.index}". → /monitor/network
+     • Votes — "What the network is deciding, what each proposal asks for,
+       and your vote." Figure: "No open votes", "1 open vote" or "{n} open
+       votes" (proposals whose status is VOTING_PERIOD). Grey line: "{n}
+       proposals so far". → /monitor/votes
+     While a figure is still being read, a small loading animation stands
+     in its place.
+   - under the cards, small, grey and centred: "Public information from the
+     Gonka network. No key, no password." and on a second line: "Voting, the
+     command line and shutting down a node are in the GNOT app.", with "the
+     GNOT app" linking to /download.
+   The nodes "this browser keeps" are a list in the browser's localStorage
+   under the key "gnot-monitor-nodes": a JSON list of { "address", "name" }.
+   Nothing else uses it yet (prompt 6 fills it); read it safely (an empty
+   list when it is missing or unreadable).
+
+7. NUMBERS, written the way the app writes them, everywhere in Monitor/Vote:
+   - Amounts arrive in ngonka: 1 GNK = 1,000,000,000 ngonka.
+   - GNK in full, with thousands separators: no decimals from 1,000 GNK up,
+     2 decimals below 1,000, 3 below 10, 6 below 0.01. "36,394 GNK",
+     "0.052 GNK".
+   - GNK short: one decimal with k and M, two with B, the plain number below
+     10,000: "452.7M GNK", "187.3k GNK".
+   - Dollars: "≈ $" and the short form of GNK × price.usd ("≈ $33k"). The
+     price comes with the network and node answers (price.usd); leave the
+     dollars out when there is none.
+   - Percentages: one decimal unless a part says otherwise ("3.6%").
+   - Dates: "Oct 16, 2026"; chart days "Oct 16"; full times with the
+     visitor's time zone ("Oct 23, 2026, 3:12 PM EDT").
+   - Addresses, where short: the first 10 characters, "…", the last 6
+     ("gonka1sk6f…7pfvyv"). In full on a node's own page.
+   - Model names: only the part after the last "/" ("MiniMax-M2.7").
+
+8. Add the new words to every language the site offers, the same way as on
+   the other pages.
+
+Change nothing else on the site.

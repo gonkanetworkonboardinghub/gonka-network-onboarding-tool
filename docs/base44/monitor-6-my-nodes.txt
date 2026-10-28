@@ -1,0 +1,89 @@
+PROMPT FOR BASE44 — Monitor/Vote, part 6 of 6: My nodes
+(attach m06-my-nodes-empty.png and m07-my-nodes.png from the folder
+"monitor-reference-pictures", then paste everything below and publish)
+
+First, two small fixes on the Votes page:
+   a. On phones the Votes page scrolls sideways: proposal #72's title holds
+      a long wallet address ("…community wallet gonka1afj0tz53z…") that does
+      not break. Let long words — addresses and links — break onto the next
+      line in every title and text in Monitor/Vote, so nothing ever pushes
+      the page wider than the screen.
+   b. In a proposal's money box ("Paid", "Asks for", "Asked for"), write the
+      dollars in full, as the app does: "≈ $22,005", not "≈ $22k".
+
+Then build /monitor/my-nodes and /monitor/add inside the Monitor/Vote frame, as
+the app shows them in the attached pictures (references for the layout only;
+do not put them on the site). On the website, "my nodes" are the nodes a
+visitor chooses to follow, kept in their own browser only: localStorage key
+"gnot-monitor-nodes", a JSON list of { "address", "name" }, at most 50, no
+address twice. No account, nothing sent anywhere. The figures on the cards
+come from the network answer ({ "view": "network" }), so one reading covers
+every card. Use the number rules from the earlier Monitor/Vote prompt.
+
+1. MY NODES, WHEN THE LIST IS EMPTY (as in m06):
+   - the My nodes icon, big, in its rounded square; the title "My nodes";
+     the line "Add your node to follow it here.";
+   - two buttons: a filled "Add your node" (→ /monitor/add) and "Find it
+     among every host" (→ /monitor/network, scrolled to the "Every host"
+     card, anchor id "hosts");
+   - six small tiles in a grid (three across, two on phones), each with a
+     padlock, a bold name and a grey line:
+     • Status — whether it is in the epoch, and why not when it is not
+     • Earnings — what it earned, next to a typical host
+     • Fees and collateral — what is left for fees, and what is staked
+     • Vote — on the network's proposals, with your node
+     • Your server — a terminal to your server
+     • Shut down safely — Gonka's steps for leaving, done for you
+     The last three also carry a small tag "GNOT app", and clicking one of
+     them opens the "Needs GNOT" window with its words (voting, the command
+     line, shutting down).
+   - under them, small and grey: "Nodes you add are kept in this browser
+     only. Voting, the command line and shutting down are in the GNOT app,
+     where your node's wallet and your server's login stay on your own
+     computer.", with "the GNOT app" linking to /download.
+
+2. MY NODES, WITH NODES (as in m07):
+   - the title "My nodes" and beside it, grey, "1 node" or "{n} nodes";
+   - after a node was removed, a bar for 10 seconds: "Removed {name}." with
+     an "Undo" button that puts it back where it was;
+   - a grid of cards (three across on a computer, one on phones), one per
+     node, each a link to /monitor/node/<address> (opened "from My nodes"):
+     • on top, its state with a coloured dot: "Reading…" with a small
+       loading animation while the network is read; "In epoch {n}" (green)
+       when its address is among the network's hosts; "Left out of epoch
+       {n}" (red) when it is there with excluded true; "Not in epoch {n}"
+       (red) when it is not there;
+     • its name in bold (the short address when it has no name), and the
+       short address under it in monospace;
+     • three small figures: "Share" (its share as a percentage with 2
+       decimals), "Last epoch" (lastReward as short GNK), "GPUs" — each "—"
+       when unknown;
+   - the last card is "Add a node": a big "+", "Add a node" and "Any node on
+     the network, by its address" (→ /monitor/add);
+   - under the grid, small and grey: "Kept in this browser only. To vote
+     with a node, use the GNOT app." with "the GNOT app" linking to
+     /download.
+
+3. ADD A NODE (/monitor/add; the back button says "← My nodes" and the My
+   nodes tab is highlighted). The title "Add a node", then a card with:
+   - "Node address": a monospace text box, placeholder "gonka1…", focused
+     when the page opens;
+   - "A name for it (optional)": a text box, up to 40 characters,
+     placeholder "My first node";
+   - a filled "Add" button (Enter in the address box does the same);
+   - when the address is not "gonka1" followed by 38 characters from
+     "023456789acdefghjklmnpqrstuvwxyz", a red line: "That does not look like
+     a Gonka address. It starts with gonka1 and is 44 characters long.";
+   - small: "The address starts with gonka1. Any node works, however it was
+     set up." and a link "Or pick one from every host on the network." (→
+     /monitor/network, the "Every host" card).
+   Adding keeps { address, name } in the list (an address already there is
+   not added twice) and opens that node's page, opened from My nodes.
+
+4. EVERYWHERE ELSE in Monitor/Vote, use the same list: the start page's My
+   nodes card, the names in the network's host list, the node page's
+   Rename / Remove / "Add to your nodes", and how each kept node voted on the
+   Votes page.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

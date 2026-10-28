@@ -1,0 +1,27 @@
+PROMPT FOR BASE44 — Monitor/Vote: My nodes goes blank, and a name that is not there
+(no pictures; paste everything below and publish)
+
+1. MY NODES GOES BLANK. As soon as this browser keeps a node that is on the
+   network, /monitor/my-nodes shows an empty white page; the browser console
+   says "TypeError: s.gpus.reduce is not a function". On each node's card,
+   "GPUs" comes from the network answer's host entry (hosts[].gpus), and that
+   is a NUMBER — the host's GPU count — or null; it is not a list. Show it as
+   it is, with thousands separators, and "—" when it is null. Do not add it
+   up. Check every other place in Monitor/Vote that reads hosts[].gpus the
+   same way.
+
+2. A SAFETY NET. If any part of a Monitor/Vote page fails to show, the rest
+   of the site must keep working: put each Monitor/Vote page inside an error
+   boundary that shows, in place of the page's content (the header, the bar
+   and the epoch strip stay), a warning box: "Something went wrong showing
+   this page. Refresh to try again." — never a blank page.
+
+3. A NAME THAT IS NOT THERE. In "Every host" on /monitor/network, a node this
+   browser keeps WITHOUT a name shows its full address in bold before the
+   short address. Show a bold name only when the node has a name (not
+   empty); otherwise the row looks like any other host's: just the short
+   address. The same rule everywhere a kept node's name is shown: its name
+   when it has one, otherwise the short address — never the full address
+   as a name.
+
+Change nothing else on the site.

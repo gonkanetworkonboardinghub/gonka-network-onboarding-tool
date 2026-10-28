@@ -50,6 +50,9 @@ const line = (r) => `${r.gpuCount}x ${r.gpuClass}: ${r.best ? "$" + r.best.price
     if (site.error) throw new Error("the function answered an error: " + site.error);
     const app = await fromApp(site);
     const diffs = [];
+    // The price: the app's middle of four markets. Markets move between two reads, so within 1%.
+    const appPrice = await require("../src/services/earnings").gnkPrice();
+    if (appPrice.usd && !(site.price && site.price.usd && Math.abs(site.price.usd - appPrice.usd) / appPrice.usd < 0.01)) diffs.push(`price: app $${appPrice.usd}, function $${site.price && site.price.usd}`);
     for (const p of app.providers) {
       const q = (site.providers || []).find((x) => x.id === p.id);
       if (!q) { diffs.push(`${p.name}: missing from the function's answer`); continue; }

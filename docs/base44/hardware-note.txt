@@ -1,0 +1,27 @@
+PROMPT FOR BASE44 — Mine or buy: hosts report their own hardware
+(no pictures; paste everything below and publish)
+
+On /mine-or-buy, in the table of what each rig earns (the one with "Rent
+below" / "Pays for itself"), add two things the app now shows:
+
+1. ABOVE THE TABLE, a note in a thin bordered box, in normal (not grey)
+   small text, with a link at its end:
+   "Measured on the machines running each setup now. Hosts report their own
+   hardware and the network does not check it, and setups and tuning differ,
+   so what your rig earns can be different. Before you rent, look at the
+   hosts that run it."  See every host →
+   The link "See every host →" goes to /monitor/network#hosts.
+
+2. UNDER THE TABLE, with the other grey lines: when earnings.json has a
+   non-empty "leftOut" list, one more grey line:
+   "Left out of these figures: {list}. Their weight per GPU is more than
+   {leftOutAbove} times that of a typical machine with the same GPUs, so they
+   cannot be the hardware their hosts report."
+   where {list} is each entry of leftOut written as
+   "{gpuClass} — machines: {machines}, hosts: {hosts}", joined with "; "
+   (for example "H100 — machines: 14, hosts: 3; H200 — machines: 11,
+   hosts: 3"), and {leftOutAbove} is earnings.json's "leftOutAbove" (3).
+   When leftOut is missing or empty, leave the line out.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

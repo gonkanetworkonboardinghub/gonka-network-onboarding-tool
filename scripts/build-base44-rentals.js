@@ -23,6 +23,7 @@ const path = require("path");
 const K = require("../src/knowledge");
 const R = require("../src/services/rentals")._parts;
 const E = require("../src/services/earnings")._parts;
+const { fillInPrice } = require("./base44-price");
 
 const out = process.argv[2] || path.join(__dirname, "..", "docs", "base44", "gnot-rentals.js");
 const earningsUrl = K.get().epochsUrl.replace(/epochs\.json$/, "earnings.json");
@@ -47,6 +48,8 @@ const gnkPrice = (() => {
   return ${E.gnkPrice.toString()};
 })();
 
+${fillInPrice.toString()}
+
 // The comparison, as the app does it.
 const Rentals = (() => {
   const K = { get: () => ({ requirements: ${JSON.stringify(K.get().requirements)} }) };
@@ -63,6 +66,10 @@ const Rentals = (() => {
   const PROVIDERS = [${R.PROVIDERS.map((p) => `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, site: ${JSON.stringify(p.site)}, read: ${p.read.name} }`).join(", ")}];
   ${R.shortOf.toString()}
   ${R.compare.toString()}
+  const lastCount = {};
+  const THIN_RETRIES = ${R.THIN_RETRIES};
+  const THIN_WAIT_MS = ${R.THIN_WAIT_MS};
+  ${R.readFull.toString()}
   ${R.estimate.toString()}
   return { estimate };
 })();
@@ -74,7 +81,10 @@ Deno.serve(async (req) => {
   if (kept && Date.now() - kept.at < 60 * 1000) return new Response(kept.body, { headers });
   try {
     const earnings = await (await fetch(EARNINGS_URL, { signal: AbortSignal.timeout(15000) })).json();
-    const price = await gnkPrice();
+    // The price as the app has it: the middle of four markets, each market that
+    // did not answer this server taken from the data job's last reading of it
+    // (scripts/base44-price.js).
+    const price = fillInPrice(await gnkPrice(), earnings.price && { ...earnings.price, asOf: earnings.asOf });
     // What each rig may cost per hour at the price right now, as the app works it out.
     if (price.usd) for (const c of earnings.configs || []) {
       c.usdPerDay = c.gnkPerDay * price.usd;

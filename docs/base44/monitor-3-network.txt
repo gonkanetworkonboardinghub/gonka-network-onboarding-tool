@@ -1,0 +1,149 @@
+PROMPT FOR BASE44 — Monitor/Vote, part 3 of 6: The network
+(attach m02-network-top.png, m03-network-charts.png, m04-network-runs.png and
+m05-network-hosts.png from the folder "monitor-reference-pictures", then paste
+everything below and publish)
+
+First, three small fixes to what is there:
+   a. THE TOP MENU wraps onto two lines between about 900 and 1100 px wide
+      ("Get a / node", "Register a / node", "Mine or / buy") now that it has
+      one more item. Menu items never wrap (keep each on one line), and
+      below 1100 px wide the header uses the phone menu (the ☰ button)
+      instead. The logo's name may stay shortened as it is.
+   b. THE EPOCH STRIP's progress bar is short and fixed; make it stretch to
+      fill the free space between the pill and the percentage, as in the
+      app (on phones it stays on its own line, full width).
+   c. THE BROWSER TAB TITLES read "Monitor / Monitor Home" and "Monitor /
+      Monitor Network". Make them "Monitor/Vote", "The network ·
+      Monitor/Vote", "Votes · Monitor/Vote", "My nodes · Monitor/Vote" and,
+      for a node, "{name or short address} · Monitor/Vote" — each followed
+      by " | The Gonka Network Onboarding Hub" as on the other pages.
+
+Then build the page /monitor/network inside the Monitor/Vote frame, as the app
+shows it in the attached pictures (references for the layout only; do not
+put them on the site). Its data is the gnot-monitor answer for
+{ "view": "network" } — called "the network" below — plus, for two figures,
+the answer for { "view": "votes" } ("the votes"). Use the number rules from
+the earlier Monitor/Vote prompt. Top to bottom:
+
+1. TITLE: "The Gonka network".
+
+2. FOUR TILES in a row (two by two on phones). Each: a small grey label in
+   capitals, a big figure, a grey line under it.
+   - GNK PRICE: "$" + price.usd with 2 decimals ("—" without a price);
+     "from several markets".
+   - HOSTS: the number of hosts; "in epoch {epoch.index}".
+   - GPUS IN EPOCH {epoch.index}: gpus.total; "{gpus.working} working"; then
+     the kinds of GPU, grouped and largest first, up to six, small:
+     "304 H100  236 H200  192 Tenstorrent …" and "+{n} other" for the rest.
+     Group gpus.kinds by name, in this order of checks: contains B300 →
+     "B300"; B200 → "B200"; H200 → "H200"; H100 → "H100"; "H20" as a whole
+     word → "H20"; A100 → "A100"; RTX or GeForce → "RTX"; AMD, Instinct or
+     MI followed by 3 digits → "AMD"; Tenstorrent or Wormhole →
+     "Tenstorrent"; anything else → "Other".
+   - OPEN VOTES: the number of proposals in the votes whose status is
+     VOTING_PERIOD ("—" while unknown); "See them under Votes →". The whole
+     tile links to /monitor/votes.
+
+3. TWO CARDS side by side (stacked on phones):
+   a. "What hosts were paid in epoch {last.epoch}" (only when the network has "last"):
+      - big: last.rewards as short GNK; beside it, grey: "≈ $33k · to the
+        {last.hosts} hosts that took part";
+      - when last.payout is there: "{pct} of the {minted} the network minted
+        for that epoch" (pct = payout.paid ÷ payout.minted, no decimals;
+        minted as short GNK) and a bar filled to that share;
+      - when payout.notPaid > 0, a part titled "Why not all of it" with up to
+        two rows, a bold short-GNK amount on the left and a sentence:
+        • when payout.nothing > 0: the amount payout.nothing, and "{n} hosts
+          were paid nothing: they missed too many of their requests, or were
+          left out of the epoch." (n = payout.nothingHosts; with 1: "1 host
+          was paid nothing: it missed too many of its requests, or was left
+          out of the epoch.")
+        • when payout.rest > 0: the amount payout.rest, and "{n} hosts were
+          paid part of their share: some of their weight did not pass the
+          network's checks during the epoch, or one host was over the limit
+          of 30% of all the weight." (n = payout.partHosts)
+        then, small: "What is not paid is not shared out among the other
+        hosts. It goes to the network's governance account, which the hosts
+        decide on by vote."
+      - a fold-out "How are hosts paid?": "Each epoch the network mints new
+        GNK and shares it among the hosts by the weight their GPUs proved. A
+        host receives it a slice at a time over the following 180 epochs,
+        about six months."
+   b. "GNK: how much there is, and where" (only when the network has "supply"):
+      - big: supply as short GNK; under it "exist now, of the 1 billion
+        there will ever be ({pct})" (supply ÷ 1,000,000,000 GNK, no decimals);
+      - one bar for the whole 1 billion GNK, with coloured parts for the
+        parts below, each as wide as its share of 1 billion, and an axis
+        under it: "0" on the left, "{n} still to be mined" in the middle
+        (1 billion − supply, short GNK), "1B" on the right;
+      - the parts, from the votes' "money", each a row with its colour
+        square, the name in bold, a grey explanation and the short-GNK
+        amount on the right (leave out any that is 0):
+        • Community pool (money.pool.ngonka) — "spent only when the hosts vote for it"
+        • Community sale (money.sale[0].ngonka) — "sold for USDT to pay grants and bounties"
+        • Governance account (money.govAccount.ngonka) — "pays compensation, when the hosts vote for it"
+        • Everyone else (supply minus the three above) — "hosts' rewards, the founders' share and every other wallet"
+        Until the votes have been read, the bar is one part (the supply) and
+        there are no rows.
+      - a fold-out "Where does GNK come from?": "The total is fixed at 1
+        billion GNK. 200 million went to Gonka's founders and 120 million to
+        the Community Pool at the start. The other 680 million are mined:
+        each epoch the network mints new GNK for the hosts, and that amount
+        halves about every four years, so the last of it is mined decades
+        from now." and a link "Gonka's tokenomics paper" to
+        https://gonka.ai/tokenomics.pdf (new tab).
+
+4. TWO CHARTS side by side (stacked on phones), each in a card, as line
+   charts with a grey scale on the left and days along the bottom. Pointing
+   at (or tapping) the chart shows a small box with the exact figures for
+   that epoch, and a dot on the line.
+   a. "Hosts, epoch by epoch", from network.past (oldest first): the line
+      is "hosts"; the days come from "at". The box: "{hosts} hosts" and
+      "Epoch {epoch} · began {when}" — "began about {when}" when est is
+      true; when is the full time. Under the chart, small: "{first} hosts
+      then, {now} now." (first = past[0].hosts, now = the number of hosts).
+   b. "GPUs, epoch by epoch", from network.capacity: the line is "gpus".
+      The box: "{gpus} GPUs took part", then that epoch's kinds largest
+      first ("H100 280 · H200 232 · …", from "kinds"), then the epoch line as
+      in (a). Under it, small: "{first} GPUs then, {last} in epoch {e}.
+      Point at an epoch to see which kinds." and a fold-out "What does this
+      count?": "Every card the hosts report on the machines that did work in
+      that epoch. The hosts report their own hardware; the network does not
+      check it. GPUs differ a great deal, so the mix matters as much as the
+      number." and "The network keeps only each host's latest hardware
+      report, so the past comes from Gonkascan's record, which it has kept
+      every epoch. GNOT measures each new epoch itself, and the two agree."
+      with a link gonkascan.com (https://gonkascan.com, new tab).
+      When capacity is empty: "Not collected yet. It fills in over the next
+      few hours."
+
+5. TWO CARDS of horizontal bars side by side (stacked on phones):
+   a. "What the hosts run": gpus.kinds, largest first, up to 8, the name
+      without a leading "NVIDIA ", a bar as long as its count compared with
+      the largest, and the count. Under it, small: "GPUs counted machine by
+      machine at {date of gpus.countedAt}."
+   b. "Models served": network.models (model, hosts), the short model name,
+      a bar, and "{n} hosts".
+
+6. EVERY HOST, a card with the anchor id "hosts":
+   - title "Every host" and, grey, "{n} hosts in epoch {e}. Click one to see
+     everything about it.";
+   - a search box "Find a host by address, name or model" that filters the
+     list as you type (by address, by model, or by the name a node has in
+     this browser's list — localStorage "gnot-monitor-nodes");
+   - a table, one row per host, in the order given (largest first):
+     # (its place, 1 = largest) · Host (the short address; before it, in
+     bold, its name when this browser keeps it; after it, a small "left
+     out" flag when excluded is true) · GPUs ("—" when null) · Models (short
+     names, grey) · Share of the network (a small bar as long as the share
+     compared with the largest host's, and the share as a percentage) · Last
+     epoch (lastReward as short GNK, "—" when null) · Missed (missedShare as
+     a percentage, red when over 5%, "—" when null);
+   - each row is a link to /monitor/node/<address> (opened "from the
+     network", so its back button says "← The network");
+   - when nothing matches: "No host matches.";
+   - on phones each row becomes a small card: the short address and name on
+     top, then GPUs, share, last epoch and missed in two columns.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

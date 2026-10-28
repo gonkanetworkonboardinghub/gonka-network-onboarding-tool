@@ -52,6 +52,20 @@ const gnkPrice = (() => {
 };
 })();
 
+function fillInPrice(live, published) {
+  const have = new Map(((live && live.sources) || []).map((s) => [s.name, s]));
+  const answered = have.size;
+  for (const s of (published && published.sources) || []) {
+    if (!have.has(s.name) && s.usd > 0) have.set(s.name, { name: s.name, usd: s.usd, readAt: published.asOf });
+  }
+  const sources = [...have.values()];
+  if (!sources.length) return { usd: null, sources: [] };
+  const sorted = sources.map((s) => s.usd).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const usd = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return answered ? { usd, sources } : { usd, sources, published: published && published.asOf };
+}
+
 // The comparison, as the app does it.
 const Rentals = (() => {
   const K = { get: () => ({ requirements: {"cudaMin":"12.9","cudaMain":"13.0","driverMain":580,"cudaFloor":"12.6","networkNode":{"cpuCores":16,"ramGB":64,"diskGB":1000},"mlNodeRamToVramRatio":1.5} }) };
@@ -176,13 +190,27 @@ const Rentals = (() => {
     || order.indexOf(a.gpuClass) - order.indexOf(b.gpuClass) || a.gpuCount - b.gpuCount);
   return rows;
 }
+  const lastCount = {};
+  const THIN_RETRIES = 2;
+  const THIN_WAIT_MS = 4000;
+  async function readFull(p) {
+  const thin = (list) => list.length < Math.max(10, (lastCount[p.id] || 0) / 2);
+  let list = await p.read();
+  for (let i = 0; i < THIN_RETRIES && thin(list); i++) {
+    await new Promise((r) => setTimeout(r, THIN_WAIT_MS));
+    const again = await p.read().catch(() => []);
+    if (again.length > list.length) list = again;
+  }
+  lastCount[p.id] = list.length;
+  return list;
+}
   async function estimate(earnings, { force = false } = {}) {
   if (!force && cache && Date.now() - cache.at < CACHE_MS && cache.epoch === (earnings.epoch && earnings.epoch.index)) return cache.data;
   const providers = [];
   for (const p of PROVIDERS) {
     const at = new Date().toISOString();
     try {
-      const list = await p.read();
+      const list = await readFull(p);
       providers.push({ id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: compare(earnings, list) });
     } catch (e) {
       providers.push({ id: p.id, name: p.name, site: p.site, at, offers: 0, error: e.message, rows: [] });
@@ -202,7 +230,10 @@ Deno.serve(async (req) => {
   if (kept && Date.now() - kept.at < 60 * 1000) return new Response(kept.body, { headers });
   try {
     const earnings = await (await fetch(EARNINGS_URL, { signal: AbortSignal.timeout(15000) })).json();
-    const price = await gnkPrice();
+    // The price as the app has it: the middle of four markets, each market that
+    // did not answer this server taken from the data job's last reading of it
+    // (scripts/base44-price.js).
+    const price = fillInPrice(await gnkPrice(), earnings.price && { ...earnings.price, asOf: earnings.asOf });
     // What each rig may cost per hour at the price right now, as the app works it out.
     if (price.usd) for (const c of earnings.configs || []) {
       c.usdPerDay = c.gnkPerDay * price.usd;

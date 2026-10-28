@@ -1,0 +1,169 @@
+PROMPT FOR BASE44 — Monitor/Vote, part 4 of 6: one node's page
+(attach m08-node-top.png, m09-node-rewards.png, m10-node-work-and-gnk.png,
+m11-node-hardware.png and m12-node-vote-needs-wallet.png from the folder
+"monitor-reference-pictures", then paste everything below and publish)
+
+Build the page /monitor/node/<address> inside the Monitor/Vote frame, as the
+app shows it in the attached pictures (references for the layout only; do
+not put them on the site). Anyone can open any node: it is all public. Its
+data is the gnot-monitor answer for { "view": "node", "address": <address>,
+"epochs": 30 } — "d" below. While it reads (it can take up to half a
+minute), show the loading animation with "Reading what the network says
+about this node…". If the address does not start with gonka1 and is not 44
+characters long, say "That does not look like a Gonka address. It starts
+with gonka1 and is 44 characters long." instead of reading. Use the number
+rules from the earlier Monitor/Vote prompt. Top to bottom:
+
+1. THE HEAD:
+   - the node's name — the name this browser gives it (localStorage
+     "gnot-monitor-nodes"), or else the short address — big;
+   - under it, the full address in a monospace font; clicking it copies it
+     (tooltip "Copy address"; it shows "Copied" for a moment);
+   - on the right, small and grey: "read just now", or "read {n} min ago";
+     then buttons: when this browser keeps the node, "Rename" (asks for a
+     new name, up to 40 characters) and "Remove" (takes it off the list,
+     back to My nodes with "Removed {name}. Undo" for 10 seconds); otherwise
+     a filled "Add to your nodes" (adds { address, name: "" } to the list).
+   The back button in the frame says "← My nodes" when the page was opened
+   from My nodes, otherwise "← The network".
+
+2. THREE ACTION CARDS in a row, only for a node this browser keeps (as in
+   m08). Each opens the "Needs GNOT" window with its own words:
+   - "Vote" — grey: "in the GNOT app"
+   - "Your server" — grey: "a command line, in the GNOT app"
+   - "Shut down safely" — grey: "Gonka's steps for leaving, in the GNOT app"
+   Each card has a small padlock icon on its right.
+
+3. THE VERDICT, one coloured box with a dot (green when good, red otherwise):
+   - d.standing.excluded: "Left out of epoch {d.epoch.index}" / "The network
+     removed it from this epoch: {why}." where why is: failed_confirmation_poc
+     → "it failed a confirmation Proof of Compute"; inactive → "it stopped
+     answering"; invalid → "too many of its answers were judged wrong";
+     anything else → the reason as written, with "_" as spaces.
+   - else d.standing.inEpoch: "Taking part in epoch {n}" / "The network
+     counts this node in the current epoch, with {models}." (the short model
+     names, joined with commas)
+   - else d.standing.known: "Not in epoch {n}" / "The node is registered, but
+     it is not among the {d.epoch.hosts} hosts in the current epoch. It
+     earns nothing until it passes a Proof of Compute."
+   - else: "The network has no node at this address" / "Check the address. A
+     node appears here once it has registered." (and nothing below 4–9.)
+
+4. WHAT DESERVES A LOOK (when d.standing.known). With d.attention empty:
+   "Nothing needs your attention" / "Nothing in what the network reports
+   about this node stands out." Otherwise the title "One thing is worth a
+   look" or "{n} things are worth a look", and one line per item — a red dot
+   for level "bad", amber for "warn" — written from its code:
+   - excluded: "The network left this node out of the current epoch: {why}." (why as in 3)
+   - not-in-epoch: "The node is registered but is not in the current epoch, so it is earning nothing."
+   - machines-down: "{n} of its {of} machines are not working: {list}." (with
+     one: "One of its {of} machines is not working: {list}."); list is each
+     machine as "{id} ({status})", joined with commas
+   - no-allowance: "The wallet has no fee allowance for the node. Since Gonka v0.2.16 the node cannot pay its fees without one."
+   - allowance-low: "Only {left} is left of the fee allowance. When it runs out the node cannot pay its fees until the allowance is renewed." (left in full GNK)
+   - wallet-low: "The wallet holds only {balance}. The node's fees are paid from it."
+   - confirmation: "It passed {ratio} of the confirmation checks this epoch." (percentage, no decimals)
+   - no-reward: "It took part in epoch {epoch} but was paid nothing for it."
+   - missed: "In epoch {epoch} it missed {mine} of its requests. A typical host missed {typical}."
+   - judged-wrong: "In epoch {epoch}, {mine} of its checked answers were judged wrong. For a typical host it was {typical}."
+
+5. FOUR TILES (two by two on phones), as on the network page:
+   - WEIGHT THIS EPOCH: d.standing.weight with separators ("—" when not in
+     the epoch); "{rank} of {of} hosts · {share} of the network" (share with
+     2 decimals, from standing.place and standing.share).
+   - LAST EPOCH'S REWARD: d.last.reward in full GNK ("—" without d.last);
+     "≈ $… · epoch {d.last.epoch} · {rank} of {of}" (d.last.rewardPlace).
+   - THIS EPOCH, ESTIMATED when d.now.estimate is above 0: that amount in
+     full GNK; "≈ $… · the network's own estimate". Otherwise GPUS:
+     d.hardware.gpuCount; "{working GPUs} working · {machines} machines"
+     (working GPUs = the GPUs on machines whose status contains INFERENCE,
+     POC or POW).
+   - STILL ON ITS WAY: d.money.vesting.total as short GNK; "≈ $… · unlocking
+     over {d.money.vesting.epochs} epochs".
+
+6. "Rewards, epoch by epoch": a bar chart of d.history (30 epochs, oldest
+   first; a line instead when there are more than 48), the scale in GNK on
+   the left, days along the bottom (from "at"). An epoch where took is true
+   is a bar of reward ÷ 1,000,000,000; where unknown is true, a small hatched
+   grey mark ("Not collected yet"); otherwise a thin flat mark at the bottom
+   ("Did not take part"). Pointing at an epoch shows: the reward in full GNK
+   and "≈ $…" (or the words above), and "Epoch {epoch} · began {when}"
+   ("began about" when est is true). Under it, small: "{total} over the {n}
+   epochs it took part in, out of the last {of}. The tallest bar is {max}."
+   (from d.totals: reward, epochs, of; all in full GNK), then, when
+   d.totals.unknown is 1, "The newest epoch is not collected yet; epochs are
+   added a few times a day." or, when more, "{n} epochs are not collected
+   yet; epochs are added a few times a day.", and when there is a price, "At
+   today's price that is ${usd}." When every epoch is unknown, instead of
+   the chart: "The record of past epochs could not be downloaded just now.
+   Try Refresh in a moment."
+
+7. TWO CARDS side by side (stacked on phones):
+   a. "How well it worked in epoch {d.last.epoch}" (without d.last: the title
+      "How well it worked" and "No finished epoch to show yet. This fills in
+      after the node's first full epoch."):
+      - "Requests answered {d.last.requests}";
+      - "Requests it missed": the node's share (missedShare) big on the
+        right; two bars, one for "this node · {missed} missed" and one for "a
+        typical host · {typicalMissedShare}", each as long as its share
+        compared with the larger; under them one of "more than a typical
+        host" (in red, when the node's share is over 1.5 × typical AND over
+        typical + 0.01), "less than a typical host" or "about the same as a
+        typical host";
+      - when validated + invalidated > 0, the same for "Answers judged wrong"
+        with invalidShare, typicalInvalidShare and "{invalidated} of
+        {validated + invalidated} checked";
+      - small: "A typical host is the middle one of the {d.last.hosts} that
+        took part in that epoch."
+   b. "Its GNK": four parts, each a name, a big figure, a grey "≈ $…" or note,
+      and a sentence:
+      - "In its wallet": d.money.balance in full GNK. "Rewards land here as
+        they unlock, and the node's network fees are paid from it." When
+        d.money.paidElsewhere: "Its rewards are paid to another address,
+        {short recipient}, which holds {recipientBalance}."
+      - "Still on its way": d.money.vesting.total. "Each epoch's reward is
+        paid a slice at a time over the next {vesting.epochs} epochs, about
+        six months. About {vesting.next[0]} arrives each epoch now." Under
+        it a small chart "GNK arriving each epoch" of vesting.next (bars; a
+        line when more than 48): slice i arrives about
+        (d.epoch.secondsToNextPoc + i × d.epoch.hours × 3600) seconds from
+        now; pointing shows the amount and "In {i+1} epochs, about {when}"
+        ("In 1 epoch, about {when}" for the first). With no vesting: "0 GNK"
+        and "Nothing is waiting to be released."
+      - "Left for fees": when d.money.allowance exists, its "left" in full
+        GNK, or "no limit" when limited is false; "until {date}" when it
+        expires. "Since Gonka v0.2.16 the node pays a small fee for each
+        Proof of Compute, from its wallet, up to this allowance. When it
+        runs out it has to be renewed; sending more GNK does not raise it."
+        Without an allowance, a warning box: "No fee allowance was found
+        for this wallet. Since Gonka v0.2.16 a node needs one to pay its
+        fees, or it is left out of the epoch."
+      - "Collateral": d.money.collateral; when d.money.unbonding has amounts,
+        "{their sum} being withdrawn". "GNK the host has locked in the
+        node's name. The network counts more of a node's weight when it has
+        collateral. It can be withdrawn later, and part of it is taken if
+        the node does bad work or is down too long."
+
+8. "Hardware the network sees": small "{working} of {n} machines working ·
+   {kinds}" (kinds from d.hardware.gpuKinds as "8× NVIDIA H100 80GB HBM3",
+   joined with commas), then a table: Machine (id, monospace) · State (a
+   green dot when the status contains INFERENCE, POC or POW, red otherwise,
+   and the status) · GPUs ("8× NVIDIA H100 (80 GB)") · Model (short names) ·
+   Weight (pocWeight with separators, "—" when 0). With no machines: the
+   title "Hardware" and "The network has no hardware listed for this node."
+   On phones each machine becomes a small card.
+
+9. "Proof of Compute" — only the lines that apply, and no card when none do:
+   - "Confirmation checks passed this epoch {ratio}" (when
+     d.standing.confirmationRatio is not null; percentage, no decimals)
+   - "Epochs completed {n}" and, grey, "joined {date}"
+   - "Maintenance time saved up {n} blocks" (d.maintenance.credit)
+   - when d.maintenance.active, a note: "The node is in a maintenance window right now."
+   - "Models it has refused {names}" (d.poc.refusals)
+   - "Models it has declared for {names}" (d.poc.intents)
+   - "Validation weight it has delegated": a small table of model → the host
+     it delegates to (short address), then "For each model, the host this
+     node lets validate on its behalf." (d.poc.delegations)
+
+Read the node again every 2 minutes while the page is open. Add the new
+words to every language the site offers. Change nothing else on the site.
