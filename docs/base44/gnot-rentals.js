@@ -6,7 +6,9 @@
 // website works out every figure live, exactly as the app does. Do not edit
 // it here: change the app's code, run the script again, and paste the new file.
 //
-// GET -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
+// GET, or POST { markets } -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
+//   markets: what the visitor's browser read of the GNK markets (read-markets.js),
+//            [{ name, usd }]; the price is worked out from it, as the app's
 //   earnings: what each rig earns (the same shape as earnings.json)
 //   providers: what renting each rig costs, compared with those earnings
 
@@ -1148,6 +1150,8 @@ async function publishedEarnings() {
   return published.f;
 }
 
+// The markets the app reads, in its order (src/services/earnings.js gnkPrice).
+const MARKETS = ["Uniswap (GeckoTerminal)","DEX Screener","CoinGecko","CoinPaprika"];
 function fillInPrice(live, published) {
   const have = new Map(((live && live.sources) || []).map((s) => [s.name, s]));
   const answered = have.size;
@@ -1160,6 +1164,21 @@ function fillInPrice(live, published) {
   const mid = Math.floor(sorted.length / 2);
   const usd = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   return answered ? { usd, sources } : { usd, sources, published: published && published.asOf };
+}
+function marketsFrom(body) {
+  const seen = new Map();
+  for (const m of (body && Array.isArray(body.markets) ? body.markets : [])) {
+    const usd = Number(m && m.usd);
+    if (m && MARKETS.includes(m.name) && usd > 0 && isFinite(usd) && !seen.has(m.name)) seen.set(m.name, { name: m.name, usd });
+  }
+  return [...seen.values()];
+}
+function priceFrom(browser, own, published) {
+  const have = new Map(browser.map((s) => [s.name, s]));
+  for (const s of (own && own.sources) || []) if (!have.has(s.name)) have.set(s.name, { name: s.name, usd: s.usd });
+  const p = fillInPrice({ sources: [...have.values()] }, published);
+  p.sources.sort((a, b) => MARKETS.indexOf(a.name) - MARKETS.indexOf(b.name));
+  return p;
 }
 
 // Gonka's setup files, from GitHub's API as the app reads them. GitHub limits
@@ -1193,13 +1212,27 @@ async function earningsNow() {
   throw last || new Error("no Gonka node answered");
 }
 
-let kept = null, pending = null;
-async function answer() {
+// The reading every visitor shares for a minute: the earnings, the data job's
+// last file, and each provider's offers, read as Rentals.estimate reads them.
+async function reading() {
   const [{ e, live }, pub] = await Promise.all([earningsNow(), publishedEarnings()]);
-  const earnings = JSON.parse(JSON.stringify(e));
-  // The price as the app has it: the middle of four markets, each one that did
-  // not answer this server taken from the data job's last reading of it.
-  const price = fillInPrice(earnings.price, pub && pub.price && { ...pub.price, asOf: pub.asOf });
+  const lists = [];
+  for (const p of Rentals._parts.PROVIDERS) {
+    const at = new Date().toISOString();
+    try { lists.push({ p, at, list: await Rentals._parts.readFull(p) }); }
+    catch (err) { lists.push({ p, at, error: err.message }); }
+  }
+  return { at: Date.now(), asOf: new Date().toISOString(), e, live, pub, lists };
+}
+
+// One visitor's answer: the shared reading, priced with what their browser read
+// of the markets, and compared with each provider's offers as Rentals.estimate does.
+function answer(r, browser) {
+  const earnings = JSON.parse(JSON.stringify(r.e));
+  const pub = r.pub;
+  // The price as the app has it: the middle of four markets; each one the
+  // browser could not read from this server's own reading, else the data job's.
+  const price = priceFrom(browser, r.live ? earnings.price : null, pub && pub.price && { ...pub.price, asOf: pub.asOf });
   earnings.price = price;
   for (const c of earnings.configs || []) {
     c.usdPerDay = price.usd ? c.gnkPerDay * price.usd : null;
@@ -1207,20 +1240,25 @@ async function answer() {
   }
   // Setups the network does not pay for: named as the data job last named them when GitHub would not list the setups.
   if (!(earnings.withoutData || []).length && pub && setups.rows === null) earnings.withoutData = pub.withoutData || [];
-  const rentals = await Rentals.estimate(earnings, { force: true });
-  return JSON.stringify({ ...rentals, price, earningsAsOf: earnings.asOf, earningsLive: live, earnings });
+  const providers = r.lists.map(({ p, at, list, error }) => error
+    ? { id: p.id, name: p.name, site: p.site, at, offers: 0, error, rows: [] }
+    : { id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: Rentals.compare(earnings, list) });
+  return JSON.stringify({ asOf: r.asOf, providers, price, earningsAsOf: earnings.asOf, earningsLive: r.live, earnings });
 }
 
+let kept = null, pending = null;
 Deno.serve(async (req) => {
   const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Cache-Control": "public, max-age=60" };
   if (req.method === "OPTIONS") return new Response(null, { headers });
-  // One answer a minute; visitors asking at the same moment share it.
-  if (kept && Date.now() - kept.at < 60 * 1000) return new Response(kept.body, { headers });
+  let body = {};
+  if (req.method === "POST") { try { body = await req.json(); } catch (_) { /* no body */ } }
   try {
-    if (!pending) pending = answer().finally(() => { pending = null; });
-    const body = await pending;
-    kept = { at: Date.now(), body };
-    return new Response(body, { headers });
+    // One reading a minute; visitors asking at the same moment share it.
+    if (!kept || Date.now() - kept.at >= 60 * 1000) {
+      if (!pending) pending = reading().finally(() => { pending = null; });
+      try { kept = await pending; } catch (e) { if (!kept) throw e; /* the last reading stands */ }
+    }
+    return new Response(answer(kept, marketsFrom(body)), { headers });
   } catch (e) {
     return new Response(JSON.stringify({ error: String((e && e.message) || e) }), { status: 502, headers });
   }

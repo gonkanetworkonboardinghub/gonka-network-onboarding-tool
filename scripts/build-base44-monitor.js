@@ -13,18 +13,22 @@
  * from src/services/earnings.js. Change the app's code, run this again, and
  * paste the new file into Base44.
  *
- * The function answers GET with ?view=… or POST with { view, … }:
+ * The function answers GET with ?view=… or POST with { view, …, markets }:
+ *   price                        the GNK price only
  *   network                      what the app's network page shows (networkOverview) + the GNK price
  *   votes                        every proposal and the shared money (proposals)
  *   node, address[, epochs]      one node's page (overview) + the GNK price
  *   vote, id, address            how an address voted on an open proposal (voteOf)
+ * markets is what the visitor's browser read of the GNK markets (read-markets.js,
+ * built by scripts/build-base44-markets.js); the price is worked out from it
+ * (scripts/base44-price.js).
  * Each answer is kept for a minute, so many visitors cost the Gonka nodes no more than one.
  */
 const fs = require("fs");
 const path = require("path");
 const K = require("../src/knowledge");
 const E = require("../src/services/earnings")._parts;
-const { fillInPrice } = require("./base44-price");
+const { priceCode } = require("./base44-price");
 
 const out = process.argv[2] || path.join(__dirname, "..", "docs", "base44", "gnot-monitor.js");
 const k = K.get();
@@ -44,7 +48,10 @@ const src = `// gnot-monitor — the data behind the website's Monitor/Vote page
 // website reads and works out every figure exactly as the app does. Do not
 // edit it here: change the app's code, run the script again, and paste the new file.
 //
-// GET ?view=…  or  POST { view, … }:
+// GET ?view=…  or  POST { view, …, markets }:
+//   markets: what the visitor's browser read of the GNK markets (read-markets.js),
+//            [{ name, usd }]; the price is worked out from it, as the app's
+//   view=price                           -> { price }
 //   view=network                         -> the network page's data, plus { price }
 //   view=votes                           -> { rules, totalWeight, hosts, proposals, money }
 //   view=node&address=gonka1…[&epochs=30] -> one node's data, plus { price }
@@ -73,13 +80,16 @@ ${monitorSrc}
 
 const SEEDS = KNOWLEDGE.seedNodes;
 const KEEP_MS = 60 * 1000;
-const kept = new Map();          // question -> { at, status, body } or { pending }
-let price = { at: 0, p: null };
+const kept = new Map();          // question -> { at, status, data } or { pending }
+let own = { at: 0, p: null };
 
-// The price as the app has it: the middle of four markets. A market that does
-// not answer this server (they limit how often one address may ask, and this
-// server shares its address with many other websites) is taken from the data
-// job's last reading of that market in earnings.json (scripts/base44-price.js).
+// The price as the app has it: the middle of four markets, read as the app
+// reads them, from the visitor's own computer. The page reads the markets in
+// the visitor's browser (read-markets.js) and sends them as "markets"; the
+// markets limit how often one address may ask, and this server shares its
+// address with many other websites, so they often refuse it. A market the
+// browser could not read is taken from this server's own reading, and else
+// from the data job's last reading of it in earnings.json (scripts/base44-price.js).
 const EARNINGS_URL = KNOWLEDGE.epochsUrl.replace(/epochs\\.json$/, "earnings.json");
 let published = { at: 0, p: null };
 async function publishedPrice() {
@@ -91,14 +101,19 @@ async function publishedPrice() {
   }
   return published.p;
 }
-${fillInPrice.toString()}
-async function priceNow() {
-  if (price.p && Date.now() - price.at < (price.p.usd ? 5 * 60 * 1000 : 60 * 1000)) return price.p;
+${priceCode()}
+/** This server's own reading of the markets, kept five minutes (one when none answered). */
+async function ownPrice() {
+  if (own.p && Date.now() - own.at < (own.p.sources.length ? 5 * 60 * 1000 : 60 * 1000)) return own.p;
   let live = { usd: null, sources: [] };
   try { live = await gnkPrice(); } catch (_) { /* none answered */ }
-  const p = fillInPrice(live, await publishedPrice());
-  if (p.usd || !price.p) price = { at: Date.now(), p };
-  return price.p;
+  own = { at: Date.now(), p: live };
+  return live;
+}
+/** The price for one visitor: what their browser read, then this server's reading, then the data job's. */
+async function priceNow(browser) {
+  const mine = browser.length < MARKETS.length ? await ownPrice() : null;
+  return priceFrom(browser, mine, await publishedPrice());
 }
 
 /** One answer per question a minute; visitors asking at the same moment share it. */
@@ -107,8 +122,8 @@ async function once(key, work) {
   if (k && k.pending) return k.pending;
   if (k && Date.now() - k.at < KEEP_MS) return k;
   const pending = (async () => {
-    try { return { at: Date.now(), status: 200, body: JSON.stringify(await work()) }; }
-    catch (e) { return { at: Date.now(), status: 502, body: JSON.stringify({ error: String((e && e.message) || e) }) }; }
+    try { return { at: Date.now(), status: 200, data: await work() }; }
+    catch (e) { return { at: Date.now(), status: 502, data: { error: String((e && e.message) || e) } }; }
   })();
   kept.set(key, { pending });
   const done = await pending;
@@ -126,22 +141,29 @@ Deno.serve(async (req) => {
   const view = String(q.view || "network");
   const address = String(q.address || "").trim();
   const wrong = (why) => new Response(JSON.stringify({ error: why }), { status: 400, headers });
+  // The network's data is shared by every visitor for a minute; the price is each visitor's own.
+  const priced = async (key, work) => {
+    const [a, price] = await Promise.all([once(key, work), priceNow(marketsFrom(q))]);
+    return a.status === 200 ? { status: 200, data: { ...a.data, price } } : a;
+  };
   let a;
-  if (view === "network") {
-    a = await once("network", async () => ({ ...(await Monitor.networkOverview(SEEDS)), price: await priceNow() }));
+  if (view === "price") {
+    a = { status: 200, data: { price: await priceNow(marketsFrom(q)) } };
+  } else if (view === "network") {
+    a = await priced("network", () => Monitor.networkOverview(SEEDS));
   } else if (view === "votes") {
     a = await once("votes", () => Monitor.proposals(SEEDS));
   } else if (view === "node") {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");
     const epochs = Math.min(180, Math.max(7, Number(q.epochs) || 30));
-    a = await once(\`node|\${address}|\${epochs}\`, async () => ({ ...(await Monitor.overview(SEEDS, address, { epochs })), price: await priceNow() }));
+    a = await priced(\`node|\${address}|\${epochs}\`, () => Monitor.overview(SEEDS, address, { epochs }));
   } else if (view === "vote") {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");
     const id = Math.round(Number(q.id));
     if (!(id > 0)) return wrong("That is not a proposal number.");
     a = await once(\`vote|\${id}|\${address}\`, async () => ({ vote: await Monitor.voteOf(SEEDS, id, address) }));
-  } else return wrong("Ask for view=network, votes, node or vote.");
-  return new Response(a.body, { status: a.status, headers });
+  } else return wrong("Ask for view=price, network, votes, node or vote.");
+  return new Response(JSON.stringify(a.data), { status: a.status, headers });
 });
 `;
 

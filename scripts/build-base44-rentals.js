@@ -17,22 +17,27 @@
  *
  * Two things the website's server cannot always have, and what stands in:
  *   - GNK price: markets limit how often one address may ask, and this server
- *     shares its address with many other websites. Each market that does not
- *     answer is taken from the data job's last reading of it (earnings.json;
+ *     shares its address with many other websites. So the page reads the
+ *     markets in the visitor's browser, as the app reads them from the user's
+ *     computer (read-markets.js), and sends them as "markets". A market the
+ *     browser could not read is taken from this server's own reading, and
+ *     else from the data job's last reading of it (earnings.json;
  *     scripts/base44-price.js), and the middle of all four is taken, as the app.
  *   - Gonka's setup files: GitHub's API also limits a shared address. When it
  *     will not list them, the setups the data job last listed stand in.
  * Should the network not answer at all, the data job's last earnings.json is
  * answered, marked earningsLive: false.
  *
- * GET -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
+ * GET, or POST { markets } -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
  *   providers is the rentals comparison (as rentals.json); earnings is the
- *   app's earnings figures (as earnings.json), from the same reading.
+ *   app's earnings figures (as earnings.json), from the same reading. The
+ *   network and the providers are read once a minute for every visitor; the
+ *   price, and so every figure in dollars, is each visitor's own.
  */
 const fs = require("fs");
 const path = require("path");
 const K = require("../src/knowledge");
-const { fillInPrice } = require("./base44-price");
+const { priceCode } = require("./base44-price");
 
 const out = process.argv[2] || path.join(__dirname, "..", "docs", "base44", "gnot-rentals.js");
 const k = K.get();
@@ -61,7 +66,9 @@ const code = `// gnot-rentals — the website's live Mine or buy: what each rig 
 // website works out every figure live, exactly as the app does. Do not edit
 // it here: change the app's code, run the script again, and paste the new file.
 //
-// GET -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
+// GET, or POST { markets } -> { asOf, providers, price, earningsAsOf, earningsLive, earnings }
+//   markets: what the visitor's browser read of the GNK markets (read-markets.js),
+//            [{ name, usd }]; the price is worked out from it, as the app's
 //   earnings: what each rig earns (the same shape as earnings.json)
 //   providers: what renting each rig costs, compared with those earnings
 
@@ -93,7 +100,7 @@ async function publishedEarnings() {
   return published.f;
 }
 
-${fillInPrice.toString()}
+${priceCode()}
 
 // Gonka's setup files, from GitHub's API as the app reads them. GitHub limits
 // how often one address may ask, so a listing is kept for an hour, and when
@@ -126,13 +133,27 @@ async function earningsNow() {
   throw last || new Error("no Gonka node answered");
 }
 
-let kept = null, pending = null;
-async function answer() {
+// The reading every visitor shares for a minute: the earnings, the data job's
+// last file, and each provider's offers, read as Rentals.estimate reads them.
+async function reading() {
   const [{ e, live }, pub] = await Promise.all([earningsNow(), publishedEarnings()]);
-  const earnings = JSON.parse(JSON.stringify(e));
-  // The price as the app has it: the middle of four markets, each one that did
-  // not answer this server taken from the data job's last reading of it.
-  const price = fillInPrice(earnings.price, pub && pub.price && { ...pub.price, asOf: pub.asOf });
+  const lists = [];
+  for (const p of Rentals._parts.PROVIDERS) {
+    const at = new Date().toISOString();
+    try { lists.push({ p, at, list: await Rentals._parts.readFull(p) }); }
+    catch (err) { lists.push({ p, at, error: err.message }); }
+  }
+  return { at: Date.now(), asOf: new Date().toISOString(), e, live, pub, lists };
+}
+
+// One visitor's answer: the shared reading, priced with what their browser read
+// of the markets, and compared with each provider's offers as Rentals.estimate does.
+function answer(r, browser) {
+  const earnings = JSON.parse(JSON.stringify(r.e));
+  const pub = r.pub;
+  // The price as the app has it: the middle of four markets; each one the
+  // browser could not read from this server's own reading, else the data job's.
+  const price = priceFrom(browser, r.live ? earnings.price : null, pub && pub.price && { ...pub.price, asOf: pub.asOf });
   earnings.price = price;
   for (const c of earnings.configs || []) {
     c.usdPerDay = price.usd ? c.gnkPerDay * price.usd : null;
@@ -140,20 +161,25 @@ async function answer() {
   }
   // Setups the network does not pay for: named as the data job last named them when GitHub would not list the setups.
   if (!(earnings.withoutData || []).length && pub && setups.rows === null) earnings.withoutData = pub.withoutData || [];
-  const rentals = await Rentals.estimate(earnings, { force: true });
-  return JSON.stringify({ ...rentals, price, earningsAsOf: earnings.asOf, earningsLive: live, earnings });
+  const providers = r.lists.map(({ p, at, list, error }) => error
+    ? { id: p.id, name: p.name, site: p.site, at, offers: 0, error, rows: [] }
+    : { id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: Rentals.compare(earnings, list) });
+  return JSON.stringify({ asOf: r.asOf, providers, price, earningsAsOf: earnings.asOf, earningsLive: r.live, earnings });
 }
 
+let kept = null, pending = null;
 Deno.serve(async (req) => {
   const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Cache-Control": "public, max-age=60" };
   if (req.method === "OPTIONS") return new Response(null, { headers });
-  // One answer a minute; visitors asking at the same moment share it.
-  if (kept && Date.now() - kept.at < 60 * 1000) return new Response(kept.body, { headers });
+  let body = {};
+  if (req.method === "POST") { try { body = await req.json(); } catch (_) { /* no body */ } }
   try {
-    if (!pending) pending = answer().finally(() => { pending = null; });
-    const body = await pending;
-    kept = { at: Date.now(), body };
-    return new Response(body, { headers });
+    // One reading a minute; visitors asking at the same moment share it.
+    if (!kept || Date.now() - kept.at >= 60 * 1000) {
+      if (!pending) pending = reading().finally(() => { pending = null; });
+      try { kept = await pending; } catch (e) { if (!kept) throw e; /* the last reading stands */ }
+    }
+    return new Response(answer(kept, marketsFrom(body)), { headers });
   } catch (e) {
     return new Response(JSON.stringify({ error: String((e && e.message) || e) }), { status: 502, headers });
   }

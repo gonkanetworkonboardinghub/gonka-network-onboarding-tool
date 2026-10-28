@@ -18,10 +18,14 @@ const monitor = require("../src/services/monitor");
 const url = process.argv[2];
 const seeds = K.get().seedNodes;
 
+// The markets as a visitor's browser reads them and sends them with every question (read-markets.js is the app's gnkPrice).
+let markets = null;
 let handler = null;
 async function ask(params) {
+  if (!markets) markets = await require("../src/services/earnings").gnkPrice();
+  const post = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...params, markets: markets.sources }) };
   if (url) {
-    const res = await fetch(url + "?" + new URLSearchParams(params), { signal: AbortSignal.timeout(120000) });
+    const res = await fetch(url, { ...post, signal: AbortSignal.timeout(120000) });
     const j = await res.json().catch(() => ({ error: `answered ${res.status} without JSON` }));
     if (j.error) throw new Error(`${params.view}: ${j.error}`);
     return j;
@@ -31,7 +35,7 @@ async function ask(params) {
     globalThis.Deno = { serve: (h) => { handler = h; } };
     new Function(fs.readFileSync(path.join(__dirname, "..", "docs", "base44", "gnot-monitor.js"), "utf8"))();
   }
-  const res = await handler(new Request("https://example.test/functions/gnot-monitor?" + new URLSearchParams(params)));
+  const res = await handler(new Request("https://example.test/functions/gnot-monitor", post));
   const j = await res.json();
   if (j.error) throw new Error(`${params.view}: ${j.error}`);
   return j;
@@ -82,10 +86,14 @@ function differences(name, a, b) {
     const appNet = await monitor.networkOverview(seeds);
     diffs.push(...differences("network", pick.network(appNet), pick.network(siteNet)));
     console.log(`network: epoch ${siteNet.epoch.index}, ${siteNet.hosts.length} hosts, ${siteNet.gpus ? siteNet.gpus.total : "?"} GPUs, GNK $${siteNet.price && siteNet.price.usd}`);
-    // The price: the app's middle of four markets. Markets move between two reads, so within 1%.
-    const appPrice = await require("../src/services/earnings").gnkPrice();
+    // The price: worked out from the markets sent, it is the app's to the cent.
+    const appPrice = markets;
     const sitePrice = siteNet.price && siteNet.price.usd;
-    if (appPrice.usd && !(sitePrice && Math.abs(sitePrice - appPrice.usd) / appPrice.usd < 0.01)) diffs.push(`price: app $${appPrice.usd}, function $${sitePrice}`);
+    if (appPrice.usd && !(sitePrice && Math.abs(sitePrice - appPrice.usd) / appPrice.usd < 0.0001)) diffs.push(`price: app ${appPrice.usd}, function ${sitePrice}`);
+    const filled = ((siteNet.price && siteNet.price.sources) || []).filter((s) => s.readAt).map((s) => s.name);
+    if (filled.length) diffs.push(`price: ${filled.join(", ")} taken from the published file, though the markets were sent`);
+    const alone = await ask({ view: "price" });
+    if (!(alone.price && alone.price.usd === sitePrice)) diffs.push(`view=price: ${alone.price && alone.price.usd}, the network's ${sitePrice}`);
 
     const siteGov = await ask({ view: "votes" });
     const appGov = await monitor.proposals(seeds);

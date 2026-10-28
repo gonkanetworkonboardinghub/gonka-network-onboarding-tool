@@ -9,7 +9,8 @@
  *   - the earnings: the function's live figures against the app's own live
  *     src/services/earnings.js, rig by rig (what each earns, the machines and
  *     hosts running it, what was left out);
- *   - the price: the app's middle of four markets;
+ *   - the price: the app's middle of four markets, read here and sent as a
+ *     visitor's browser sends them (read-markets.js);
  *   - the comparison: src/services/rentals.js worked out from the function's
  *     own earnings and price, row by row.
  * The network and the offers can move between two reads, so a difference is
@@ -24,9 +25,10 @@ const K = require("../src/knowledge");
 const url = process.argv[2];
 
 let handler = null;
-async function fromFunction() {
+async function fromFunction(markets) {
+  const ask = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ markets }) };
   if (url) {
-    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "x=" + Date.now(), { signal: AbortSignal.timeout(180000) });
+    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "x=" + Date.now(), { ...ask, signal: AbortSignal.timeout(180000) });
     if (!res.ok) throw new Error(`${url} answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return res.json();
   }
@@ -35,7 +37,7 @@ async function fromFunction() {
     globalThis.Deno = { serve: (h) => { handler = h; } };
     new Function(fs.readFileSync(path.join(__dirname, "..", "docs", "base44", "gnot-rentals.js"), "utf8"))();
   }
-  return (await handler(new Request("https://example.test/functions/gnot-rentals"))).json();
+  return (await handler(new Request("https://example.test/functions/gnot-rentals", ask))).json();
 }
 
 /** The app's own earnings, read now from the first node that answers. */
@@ -53,7 +55,9 @@ const line = (r) => `${r.gpuCount}x ${r.gpuClass}: ${r.best ? "$" + r.best.price
 
 (async () => {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const site = await fromFunction();
+    // The markets as a visitor's browser reads them (read-markets.js is the app's gnkPrice).
+    const appPrice = await earnings.gnkPrice();
+    const site = await fromFunction(appPrice.sources);
     if (site.error) throw new Error("the function answered an error: " + site.error);
     const diffs = [];
 
@@ -78,9 +82,10 @@ const line = (r) => `${r.gpuCount}x ${r.gpuClass}: ${r.best ? "$" + r.best.price
       if (JSON.stringify(mine.noHosts.map(rig).sort()) !== JSON.stringify(e.noHosts.map(rig).sort())) diffs.push("the setups no host runs differ");
     }
 
-    // The price: the app's middle of four markets. Markets move between two reads, so within 1%.
-    const appPrice = await earnings.gnkPrice();
-    if (appPrice.usd && !(site.price && site.price.usd && Math.abs(site.price.usd - appPrice.usd) / appPrice.usd < 0.01)) diffs.push(`price: app $${appPrice.usd}, function $${site.price && site.price.usd}`);
+    // The price: worked out from the markets sent, it is the app's to the cent.
+    if (appPrice.usd && !(site.price && site.price.usd && Math.abs(site.price.usd - appPrice.usd) / appPrice.usd < 0.0001)) diffs.push(`price: app ${appPrice.usd}, function ${site.price && site.price.usd}`);
+    const filled = ((site.price && site.price.sources) || []).filter((s) => s.readAt).map((s) => s.name);
+    if (filled.length) diffs.push(`price: ${filled.join(", ")} taken from the published file, though the markets were sent`);
 
     // The comparison, worked out by the app's code from the function's own earnings and price.
     const app = await rentals.estimate(JSON.parse(JSON.stringify(e || {})), { force: true });
