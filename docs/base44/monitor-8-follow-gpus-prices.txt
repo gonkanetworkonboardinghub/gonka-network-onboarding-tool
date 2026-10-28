@@ -1,0 +1,90 @@
+PROMPT FOR BASE44 — Monitor/Vote: follow any node, a clear Back button, what hosts report, and where the price comes from
+(attach network-top-new.png and my-nodes-new.png from the folder
+"monitor-update-pictures" — references from the app for the layout only, do
+not put them on the site — then paste everything below and publish)
+
+The app's Monitor/Vote changed in six ways; make the website's the same.
+Everything reads the gnot-monitor function as now (its answers now carry the
+new fields named below).
+
+1. "MY NODES" IS THE NODES YOU FOLLOW — your own, or anyone else's. Reword:
+   - Start page, My nodes card: the sentence becomes "The nodes you follow,
+     yours and anyone else's: how they are doing and what they earn." When
+     this browser follows no node, the big figure is "Follow a node" and the
+     grey line under it "Yours or any other host's, by its address".
+   - /monitor/my-nodes with no node (as in my-nodes-new.png): the line under
+     the title is "Follow your own node, or any other host you want to keep
+     an eye on."; the buttons are "Follow a node" (→ /monitor/add) and "Find
+     one among every host"; the grey line at the bottom begins "Nodes you
+     follow are kept in this browser only." (instead of "Nodes you add …").
+   - /monitor/my-nodes with nodes: the last card is "Follow a node" with
+     "Yours or any other host's, by its address". After a node is taken off,
+     the bar says "Stopped following {name}." with "Undo" — and it shows on
+     the empty page too, when the last node was taken off.
+   - /monitor/add: the title is "Follow a node", the button "Follow", and
+     the line under the form "Your own node or any other host's: any node
+     works, however it was set up. The address starts with gonka1." (then
+     the link to every host, as now). The browser tab: "Follow a node ·
+     Monitor/Vote | The Gonka Network Onboarding Hub".
+   - A node's page: "Add to your nodes" becomes "Follow this node", and
+     "Remove" becomes "Unfollow". When "Rename" opens for a node without a
+     name, its box starts empty (not with the short address).
+
+2. THE BACK BUTTON in the Monitor/Vote bar ("← Monitor/Vote", "← The
+   network", "← My nodes") is small and easy to miss. Make it the most
+   visible thing on the bar, as in the pictures: a rounded pill with a
+   1.5 px border in the text colour, a light background, the arrow at about
+   18 px and the label at 15 px bold, padding about 10 px 20 px; on hover the
+   background brightens and the arrow moves left a little. On phones it stays
+   a full pill (it may drop the label to "← Back" if space is short).
+
+3. VOTES: remove the "Ask for money" chip. The chips are "All", "Passed" and
+   "Rejected", with their counts, as now.
+
+4. WHERE THE GNK PRICE COMES FROM, on The network page's GNK PRICE tile (as
+   in network-top-new.png):
+   - the grey line under the price says "the middle of {n} markets" (n = the
+     number of price.sources), instead of "from several markets";
+   - under it, small, one line per market from price.sources: its name and
+     its price with 3 decimals, e.g. "Uniswap (GeckoTerminal) $0.162",
+     "DEX Screener $0.163", "CoinGecko $0.170", "CoinPaprika $0.170". A
+     market that has "readAt" did not answer the website just now: add
+     " · read {time}" after it (readAt as a time, e.g. "read 9:06 PM").
+
+5. WHAT HOSTS REPORT ABOUT THEIR GPUs. Hosts report their own hardware and
+   the network does not check it; the three largest hosts, with over half of
+   the weight, report about 20 GPUs each. So:
+   - The network page's GPU tile: the label becomes "GPUs hosts report, epoch
+     {n}" (instead of "GPUs in epoch {n}"). Under "{working} working", when
+     gpus.h100 is there, one line in normal text: "All the weight equals
+     about {gpus.h100.equivalent} H100s". The kinds stay as they are.
+   - Under the four tiles, when gpus.underReported.hosts is above 0, a
+     warning box (the site's warning style): "Hosts that report far fewer
+     GPUs than their weight takes: {hosts}, with {weightShare as a percentage,
+     no decimals} of the network's weight. So the network has many more GPUs
+     than are reported. Hosts report their own hardware, and the network does
+     not check it."
+   - The GPU chart: its title becomes "GPUs hosts report, epoch by epoch"; the
+     pointing box says "{n} GPUs reported" (instead of "{n} GPUs took part");
+     and its fold-out "What does this count?" gets one more paragraph: "Some
+     hosts report far fewer GPUs than they run, so this line is lower than the
+     real number, and it jumps when a host changes what it reports. The
+     network's weight in H100s, on the GPU tile above, does not depend on
+     what hosts report."
+   - Every host: a host with underReported true gets a small outlined flag
+     after its address, "reports too few GPUs", in the normal text colour
+     (not red), with the tooltip "Its weight equals about {h100} H100s, far
+     more than the GPUs it reports." On phones the flag sits under the
+     address.
+   - The start page's "The network" card: the grey line says "{n} GPUs
+     reported · epoch {e}" (instead of "{n} GPUs · epoch {e}").
+   - A node's page, "Hardware the network sees": right under the line "{working}
+     of {n} machines working · …", when hardware.underReported is true, a
+     warning box: "Its weight equals about {hardware.h100} H100s, but it
+     reports {hardware.gpuCount} GPUs: it runs far more than it reports. Hosts
+     report their own hardware, and the network does not check it."
+     Otherwise, when hardware.h100 is there, a small grey line: "Its weight
+     equals about {hardware.h100} H100s."
+
+6. Add the new words to every language the site offers. Change nothing else
+   on the site.

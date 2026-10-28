@@ -1,0 +1,95 @@
+PROMPT FOR BASE44 — FAQ: up to date, and the questions people ask
+(no pictures; paste everything below and publish)
+
+On /faq, keep the page's look and its sections. Change these answers and add
+these questions (each new question goes in the section named, at the end of
+it unless said otherwise). Keep everything else as it is.
+
+A. CHANGE
+
+1. "What is The Gonka Network Onboarding Tool (GNOT)?" — new answer:
+   "An app for Windows and Mac for running a node on the Gonka network. It
+   has two parts. Gonka Host Setup takes a rented GPU server to a registered,
+   earning node without you typing command lines. Gonka Host Monitor/Vote
+   follows any node — yours or anyone else's — next to every other host,
+   shows the network as a whole and the proposals being voted on, and lets
+   you vote with your own node. Monitor/Vote is also on this website, without
+   the voting."
+
+2. "Is it free?" — rename the question to "What does it cost?" and start the
+   answer with "GNOT itself costs nothing to use." instead of "The app itself
+   costs nothing." Keep the rest of that answer as it is.
+
+3. "What hardware does a node need?" — new answer:
+   "Right now: the GPUs of a setup Gonka supports (Mine or buy lists every
+   setup and what it earns), a dedicated server — never spot or
+   interruptible — memory of at least 1.5 × the GPUs' memory, 1,000 GB of
+   disk, 16 or more CPU cores, Linux with an NVIDIA driver for CUDA 13 (or
+   12.9), root login over SSH, and ports 8000 and 5000 open. The
+   requirements change as Gonka adds models and GPUs, and GNOT checks your
+   server against the current ones before it sets anything up. The Get a
+   Node page has the full list." ("Mine or buy" links to /mine-or-buy, "Get
+   a Node" to /get-a-node#needs.)
+
+4. "How does a node earn?" — add at the end: "Each epoch's reward is paid a
+   slice at a time over the next 180 epochs, about six months. Mine or buy
+   shows what each setup earns now, measured on the network." ("Mine or buy"
+   links to /mine-or-buy.)
+
+5. "Does the app collect anything about me?" — the sentence "That is how the
+   Impact page counts the people who have the app." becomes "That is how this
+   website counts the computers that have the app."
+
+B. ADD
+
+6. In WHAT YOU NEED, after "Do I need to own a GPU?":
+   Q: "Can I rent a spot or interruptible server to save money?"
+   A: "No. A spot, interruptible or preemptible server can be taken back by
+   the provider at any moment, and a node stopped partway through an epoch is
+   paid nothing for that epoch — you would pay for the server and earn
+   nothing. Rent a dedicated (on-demand) server. Mine or buy compares
+   dedicated servers only."
+
+7. In EARNING, COLLATERAL AND FEES, first in the section:
+   Q: "How much will my node earn?"
+   A: "Mine or buy shows what each setup earned over the last epoch, measured
+   on the network, and its calculator tells you whether a server at your
+   price pays for itself. It is a rough guide, not a promise: rewards fall
+   as more GPUs join, a new node earns less at first, the GNK price moves,
+   and what you mine arrives over about six months."
+
+8. In EARNING, COLLATERAL AND FEES, at the end:
+   Q: "Where do this website's numbers come from?"
+   A: "From the Gonka network itself, read live with the same code the app
+   runs, so the website and the app show the same figures. The GNK price is
+   the middle of four markets: Uniswap (through GeckoTerminal), DEX
+   Screener, CoinGecko and CoinPaprika. When the network or a market does not
+   answer the website, the last reading GNOT published on GitHub, a few hours
+   old at most, stands in."
+
+9. In EARNING, COLLATERAL AND FEES, at the end:
+   Q: "Are the network's GPU numbers real?"
+   A: "The GPU count is what the hosts report, and the network does not check
+   it. Some large hosts report far fewer GPUs than their weight takes, so the
+   real number is higher. Monitor/Vote also shows the network's weight in
+   H100s, which does not depend on what hosts report, flags the hosts that
+   report too few, and Mine or buy leaves their machines out of its figures."
+   ("Monitor/Vote" links to /monitor/network, "Mine or buy" to /mine-or-buy.)
+
+10. A new section, MONITOR AND VOTE, after EARNING, COLLATERAL AND FEES, with:
+   Q: "Can I follow someone else's node?"
+   A: "Yes. In Monitor/Vote, My nodes holds any node you follow — your own or
+   any other host's — by its address. On this website the list is kept in
+   your browser only; in the app it is kept on your computer."
+   Q: "How do I vote on a proposal?"
+   A: "A host votes with its node, and the vote counts by the node's weight.
+   Open Monitor/Vote in GNOT, link your node's wallet once, and vote on the
+   Votes page. The website shows every proposal and how the vote stands, but
+   it never asks for your wallet, so voting happens in the app."
+   Q: "How do I stop my node safely?"
+   A: "In GNOT, open your node in My nodes and choose Shut down safely: it
+   takes the node off the network the way Gonka's guide says to, step by step
+   on your server. Never delete the .tmkms folder on your server."
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

@@ -1,0 +1,68 @@
+PROMPT FOR BASE44 — Register a Node: a nicer GNOT section, and two new step pictures
+(attach 08-model.png and 09-review.png from the folder
+"register-walkthrough-pictures-v2", then paste everything below and publish)
+
+On /register-a-node:
+
+1. THE "GNOT Host Setup Tool" SECTION, made nicer. Keep the site's style (dark
+   cards, the same fonts and colours). Today it is a title, two paragraphs, a
+   Download card and the "Checked against the live Gonka network" line.
+   Make it one wide card in two columns on a computer (stacked on phones):
+
+   LEFT COLUMN
+   - The GNOT logo mark (as in the header), then the title "GNOT — Gonka Host
+     Setup" and, small and grey in capitals as now, "DOWNLOAD & RUN ON YOUR
+     COMPUTER".
+   - One sentence, larger than body text: "Takes a rented GPU server to a
+     registered, earning Gonka node, step by step — it checks the server,
+     fixes what is missing and starts everything for you."
+   - Four short lines, each with a small check icon:
+     • "Checks your server against what Gonka needs, and fixes it in one click"
+     • "Creates your wallet on your own computer — your 24 words never leave it"
+     • "Writes Gonka's official configuration and launches the node"
+     • "Watches your node until it is live, then follows it in Monitor/Vote"
+   - Two buttons side by side: a filled "Download GNOT" (→ /download) and an
+     outlined "See every step ↓" that scrolls to the "Step by step with GNOT"
+     section (#step-1).
+   - Small and grey under the buttons: "For Windows 10 and 11, and Macs with
+     Apple silicon or Intel." (no word "free").
+   - A small "What's new" line, read from
+     https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json
+     (fetch it when the page opens): "Latest version {app.latest}: {app.notes}"
+     — the notes cut to about 160 characters with "…" if longer. If the file
+     cannot be read, leave this line out.
+   - The "Checked against the live Gonka network …" line, as now.
+   - The update advice as a small note box with an info icon: "When GNOT asks
+     you to update, update: Gonka changes often, and each update keeps your
+     setup working with the network."
+
+   RIGHT COLUMN
+   - The picture of step 1 (the same file the "Pick what you'll run" step
+     uses, 01-welcome.png), in a frame like an app window: rounded corners, a
+     thin border, a soft shadow, and a slim top bar with three small grey
+     dots. Clicking it opens the same lightbox as the steps.
+
+   Remove the old Download card ("Download GNOT · Free for Windows and Mac ·
+   opens the download page") — the new button replaces it.
+
+2. STEP BY STEP, two steps changed in the app:
+   - Step 8 ("The model configuration"): use the attached 08-model.png
+     instead of the old picture, and this caption: "GNOT shows the same
+     setups as on the first step, whole 8-GPU servers included, marks the
+     ones that fit your server, and picks the one you chose on the first
+     step — here 8 × H100, which runs Gonka's 4-GPU setup twice at once."
+   - Step 9 ("Review and write the configuration"): use the attached
+     09-review.png instead of the old picture, and this caption: "Exactly
+     what will be written to your server: the model, your node's address and
+     the setup — here 8 × H100, two copies at once. Both settings files can
+     be opened and read first, and internal ports are locked down
+     automatically."
+   - Step 14 ("Your node is live"), new caption: "GNOT now follows your node
+     in My nodes, in Gonka Host Monitor/Vote inside the same app: see how it
+     is doing, vote with it, use a command line on its server, or shut it
+     down safely. From here: keep the server on, keep your 24 words safe, and
+     never delete the .tmkms folder on the server."
+   The lightbox keeps going through all 14 pictures in order.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

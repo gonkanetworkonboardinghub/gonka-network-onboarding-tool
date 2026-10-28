@@ -1,0 +1,71 @@
+PROMPT FOR BASE44 — Get a Node: a nicer, more useful page
+(no pictures; paste everything below and publish)
+
+Make /get-a-node nicer and more useful. Keep the site's style (dark cards,
+the same fonts and colours) and the header "ACQUIRE COMPUTE · Get a Node"
+with its line under it. Then, top to bottom:
+
+1. THREE STEPS, one row of three small cards (stacked on phones), each with a
+   number in a small circle, a title, one line and an arrow; the whole card
+   is a link:
+   - 1 "Pick a setup" — "See what each setup earns today." → /mine-or-buy
+   - 2 "Rent a dedicated server" — "Below: what it needs, and where." → scrolls
+     to the "What your server needs" card on this page
+   - 3 "Set it up with GNOT" — "The app checks it, fixes it and registers your
+     node." → /register-a-node
+
+2. "WHAT YOUR SERVER NEEDS", one card with a short intro line ("Rent a server
+   that has all of this. GNOT checks every point before it sets anything
+   up.") and a two-column list (one column on phones), each item with a small
+   check icon and a bold start:
+   - "GPUs of a setup Gonka supports" — every setup, and what it earns, is on
+     Mine or buy (link "Mine or buy" → /mine-or-buy)
+   - "A dedicated server" — never spot, interruptible or preemptible: a server
+     taken back partway through an epoch is paid nothing for that epoch
+   - "Memory of at least 1.5 × the GPUs' memory" — for example 960 GB or
+     more for 8 × H100 (8 × 80 GB)
+   - "1,000 GB of disk" — or more
+   - "16 or more CPU cores"
+   - "Linux with an NVIDIA driver for CUDA 13" — or CUDA 12.9; pick a system
+     image with CUDA 13 when the provider offers one
+   - "Root login over SSH" — GNOT connects with it from your computer
+   - "Ports 8000 and 5000 open" — in your provider's dashboard
+   Give the card the anchor id "needs".
+
+3. THE SPHERON CARD, made nicer: one wide card with the monogram "S" in a
+   rounded square, the title "Spheron" and, small and grey in capitals,
+   "DECENTRALIZED CLOUD PROVIDER". Then two columns on a computer (stacked on
+   phones):
+   LEFT
+   - "Spheron rents GPU servers by the hour. The walkthrough shows how to
+     rent one for a Gonka node."
+   - "Before you rent at Spheron", four short lines with check icons:
+     • "Choose a DEDICATED server, not spot"
+     • "Set the storage to 1,000 GB or more"
+     • "Pick a system image with CUDA 13"
+     • "Check the memory is at least 1.5 × the GPUs'"
+   - Two buttons: a filled "Open Spheron ↗" (https://app.spheron.network, new
+     tab) and an outlined "Spheron docs ↗" (https://docs.spheron.network, new
+     tab).
+   RIGHT
+   - The existing walkthrough video, in a frame like an app window (rounded
+     corners, a thin border, a soft shadow), with a small grey caption under
+     it: "Walkthrough: renting a node on Spheron".
+   UNDER BOTH COLUMNS, "Right now at Spheron": from the gnot-rentals function
+   (the same answer Mine or buy uses; read it when the page opens), the
+   Spheron provider's rows that have a "best" offer, cheapest first, up to 4,
+   one per line: "{gpuCount}× {gpuClass} · ${best.pricePerHour with 2
+   decimals}/h · {best.region} · CUDA {best.cuda}". Then the link "Compare
+   every setup with what it earns →" (/mine-or-buy#compare) and, small and
+   grey, "Read from Spheron's public price list {today, time}. Before you
+   rent, check on Spheron's own site." While it reads, a small loading line;
+   if no row has a "best": "Nothing with what a node needs is on offer at
+   Spheron right now." If the call fails, leave the "Right now at Spheron"
+   part out.
+   This replaces the old Spheron text, its "RESOURCES" list and the separate
+   "What does renting each rig cost right now?" card.
+
+4. On phones everything stacks, and nothing scrolls sideways.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

@@ -1,0 +1,45 @@
+PROMPT FOR BASE44 — Mine or buy: the same words and figures as the app, and where the price comes from
+(no pictures; paste everything below and publish)
+
+/mine-or-buy and the app's Mine-or-buy panel show the same numbers; these
+small differences remain. Make the page read exactly as the app does:
+
+1. THE PRICE AT THE TOP: under the big price, the grey line says "GNK right
+   now, the middle of {n} markets · {time}" (n = the number of
+   price.sources in the gnot-rentals answer; time = when it was read, e.g.
+   "1:37 AM"), instead of "GNK right now · from 4 sources". Under it, one
+   small line listing each market and its price with 3 decimals, joined with
+   " · ": "Uniswap (GeckoTerminal) $0.162 · DEX Screener $0.163 · CoinGecko
+   $0.170 · CoinPaprika $0.170". A market that has "readAt" did not answer
+   the website just now: add " (read {time})" after its price.
+
+2. THE TIMES SIGN: write rigs with "×", not the letter "x", everywhere on the
+   page — the table ("8× B300 · MiniMax-M2.7"), the calculator's list, the
+   "Compare with providers" tables ("4× H100") and the "Use this price" hint.
+
+3. THE CALCULATOR'S LIST OF RIGS, as the app writes it: "{count}× {GPU} —
+   {model}", then " ({copies} copies)" when copies is above 1, then " (no
+   host runs it yet)" for the rows with nothing measured. For example
+   "8× B300 — MiniMax-M2.7 (8 copies)", "4× H100 — MiniMax-M2.7",
+   "8× B200 — MiniMax-M2.7 (4 copies) (no host runs it yet)".
+
+4. THE GREY LINES UNDER THE TABLE, in the app's order: the † line, "Only rigs
+   GNOT can set up …", "Machines now: …", then "Left out of these figures: …"
+   (today "Left out …" comes before "Machines now"). In the † line write an
+   em dash: "… so GNOT cannot set it up for you — you would have to write
+   your own node-config." (today it has a plain hyphen).
+
+5. THE INTRODUCTION under the title, as the app: "What each rig mined over
+   the last epoch, measured from the chain, against what that much GNK costs
+   to buy." (today "… measured from the Gonka chain …").
+
+6. THE LAST LINE of the page, as the app plus the time: "Epoch {n}: {GNK}
+   shared between {hosts} hosts over {hours} hours. GNK price {price}, the
+   middle of {n} sources: {the market names, joined with ", "}. Updated
+   {today/yesterday, time}." — for example "Epoch 438: 228,202 GNK shared
+   between 26 hosts over 22.9 hours. GNK price $0.17, the middle of 4
+   sources: Uniswap (GeckoTerminal), DEX Screener, CoinGecko, CoinPaprika.
+   Updated today, 1:38 AM EDT."
+
+Add the new words to every language the site offers. Change nothing else on
+the site.
