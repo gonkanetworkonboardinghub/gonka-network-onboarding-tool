@@ -263,7 +263,7 @@ function monHubHtml() {
       ${door("mine", t("My nodes"), t("The nodes you follow, yours and anyone else's: how they are doing and what they earn."), mineFigure, mineSub)}
       ${door("network", t("The network"), t("Every host, its GPUs and what it is paid, epoch by epoch."),
         o ? t("{n} hosts", { n: monNum(o.hosts.length) }) : null,
-        o ? [o.gpus ? t("{n} GPUs", { n: monNum(o.gpus.total) }) : "", t("epoch {n}", { n: o.epoch.index })].filter(Boolean).join(" · ") : "")}
+        o ? [o.gpus ? t("{n} GPUs reported", { n: monNum(o.gpus.total) }) : "", t("epoch {n}", { n: o.epoch.index })].filter(Boolean).join(" · ") : "")}
       ${door("votes", t("Votes"), t("What the network is deciding, what each proposal asks for, and your vote."),
         open === null ? null : open === 0 ? t("No open votes") : open === 1 ? t("1 open vote") : t("{n} open votes", { n: open }),
         g && g.proposals ? t("{n} proposals so far", { n: monNum(g.proposals.length) }) : "")}
