@@ -1,0 +1,80 @@
+PROMPT FOR BASE44 — a bigger Spheron video, Register without a loading circle, bigger centred Monitor/Vote tabs, and quiet invitations to GNOT
+(no pictures; paste everything below and publish)
+
+1. GET A NODE — THE SPHERON VIDEO, BIGGER
+   In the Spheron card on /get-a-node, the walkthrough video sits in the right
+   column, about 383 px wide (the two columns are equal). Keep it exactly
+   where it is and make it bigger: on a computer, make the columns about
+   2 : 3 (the text 40%, the video 60%), so the video is about 460 px wide.
+   Its frame, its caption and everything in the text column stay as they are
+   (the two buttons may go under each other if they no longer fit side by
+   side). On phones nothing changes.
+
+2. REGISTER A NODE — NO LOADING CIRCLE
+   Going to /register-a-node from any other page shows a loading circle for
+   a moment, and no other page does. The page waits for its OnboardingMethod
+   record (category "register_a_node": the "GNOT Host Setup Tool" section's
+   title, subtitle and the rest) before it shows anything. Show the page at
+   once instead: write what that section shows into the page itself, as the
+   other pages do, and stop waiting for the record. If anything on the page
+   still comes from the record, let it fill in when it arrives, with no
+   loading circle and without the page jumping. Remove the loading circle
+   from this page. The page must look exactly as it does now.
+
+3. MONITOR/VOTE — THE THREE SECTION TABS, BIGGER AND CENTRED
+   The bar at the top of every Monitor/Vote page ("← Monitor/Vote", then
+   "My nodes", "The network", "Votes", then "Refresh"):
+   - BIGGER, as in the app and to go with the Back pill next to them: the
+     three tabs together in one fully rounded pill (a 1 px border in the
+     border colour, a light background, 4 px of space inside it and 4 px
+     between the tabs). Each tab: 14 px, semibold (600), in the same font as
+     the Back pill (not the monospace one), padding about 7 px 18 px, fully
+     rounded, in the muted text colour, turning to the text colour on hover.
+     The tab you are on: filled with the primary colour, its words in the
+     primary's text colour (as the "Vote with GNOT" button).
+   - CENTRED ON THE PAGE. Today they are centred in the space between Back
+     and Refresh, and Back is much wider than Refresh, so they sit about
+     38 px right of the middle. Lay the bar out in three columns (for example
+     a grid with columns "1fr auto 1fr"): Back at the left of the left
+     column, the tabs in the middle column, Refresh at the right of the right
+     column. Then the tabs sit exactly in the middle of the page whatever the
+     width of Back. On the start page, where the bar shows the title instead
+     of the tabs, the title sits in the middle the same way.
+   - On narrow screens, where the tabs already move to a row of their own,
+     they stay centred on that row. If they do not fit 375 px wide in every
+     language, make them a little smaller there (13 px, padding 6 px 12 px)
+     rather than letting anything scroll sideways.
+
+4. MONITOR/VOTE — A QUIET INVITATION TO GNOT ON THREE MORE PAGES
+   Use the same look as the "Vote with your node in GNOT" box on Votes, and
+   keep that box exactly as it is: a card with a small icon, a bold title,
+   a line or two of text, and the filled button at the right on a computer
+   (stacked on phones). These must be calm and out of the way: at the end of
+   the page's own content, never a pop-up, never sticky, never repeated on
+   the same page.
+   a. THE NETWORK (/monitor/network), at the very end of the page, after the
+      list of every host:
+      Title: "Want to be one of these hosts?"
+      Text: "Rent a GPU server, and GNOT sets it up as a node on the Gonka
+      network, step by step, without command lines. Mine or buy shows what
+      each setup earns." ("Mine or buy" links to /mine-or-buy.)
+      Button: "Get GNOT" → /download
+   b. MY NODES (/monitor/my-nodes), at the end of the page: after the nodes
+      you follow, or, when you follow none, after the line "Nodes you follow
+      are kept in this browser only…":
+      Title: "Want a node of your own?"
+      Text: "Rent a GPU server, and GNOT sets it up as a node, step by step.
+      Once it runs, it earns GNK for its work each epoch, and you can follow
+      it here like any other node."
+      Button: "Get GNOT" → /download
+   c. A NODE'S PAGE (/monitor/node/…), at the very end of the page, only
+      when this browser does not follow that node:
+      Title: "Want a node like this one?"
+      Text: "GNOT takes a rented GPU server to a registered, earning node,
+      step by step. See every step." ("See every step" links to
+      /register-a-node#step-1.)
+      Button: "Get GNOT" → /download
+   Icons: small, in the Votes box's style — a server for a and c, a plus for b.
+
+Add the new words to every language the site offers. Change nothing else on
+the site.
