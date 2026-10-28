@@ -105,7 +105,24 @@ async function gnkPrice() {
 /** Minting, weight and the GPUs behind it, for the epoch that just paid out. */
 async function chainFacts(seed) {
   const base = String(seed).replace(/\/+$/, "");
-  const api = (p, height) => getJson(base + p, 20000, height ? { "x-cosmos-block-height": String(height) } : {});
+  // Gonka's public nodes refuse (HTTP 503) when asked many questions in a row:
+  // in October 2026 node2 refused 13 of 28 hosts' hardware asked back to back,
+  // and every refused host had silently dropped out of the figures. So a
+  // refused or failed question is asked again of the next public node, after
+  // a pause; only "not found" is an answer.
+  const nodes = [base, ...K.get().seedNodes.map((s) => String(s).replace(/\/+$/, "")).filter((s) => s !== base)];
+  const api = async (p, height) => {
+    let last = null;
+    for (let i = 0; i < nodes.length * 2; i++) {
+      try { return await getJson(nodes[i % nodes.length] + p, 20000, height ? { "x-cosmos-block-height": String(height) } : {}); }
+      catch (e) {
+        last = e;
+        if (/ -> 404$/.test(e.message)) throw e;
+        await new Promise((r) => setTimeout(r, i + 1 < nodes.length ? 300 : 2000));
+      }
+    }
+    throw last;
+  };
 
   const head = Number((await api("/chain-rpc/status")).result.sync_info.latest_block_height);
   const params = (await api("/chain-api/productscience/inference/inference/params")).params;
@@ -163,10 +180,15 @@ async function chainFacts(seed) {
     const pocTotal = [...poc.values()].reduce((a, b) => a + b, 0);
     if (!pocTotal) continue;
 
-    let hardware = [];
+    let answer = null;
     try {
-      hardware = (await api("/chain-api/productscience/inference/inference/hardware_nodes/" + p.index)).nodes.hardware_nodes || [];
-    } catch (_) { continue; }                  // no published hardware: it just isn't counted
+      answer = await api("/chain-api/productscience/inference/inference/hardware_nodes/" + p.index);
+    } catch (e) {
+      if (/ -> 404$/.test(e.message)) continue;   // no published hardware: it just isn't counted
+      // Not one public node would say: figures without this host would be wrong, so none are given.
+      throw new Error(`No public Gonka node would tell ${p.index}'s hardware just now (${e.message}).`);
+    }
+    const hardware = (answer && answer.nodes && answer.nodes.hardware_nodes) || [];
     const byId = new Map(hardware.map((n) => [n.local_id, n]));
 
     for (const [nodeId, w] of poc) {
