@@ -519,10 +519,15 @@ function attention(v) {
 
 /** The whole picture for one address. */
 async function overview(seeds, address, { epochs = 30 } = {}) {
-  const [now, mem, raw] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address)]);
+  const [now, mem, raw, file] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile()]);
   const hist = await history(seeds, mem.epoch || now.index, epochs);
   const view = summarise({ address, now, mem, hist, raw });
   view.attention = attention(view);
+  // Its weight in H100s, and whether it reports far fewer GPUs than that weight
+  // takes (scripts/network-snapshot.js): hosts report their own hardware.
+  const g = file && file.hosts && file.hosts[address];
+  view.hardware.h100 = g && g.h100 != null ? g.h100 : null;
+  view.hardware.underReported = !!(g && g.underReported);
   return view;
 }
 
@@ -638,6 +643,9 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
       gpus: g ? g.gpus : null,
       gpusWorking: g ? g.working : null,
       kinds: g ? g.kinds : null,
+      // It reports far fewer GPUs than its weight takes, and its weight in H100s (scripts/network-snapshot.js).
+      underReported: !!(g && g.underReported),
+      h100: g && g.h100 != null ? g.h100 : null,
       lastReward: last ? last.rewarded : null,
       missedShare: last ? missedShare(last) : null,
       invalidShare: last && last.validated + last.invalidated > 0 ? invalidShare(last) : null
@@ -661,7 +669,10 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     hosts: hosts.map((h) => ({ ...h, excluded: out.has(h.address) })),
     excluded: mem.excluded,
     totalWeight,
-    gpus: totals ? { total: totals.gpus, working: totals.gpusWorking, machines: totals.machines, kinds: totals.kinds, countedAt: file.asOf, epoch: file.epoch } : null,
+    // The GPUs hosts report — not checked by the network — and what is real: the
+    // network's weight in H100s, and the hosts whose weight their GPUs cannot make.
+    gpus: totals ? { total: totals.gpus, working: totals.gpusWorking, machines: totals.machines, kinds: totals.kinds, countedAt: file.asOf, epoch: file.epoch,
+      h100: totals.h100 || null, underReported: totals.underReported || null } : null,
     models: Object.entries(models).map(([model, n]) => ({ model, hosts: n })).sort((a, b) => b.hosts - a.hosts),
     last: lastEpoch ? { epoch: lastEpoch, rewards: lastRewards, hosts: lastRows.length, payout: await soft(epochPayout(seeds, lastEpoch, lastRows)) } : null,
     supply: file ? file.supply : null,

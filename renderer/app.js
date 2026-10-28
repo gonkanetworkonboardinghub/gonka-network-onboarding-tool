@@ -61,6 +61,8 @@ const S = {
   repoReady: false,
   nodeConfigFiles: [],
   chosenConfigFile: null,
+  chosenSetupKey: null,         // the box picked on the model step (a whole server is the same file)
+  chosenWhole: null,            // { count, per } when that box is a whole server
   nodeConfigText: "",
   models: [],                   // model ids in chosen config
   governance: [],               // live governance model list
@@ -207,7 +209,7 @@ function saveSession() {
              auth: S.ssh.auth, privateKeyPath: S.ssh.privateKeyPath },
       wallet: { name: S.wallet.name, address: S.wallet.address, pubkey: S.wallet.pubkey },
       net: S.net,
-      chosenConfigFile: S.chosenConfigFile, nodeConfigText: S.nodeConfigText, models: S.models,
+      chosenConfigFile: S.chosenConfigFile, chosenSetupKey: S.chosenSetupKey, chosenWhole: S.chosenWhole, nodeConfigText: S.nodeConfigText, models: S.models,
       serverKeyName: S.serverKeyName,
       done: [...doneSteps]
     }));
@@ -578,6 +580,8 @@ RENDER.welcome = () => {
       Object.assign(S.wallet, prev.wallet || {});
       if (prev.net) S.net = prev.net;
       S.chosenConfigFile = prev.chosenConfigFile || null;
+      S.chosenSetupKey = prev.chosenSetupKey || null;
+      S.chosenWhole = prev.chosenWhole || null;
       S.nodeConfigText = prev.nodeConfigText || "";
       S.models = prev.models || [];
       S.serverKeyName = prev.serverKeyName || null;
@@ -1594,14 +1598,36 @@ RENDER.model = () => {
       ...curated.map((c) => ({ key: c.label, kind: "curated", idx: c.idx, model: c.model, gpu: c.gpuClass, count: c.gpuCount,
         variant: "", docs: true, fit: fitDetail(c.gpuClass, c.gpuCount), note: c.note }))
     ];
+    // In the first step's order: by model, then GPU kind, then variant.
+    entries.sort((a, b) => String(a.model || "").localeCompare(String(b.model || ""))
+      || String(a.gpu || "").localeCompare(String(b.gpu || "")) || String(a.variant || "").localeCompare(String(b.variant || "")));
     const byModel = new Map();
     for (const e of entries) { const m = e.model || t("Other"); if (!byModel.has(m)) byModel.set(m, []); byModel.get(m).push(e); }
+    // The same setups on a whole 8-GPU server, exactly as the first step lists
+    // them: per GPU kind, the plain setup (a variant only when there is no
+    // plain one) with the fewest GPUs that divides the server evenly. It is the
+    // same configuration file; Gonka's ML node runs it once for every set of GPUs.
+    const wholesOf = (list) => {
+      const best = new Map();
+      for (const e of list) {
+        const n = e.count || 0;
+        if (!e.gpu || !n || n >= WHOLE_SERVER || WHOLE_SERVER % n) continue;
+        if (list.some((x) => x.gpu === e.gpu && x.count === WHOLE_SERVER)) continue;
+        const was = best.get(e.gpu);
+        if (!was || (was.variant && !e.variant) || (!was.variant === !e.variant && n < was.count)) best.set(e.gpu, e);
+      }
+      return [...best.values()].map((e) => ({ ...e, key: e.key + "|whole", whole: true, per: e.count, count: WHOLE_SERVER,
+        fit: myCount >= WHOLE_SERVER ? fitDetail(e.gpu, e.count) : fitDetail(e.gpu, WHOLE_SERVER) }));
+    };
+    const wholes = new Map([...byModel].map(([m, list]) => [m, wholesOf(list)]));
+    const every = [...entries, ...[...wholes.values()].flat()];
+    const picked = S.chosenSetupKey || S.chosenConfigFile;
     const box = (e) => {
-      const sel = S.chosenConfigFile === e.key;
+      const sel = picked === e.key;
       return `<button type="button" class="gpu-chip${sel ? " sel" : ""}${e.fit.ok ? " fits" : " nofit"}" dir="ltr" aria-pressed="${sel}"
         data-entry="${esc(e.key)}" title="${esc(e.fit.text + (e.docs ? " · " + t("from the official Gonka docs") : ""))}"><span class="tick" aria-hidden="true">✓</span>${e.fit.ok && !sel ? `<span class="fit-dot" aria-hidden="true">●</span>` : ""}${e.count ? `${e.count} × ` : ""}${esc(e.gpu || "—")}${e.variant ? `<span class="var">${esc(e.variant)}</span>` : ""}</button>`;
     };
-    const chosen = entries.find((e) => e.key === S.chosenConfigFile);
+    const chosen = every.find((e) => e.key === picked);
 
     // The setup picked on the first step: chosen here for you when it fits this
     // server, and if it does not, said plainly.
@@ -1610,7 +1636,8 @@ RENDER.model = () => {
     if (wp && !S.chosenConfigFile && !S.welcomePickTried) {
       S.welcomePickTried = true;
       // A whole server picked there runs copies of the setup with wp.per GPUs.
-      const match = entries.find((e) => e.model === wp.model && e.gpu === wp.gpu && e.count === (wp.per || wp.count) && (e.variant || "") === (wp.variant || ""));
+      const match = every.find((e) => e.model === wp.model && e.gpu === wp.gpu && e.count === wp.count && !!e.whole === !!wp.per
+        && (!wp.per || e.per === wp.per) && (e.variant || "") === (wp.variant || ""));
       if (match && match.fit.ok) { setTimeout(() => choose(match), 0); }
       else if (match) {
         fromWelcome = `<div class="warn-banner">${t("On the first step you picked {setup}. {fit}", {
@@ -1628,12 +1655,15 @@ RENDER.model = () => {
           <div class="model-name">${esc(i > 0 ? id.slice(i + 1) : id)}</div>
           ${i > 0 ? `<div class="model-org">${esc(id.slice(0, i))}</div>` : ""}
           <div class="gpu-chips">${list.map(box).join("")}</div>
+          ${(wholes.get(id) || []).length ? `<div class="chips-label">${esc(t("Whole 8-GPU servers:"))}</div>
+          <div class="gpu-chips">${wholes.get(id).map(box).join("")}</div>` : ""}
         </div></div>`;
       }).join("")}</div>
       ${chosen
         ? `<div class="info-banner" style="margin-top:12px">${t("Selected: {setup} for {model}. {fit}", {
             setup: `<b dir="ltr">${esc(`${chosen.count} × ${chosen.gpu}${chosen.variant ? " " + chosen.variant : ""}`)}</b>`,
             model: `<b>${esc((chosen.model || "").split("/").pop())}</b>`, fit: esc(chosen.fit.text) })}</div>
+           ${chosen.whole ? `<p class="small">${esc(t("A whole {n}-GPU server runs the {per}-GPU setup {copies} times at once, from the same configuration file.", { n: chosen.count, per: chosen.per, copies: chosen.count / chosen.per }))}</p>` : ""}
            ${chosen.note ? `<p class="small">${esc(chosen.note)}</p>` : ""}`
         : S.chosenConfigFile
           ? `<div class="info-banner" style="margin-top:12px">${t("Selected: {setup}", { setup: `<b>${esc(S.chosenConfigFile)}</b>` })}</div>`
@@ -1661,21 +1691,25 @@ RENDER.model = () => {
           S.nodeConfigText = JSON.stringify(c.nodeConfig, null, 4);
           try { S.models = await api("modelsIn", { jsonText: S.nodeConfigText }); } catch (_) { S.models = [c.model]; }
         }
-        S.chosenConfigFile = e.key;
+        // The configuration file (or the docs' setup) behind the box, and the box itself:
+        // a whole server is the same file, run once for every set of GPUs.
+        S.chosenConfigFile = e.whole ? e.key.replace(/\|whole$/, "") : e.key;
+        S.chosenSetupKey = e.key;
+        S.chosenWhole = e.whole ? { count: e.count, per: e.per } : null;
         if ($("#model-card")) paint(ranked, repoRows);
         if ($("#b-next")) $("#b-next").disabled = false;
       } catch (err) { alert(err.message); }
       finally { setBusy(false); }
     }
     document.querySelectorAll("#model-card [data-entry]").forEach((el) => {
-      el.onclick = () => { const e = entries.find((x) => x.key === el.dataset.entry); if (e) choose(e); };
+      el.onclick = () => { const e = every.find((x) => x.key === el.dataset.entry); if (e) choose(e); };
     });
     const ta = $("#f-nodecfg");
     ta.onchange = async () => {
       S.nodeConfigText = ta.value;
       try { S.models = await api("modelsIn", { jsonText: ta.value }); } catch (_) {}
       $("#b-next").disabled = !S.nodeConfigText.trim();
-      if (S.nodeConfigText.trim() && !S.chosenConfigFile) S.chosenConfigFile = "(custom)";
+      if (S.nodeConfigText.trim() && !S.chosenConfigFile) { S.chosenConfigFile = "(custom)"; S.chosenSetupKey = null; S.chosenWhole = null; }
     };
   }
 };
@@ -1694,7 +1728,13 @@ RENDER.review = () => {
           // "2 × B200 nvfp4" rather than the file's name, when the first step knows the file.
           const f = S.chosenConfigFile || "";
           const r = (S.readyRows || []).find((x) => x.file === f);
-          if (r && r.gpuCount) { const v = new RegExp(`${r.gpuClass}-(.+)\\.json$`, "i").exec(f); return `${r.gpuCount} × ${r.gpuClass}${v ? " " + v[1] : ""}`; }
+          if (r && r.gpuCount) {
+            const v = new RegExp(`${r.gpuClass}-(.+)\\.json$`, "i").exec(f);
+            // A whole server picked on the model step: the same file, run once for every set of GPUs.
+            const w = S.chosenWhole;
+            return w ? `${w.count} × ${r.gpuClass}${v ? " " + v[1] : ""} · ${t("{n} copies at once", { n: w.count / w.per })}`
+              : `${r.gpuCount} × ${r.gpuClass}${v ? " " + v[1] : ""}`;
+          }
           return f.replace(/^node-config-|\.json$/g, "") || "—";
         })()) }
       ])}
@@ -2845,7 +2885,9 @@ async function refreshPrice(known) {
   const time = new Date().toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit" });
   $("#earn-now").innerHTML =
     `<span class="earn-now-price">${esc(fmtPrice(price.usd))}</span>` +
-    `<span class="earn-now-label">${esc(t("GNK right now, from {n} sources · {time}", { n: price.sources.length, time }))}</span>`;
+    `<span class="earn-now-label">${esc(t("GNK right now, the middle of {n} markets · {time}", { n: price.sources.length, time }))}</span>` +
+    // Each market and what it says, so the price can be checked.
+    `<span class="earn-now-sources">${price.sources.map((x) => `${esc(x.name)} <b>${esc("$" + Number(x.usd).toLocaleString(window.I18N.lang(), { minimumFractionDigits: 3, maximumFractionDigits: 3 }))}</b>`).join(" · ")}</span>`;
 }
 
 function renderEarnBody(d) {
@@ -2914,7 +2956,7 @@ function renderEarnBody(d) {
       <div class="earn-calc-lead">${esc(t("Pick a rig, type what you pay for it, and see whether what it mines covers the cost."))}</div>
       <div class="earn-calc-row">
         <select id="earn-pick">${calcRigs.map(({ c, v, none }) =>
-          `<option value="${v}" data-gpu="${esc(c.gpuClass)}" data-count="${c.gpuCount}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${none
+          `<option value="${v}" data-gpu="${esc(c.gpuClass)}" data-count="${c.gpuCount}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${c.copies > 1 ? ` (${esc(t("{n} copies", { n: c.copies }))})` : ""}${none
             ? ` (${esc(t("no host runs it yet"))})` : ""}</option>`).join("")}</select>
         <input id="earn-cost" type="number" min="0" step="0.01" placeholder="${esc(t("what you pay"))}" />
         <select id="earn-unit">

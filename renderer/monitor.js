@@ -33,7 +33,7 @@ const MON = {
   ballot: null,       // { id, address, option, stage, pass, fee, error, txhash } — a vote being cast
   plots: {},          // the charts on the page now, by id (monPlot)
   propFilter: "",     // the words looked for among the proposals
-  propKind: "all",    // which proposals: "all" | "money" | "passed" | "rejected"
+  propKind: "all",    // which proposals: "all" | "passed" | "rejected"
   address: null,      // the node on screen
   data: null,         // what the network says about it
   at: 0,              // when `data` was read
@@ -91,6 +91,10 @@ const monKept = (address) => MON.nodes.some((n) => n.address === address);
 const monOwn = (n) => !!(n && n.wallet && MON.keyNames.includes(n.wallet));
 /** A clock time some seconds from now, with the time zone named. */
 const monAt = (seconds) => new Date(Date.now() + seconds * 1000).toLocaleString(monLang(), { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+/** Where the GNK price comes from: each market and what it says, small, under the price. */
+const monPriceSources = () => (MON.priceSources && MON.priceSources.length
+  ? `<div class="mon-tile-kinds">${MON.priceSources.map((s) => `<span>${esc(s.name)} <b>$${esc(Number(s.usd).toLocaleString(monLang(), { minimumFractionDigits: 3, maximumFractionDigits: 3 }))}</b></span>`).join("")}</div>`
+  : "");
 const monTile = (label, num, sub) => `
   <div class="mon-tile"><div class="mon-tile-label">${esc(label)}</div>
     <div class="mon-tile-num">${esc(num)}</div>
@@ -116,7 +120,7 @@ async function showMonitor(address) {
     </div>`;
   try { MON.nodes = await api("monitorNodes"); } catch (_) { MON.nodes = []; }
   try { MON.keyNames = await api("keyNames"); } catch (_) { MON.keyNames = []; }
-  api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; monRenderMain(); }).catch(() => {});
+  api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; MON.priceSources = (p && p.sources) || []; monRenderMain(); }).catch(() => {});
   monRenderEpoch();
   if (address) monGo("node", address, "mine");
   else monGo("hub");
@@ -246,8 +250,8 @@ function monHubHtml() {
       <span class="mon-door-foot"><span class="mon-door-figure">${figure === null ? CHAIN_MINI : esc(figure)}</span><span class="mon-door-sub">${esc(sub || "")}</span></span>
       <span class="mon-door-go" aria-hidden="true">→</span>
     </button>`;
-  const mineFigure = MON.nodes.length ? t(MON.nodes.length === 1 ? "1 node" : "{n} nodes", { n: monNum(MON.nodes.length) }) : t("Add your node");
-  const mineSub = !MON.nodes.length ? t("Follow it, vote with it, reach its server")
+  const mineFigure = MON.nodes.length ? t(MON.nodes.length === 1 ? "1 node" : "{n} nodes", { n: monNum(MON.nodes.length) }) : t("Follow a node");
+  const mineSub = !MON.nodes.length ? t("Yours or any other host's, by its address")
     : [inEpoch !== null ? t("{n} in this epoch", { n: monNum(inEpoch) }) : "", own ? t("{n} yours", { n: monNum(own) }) : ""].filter(Boolean).join(" · ");
   return `
     <div class="mon-hero">
@@ -256,7 +260,7 @@ function monHubHtml() {
       <p>${esc(t("Follow your nodes, see the whole network, and vote on what it decides."))}</p>
     </div>
     <div class="mon-doors">
-      ${door("mine", t("My nodes"), t("How your nodes are doing, what they earn, and what you can do with them."), mineFigure, mineSub)}
+      ${door("mine", t("My nodes"), t("The nodes you follow, yours and anyone else's: how they are doing and what they earn."), mineFigure, mineSub)}
       ${door("network", t("The network"), t("Every host, its GPUs and what it is paid, epoch by epoch."),
         o ? t("{n} hosts", { n: monNum(o.hosts.length) }) : null,
         o ? [o.gpus ? t("{n} GPUs", { n: monNum(o.gpus.total) }) : "", t("epoch {n}", { n: o.epoch.index })].filter(Boolean).join(" · ") : "")}
@@ -632,7 +636,19 @@ function monNetworkHtml() {
       <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
       ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
     </div>`;
-  return head + tiles + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
+  return head + tiles + monUnderReported(o) + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
+}
+
+/**
+ * Hosts report their own hardware and the network does not check it. When
+ * some report far fewer GPUs than their weight takes (scripts/network-snapshot.js),
+ * the network page says so, with how much of the weight they hold, so nobody
+ * takes the GPUs reported for the network's real size.
+ */
+function monUnderReported(o) {
+  const u = o.gpus && o.gpus.underReported;
+  if (!u || !u.hosts) return "";
+  return `<div class="warn-banner mon-under">${esc(t("Hosts that report far fewer GPUs than their weight takes: {n}, with {share} of the network's weight. So the network has many more GPUs than are reported. Hosts report their own hardware, and the network does not check it.", { n: u.hosts, share: monPct(u.weightShare, 0) }))}</div>`;
 }
 
 /** The network page's figures: tiles, what hosts were paid, and GNK supply. */
@@ -643,11 +659,15 @@ function monNetworkTop(o) {
   const kindsNow = g ? monKindsGrouped(g.kinds) : [];
   const tiles = `
     <div class="mon-tiles">
-      ${monTile(t("GNK price"), MON.price ? "$" + MON.price.toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—", t("from several markets"))}
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GNK price"))}</div>
+        <div class="mon-tile-num">${MON.price ? esc("$" + MON.price.toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : "—"}</div>
+        <div class="mon-tile-sub">${MON.priceSources && MON.priceSources.length ? esc(t("the middle of {n} markets", { n: MON.priceSources.length })) : "&nbsp;"}</div>
+        ${monPriceSources()}</div>
       ${monTile(t("Hosts"), monNum(o.hosts.length), t("in epoch {n}", { n: o.epoch.index }))}
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs in epoch {n}", { n: o.epoch.index }))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs hosts report, epoch {n}", { n: o.epoch.index }))}</div>
         <div class="mon-tile-num">${g ? esc(monNum(g.total)) : "—"}</div>
         <div class="mon-tile-sub">${g ? esc(t("{n} working", { n: monNum(g.working) })) : "&nbsp;"}</div>
+        ${g && g.h100 ? `<div class="mon-tile-h100">${esc(t("All the weight equals about {n} H100s", { n: monNum(g.h100.equivalent) }))}</div>` : ""}
         ${kindsNow.length ? `<div class="mon-tile-kinds">${kindsNow.slice(0, 6).map(([k, n]) => `<span><b>${esc(monNum(n))}</b> ${esc(k)}</span>`).join("")}${kindsNow.length > 6 ? `<span>+${esc(monNum(kindsNow.slice(6).reduce((a, x) => a + x[1], 0)))} ${esc(t("other"))}</span>` : ""}</div>` : ""}</div>
       <button class="mon-tile mon-tile-link" data-go="votes"><div class="mon-tile-label">${esc(t("Open votes"))}</div>
         <div class="mon-tile-num">${open === null ? "—" : esc(monNum(open))}</div>
@@ -732,20 +752,21 @@ const monKindsLine = (kinds) => Object.entries(kinds || {}).sort((a, b) => b[1] 
   .map(([k, n]) => `${k === "Other" ? t("Other") : k} ${monNum(n)}`).join(" · ");
 function monGpusCard(o) {
   const cap = o.capacity || [];
-  const head = `<h3>${esc(t("GPUs, epoch by epoch"))}</h3>`;
+  const head = `<h3>${esc(t("GPUs hosts report, epoch by epoch"))}</h3>`;
   if (!cap.length) return `<div class="card">${head}<p class="small">${esc(t("Not collected yet. It fills in over the next few hours."))}</p></div>`;
   const now = cap[cap.length - 1];
   const plot = monPlot("gpus", {
-    label: t("GPUs, epoch by epoch"), kind: "line", fmt: (v) => monNum(v),
+    label: t("GPUs hosts report, epoch by epoch"), kind: "line", fmt: (v) => monNum(v),
     points: cap.map((c) => ({
       y: c.gpus, x: monDay(c.at) || String(c.epoch),
-      tip: [t("{n} GPUs took part", { n: monNum(c.gpus) }), monKindsLine(c.kinds), monEpochWhen(c)]
+      tip: [t("{n} GPUs reported", { n: monNum(c.gpus) }), monKindsLine(c.kinds), monEpochWhen(c)]
     }))
   });
   return `<div class="card">${head}${plot}
     <p class="small">${esc(t("{a} GPUs then, {b} in epoch {n}. Point at an epoch to see which kinds.", { a: monNum(cap[0].gpus), b: monNum(now.gpus), n: now.epoch }))}</p>
     ${more("What does this count?", `
       <p>${esc(t("Every card the hosts report on the machines that did work in that epoch. The hosts report their own hardware; the network does not check it. GPUs differ a great deal, so the mix matters as much as the number."))}</p>
+      <p>${esc(t("Some hosts report far fewer GPUs than they run, so this line is lower than the real number, and it jumps when a host changes what it reports. The network's weight in H100s, on the GPU tile above, does not depend on what hosts report."))}</p>
       <p>${esc(t("The network keeps only each host's latest hardware report, so the past comes from Gonkascan's record, which it has kept every epoch. GNOT measures each new epoch itself, and the two agree."))}
         <a href="#" data-open="https://gonkascan.com">gonkascan.com</a></p>`)}
   </div>`;
@@ -763,7 +784,7 @@ function monHostRows(rows) {
         return `
         <button class="mon-row mon-row-link" data-go-node="${esc(h.address)}">
           <span class="mon-rank">${esc(String(MON.overview.hosts.indexOf(h) + 1))}</span>
-          <span class="mono">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded ? ` <i class="mon-flag">${esc(t("left out"))}</i>` : ""}</span>
+          <span class="mono">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded ? ` <i class="mon-flag">${esc(t("left out"))}</i>` : ""}${h.underReported ? ` <i class="mon-flag soft" title="${esc(t("Its weight equals about {n} H100s, far more than the GPUs it reports.", { n: monNum(h.h100 || 0) }))}">${esc(t("reports too few GPUs"))}</i>` : ""}</span>
           <span class="r">${h.gpus === null ? "—" : esc(monNum(h.gpus))}</span>
           <span class="mon-muted">${esc(h.models.map(monModel).join(", "))}</span>
           <span class="mon-share"><i style="width:${Math.max(2, Math.round(h.share / topShare * 100))}%"></i><b>${esc(monPct(h.share))}</b></span>
@@ -781,7 +802,7 @@ const MON_LOCK = `<svg class="mon-lock" viewBox="0 0 24 24" aria-hidden="true"><
 /**
  * Every node kept here as a card: whether it is in the epoch, its share, what
  * it earned last epoch, its GPUs. The figures come from the network page's
- * reading, so one question covers every card. "Add a node" is the last card.
+ * reading, so one question covers every card. "Follow a node" is the last card.
  */
 function monMineHtml() {
   if (!MON.nodes.length) return monMineEmptyHtml();
@@ -806,13 +827,13 @@ function monMineHtml() {
   return `
     <div class="mon-title-row"><h1>${esc(t("My nodes"))}</h1>
       <span class="mon-title-sub">${esc(t(MON.nodes.length === 1 ? "1 node" : "{n} nodes", { n: monNum(MON.nodes.length) }))}</span></div>
-    ${MON.undo ? `<div class="mon-undo-bar">${esc(t("Removed {name}.", { name: monName(MON.undo.node) }))} <button id="mon-undo">${esc(t("Undo"))}</button></div>` : ""}
+    ${MON.undo ? `<div class="mon-undo-bar">${esc(t("Stopped following {name}.", { name: monName(MON.undo.node) }))} <button id="mon-undo">${esc(t("Undo"))}</button></div>` : ""}
     <div class="mon-nodes">
       ${MON.nodes.map(card).join("")}
       <button class="mon-node-card add" data-go="add">
         <span class="mon-nc-plus" aria-hidden="true">+</span>
-        <span class="mon-nc-name">${esc(t("Add a node"))}</span>
-        <span class="mon-nc-addr">${esc(t("Any node on the network, by its address"))}</span>
+        <span class="mon-nc-name">${esc(t("Follow a node"))}</span>
+        <span class="mon-nc-addr">${esc(t("Yours or any other host's, by its address"))}</span>
       </button>
     </div>
     ${linkable ? `<p class="small mon-mine-hint">${esc(t("To vote from here, open your node and link its wallet."))}</p>` : ""}`;
@@ -828,14 +849,16 @@ function monMineEmptyHtml() {
     [t("Your server"), t("a terminal to your server, from here")],
     [t("Shut down safely"), t("Gonka's steps for leaving, done for you")]
   ];
+  // Just unfollowed the last node: the empty page still offers to take it back.
   return `
+    ${MON.undo ? `<div class="mon-undo-bar">${esc(t("Stopped following {name}.", { name: monName(MON.undo.node) }))} <button id="mon-undo">${esc(t("Undo"))}</button></div>` : ""}
     <div class="mon-empty">
       <span class="mon-door-icon big">${MON_ICONS.mine}</span>
       <h1>${esc(t("My nodes"))}</h1>
-      <p class="lede">${esc(t("Add your node to follow it here, and to act on it."))}</p>
+      <p class="lede">${esc(t("Follow your own node, or any other host you want to keep an eye on."))}</p>
       <div class="btn-row">
-        <button class="primary" data-go="add">${esc(t("Add your node"))}</button>
-        <button data-go-hosts="1">${esc(t("Find it among every host"))}</button>
+        <button class="primary" data-go="add">${esc(t("Follow a node"))}</button>
+        <button data-go-hosts="1">${esc(t("Find one among every host"))}</button>
       </div>
     </div>
     <div class="mon-locked">
@@ -848,15 +871,15 @@ function monMineEmptyHtml() {
 
 function monAddHtml() {
   return `
-    <div class="mon-title-row"><h1>${esc(t("Add a node"))}</h1></div>
+    <div class="mon-title-row"><h1>${esc(t("Follow a node"))}</h1></div>
     <div class="card">
       <label class="field"><span class="lbl">${esc(t("Node address"))}</span>
         <input type="text" id="mon-addr" class="mono" spellcheck="false" autocomplete="off" placeholder="gonka1…"></label>
       <label class="field"><span class="lbl">${esc(t("A name for it (optional)"))}</span>
         <input type="text" id="mon-name" maxlength="40" placeholder="${esc(t("My first node"))}"></label>
-      <div class="btn-row"><button class="primary" id="mon-watch">${esc(t("Add"))}</button></div>
+      <div class="btn-row"><button class="primary" id="mon-watch">${esc(t("Follow"))}</button></div>
       <p class="small" id="mon-add-err" style="color:var(--red)"></p>
-      <p class="small">${esc(t("The address starts with gonka1. Any node works, however it was set up."))} <a href="#" data-go-hosts="1">${esc(t("Or pick one from every host on the network."))}</a></p>
+      <p class="small">${esc(t("Your own node or any other host's: any node works, however it was set up. The address starts with gonka1."))} <a href="#" data-go-hosts="1">${esc(t("Or pick one from every host on the network."))}</a></p>
     </div>`;
 }
 function monWireAdd() {
@@ -885,8 +908,8 @@ function monNodePageHtml() {
       </div>
       <div class="mon-head-tools">
         <span class="small" id="mon-age">${!MON.at || !MON.data ? "" : Date.now() - MON.at < 60000 ? esc(t("read just now")) : esc(t("read {when} ago", { when: monSpan((Date.now() - MON.at) / 1000) }))}</span>
-        ${kept ? `<button id="mon-rename" class="mon-quiet">${esc(t("Rename"))}</button><button id="mon-remove" class="mon-quiet">${esc(t("Remove"))}</button>`
-               : `<button id="mon-keep" class="primary">${esc(t("Add to your nodes"))}</button>`}
+        ${kept ? `<button id="mon-rename" class="mon-quiet">${esc(t("Rename"))}</button><button id="mon-remove" class="mon-quiet">${esc(t("Unfollow"))}</button>`
+               : `<button id="mon-keep" class="primary">${esc(t("Follow this node"))}</button>`}
       </div>
     </div>`;
   let body;
@@ -1469,6 +1492,7 @@ function monHardwareCard(d) {
     <div class="card">
       <h3>${esc(t("Hardware the network sees"))}</h3>
       <p class="small">${esc(t("{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
+      ${h.underReported ? `<div class="warn-banner">${esc(t("Its weight equals about {n} H100s, but it reports {g} GPUs: it runs far more than it reports. Hosts report their own hardware, and the network does not check it.", { n: monNum(h.h100 || 0), g: monNum(h.gpuCount) }))}</div>` : h.h100 ? `<p class="small">${esc(t("Its weight equals about {n} H100s.", { n: monNum(h.h100) }))}</p>` : ""}
       <div class="mon-table">
         <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Weight"))}</span></div>
         ${h.nodes.map((n) => {
@@ -1606,11 +1630,11 @@ function monYourVoteHtml(live) {
     <div class="mon-yourvote">
       <span class="mon-yv-icon">${MON_ICONS.votes}</span>
       <div class="mon-yv-body">
-        <b>${esc(kept ? t("Link your node to vote from here") : t("Add your node to vote with it"))}</b>
+        <b>${esc(kept ? t("Link your node to vote from here") : t("Follow your node to vote with it"))}</b>
         <span>${esc(kept ? t("A host votes with its node, and the vote counts by the node's weight. Link its wallet once, and its votes are cast from here.")
-          : t("A host votes with its node, and the vote counts by the node's weight. Add yours, and its votes are cast from here."))}</span>
+          : t("A host votes with its node, and the vote counts by the node's weight. Follow yours, link its wallet, and its votes are cast from here."))}</span>
       </div>
-      ${kept ? `<button class="primary" id="mon-vote-link">${esc(t("Link your wallet"))}</button>` : `<button class="primary" data-go="add">${esc(t("Add your node"))}</button>`}
+      ${kept ? `<button class="primary" id="mon-vote-link">${esc(t("Link your wallet"))}</button>` : `<button class="primary" data-go="add">${esc(t("Follow your node"))}</button>`}
     </div>`;
 }
 
@@ -1684,9 +1708,8 @@ function monVotesHtml() {
       </div>`;
   };
 
-  // Which past proposals: all, the ones that ask for money, passed, rejected; and the search.
-  const asks = (p) => { const x = p.pays || {}; return !!(x.pool || x.gov || x.toSale || x.usdt); };
-  const kinds = [["all", t("All"), past], ["money", t("Ask for money"), past.filter(asks)],
+  // Which past proposals: all, passed, rejected; and the search.
+  const kinds = [["all", t("All"), past],
     ["passed", t("Passed"), past.filter((p) => p.status === "PASSED")], ["rejected", t("Rejected"), past.filter((p) => p.status !== "PASSED")]];
   const kind = kinds.find((k) => k[0] === MON.propKind) || kinds[0];
   const raw = MON.propFilter.trim().toLowerCase();
