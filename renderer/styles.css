@@ -368,6 +368,14 @@ button .chain-mini i { background: currentColor; opacity: 0.25; animation-name: 
 .earn-rent-table b.ahead { color: var(--green); }
 .earn-rent-table b.behind { color: var(--red); font-weight: 600; }
 .earn-rent-table td:last-child { white-space: nowrap; padding-left: 18px; }
+/* The table fits its panel: what an offer lacks and the model notes wrap
+   inside their own columns instead of pushing the day's figure out of sight,
+   and the right-aligned columns keep a gap between them. */
+.earn-table.earn-rent-table tbody td:nth-child(2) { white-space: normal; }
+.earn-table.earn-rent-table td.num, .earn-table.earn-rent-table th.num { padding-left: 16px; }
+.earn-table.earn-rent-table td:nth-child(3), .earn-table.earn-rent-table th:nth-child(3) { min-width: 120px; }
+.earn-table.earn-rent-table td:nth-child(4) { min-width: 150px; }
+.rent-check { margin: 10px 0 8px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text); }
 #earn-rent-hint { margin-top: 8px; }
 #earn-rent-hint:empty { display: none; }
 /* Compare with providers: a list of providers, each opening its prices. */

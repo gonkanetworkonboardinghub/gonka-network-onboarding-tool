@@ -2771,7 +2771,8 @@ function renderRent() {
             : t("None of the {m} configurations GNOT can set up for you is available at {provider} right now with everything a node needs.", { m: x.rows.length, provider: x.name }))}</span>
         ${x.error ? "" : `<span class="rent-provider-sub">${esc(t("Prices as of {when}.", { when: when(x.at) }))}</span>`}</span>
         <span class="rent-chev" aria-hidden="true">›</span></button>`;
-    }).join("")}</div>`;
+    }).join("")}</div>
+    <div class="earn-scope">${esc(t("Read from each provider's public price list. Before you rent, check on the provider's own site."))}</div>`;
     box.querySelectorAll(".rent-provider").forEach((b) => { b.onclick = () => { RENT_VIEW = b.dataset.id; renderRent(); }; });
     return;
   }
@@ -2798,6 +2799,7 @@ function renderRent() {
       <a href="#" id="rent-site">${esc(t("Open their site ↗"))}</a>
     </div>
     ${p.error ? `<div class="earn-scope">${esc(t("Could not read the providers' prices right now.") + " " + p.error)}</div>` : `
+    <div class="rent-check">${esc(t("Before you rent, check the price and the server's details on {provider}'s own site: prices and what is on offer change by the minute.", { provider: p.name }))}</div>
     <table class="earn-table earn-rent-table">
       <thead><tr>
         <th>${esc(t("Rig"))}</th><th class="num">${esc(t("Cheapest dedicated"))}</th>
@@ -2805,7 +2807,7 @@ function renderRent() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with CUDA {min} or newer. Prices change all the time; check on the provider's site before renting.", { providers: p.name, time: time(p.at), min: (S.K && S.K.requirements.cudaMin) || "12.9" }))}</div>`}`;
+    <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with CUDA {min} or newer.", { providers: p.name, time: time(p.at), min: (S.K && S.K.requirements.cudaMin) || "12.9" }))}</div>`}`;
   $("#rent-back").onclick = (e) => { e.preventDefault(); RENT_VIEW = "list"; renderRent(); };
   $("#rent-site").onclick = (e) => { e.preventDefault(); api("openExternal", { url: p.site }); };
 }
@@ -2882,8 +2884,13 @@ function renderEarnBody(d) {
   const wp = WELCOME.pick;
   const start = wp && calcRigs.find(({ c }) => c.model === wp.model && c.gpuClass === wp.gpu && c.gpuCount === wp.count);
 
+  // Machines left out because their weight cannot come from the GPUs their host reports.
+  const leftOut = (d.leftOut || []).map((x) => t("{gpu} — machines: {n}, hosts: {h}", { gpu: x.gpuClass, n: x.machines, h: x.hosts })).join("; ");
+
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
+    <div class="rent-check">${esc(t("Measured on the machines running each setup now. Hosts report their own hardware and the network does not check it, and setups and tuning differ, so what your rig earns can be different. Before you rent, look at the hosts that run it."))}
+      <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
         <th>${esc(t("Rig"))}</th><th>${esc(t("Model"))}</th>
@@ -2900,6 +2907,7 @@ function renderEarnBody(d) {
           { list: d.withoutData.map(shortModel).join(", ") })
       : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
     <div class="earn-scope">${esc(t("Machines now: the machines on the network running exactly that rig and model right now, as their hosts report them, and how many hosts they belong to."))}</div>
+    ${leftOut ? `<div class="earn-scope">${esc(t("Left out of these figures: {list}. Their weight per GPU is more than {x} times that of a typical machine with the same GPUs, so they cannot be the hardware their hosts report.", { list: leftOut, x: d.leftOutAbove || 3 }))}</div>` : ""}
 
     <div class="earn-calc">
       <div class="earn-calc-title">${esc(t("Will it pay for itself?"))}</div>
@@ -2950,6 +2958,14 @@ function renderEarnBody(d) {
     e.preventDefault();
     $(".earn-calc").scrollIntoView({ behavior: "smooth", block: "start" });
     $("#earn-cost").focus({ preventScroll: true });
+  };
+  // Every host on the network, in Gonka Host Monitor/Vote: close this panel and open its host list.
+  $("#earn-hosts").onclick = async (e) => {
+    e.preventDefault();
+    if ($("#sheet-close")) $("#sheet-close").click();
+    await showMonitor();
+    monGo("network");
+    setTimeout(() => { const h = $("#mon-hosts"); if (h) h.scrollIntoView({ block: "start" }); }, 50);
   };
 
   const pick = $("#earn-pick"), cost = $("#earn-cost"), unit = $("#earn-unit"), out = $("#earn-out");

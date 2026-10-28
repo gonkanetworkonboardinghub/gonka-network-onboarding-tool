@@ -164,6 +164,29 @@ function compare(earnings, offers) {
 }
 
 /**
+ * A provider's offers, read again when the list comes back much shorter than
+ * it was: on 26 October 2026 the website read Spheron's list with a single
+ * offer GNOT could use, where there are usually dozens, and five minutes later
+ * every one was back. A short list (under 10 usable offers, or under half of
+ * the last read) is read up to twice more, a few seconds apart, and the
+ * fullest read counts. A list that stays short is shown as it is.
+ */
+const lastCount = {};
+const THIN_RETRIES = 2;
+const THIN_WAIT_MS = 4000;
+async function readFull(p) {
+  const thin = (list) => list.length < Math.max(10, (lastCount[p.id] || 0) / 2);
+  let list = await p.read();
+  for (let i = 0; i < THIN_RETRIES && thin(list); i++) {
+    await new Promise((r) => setTimeout(r, THIN_WAIT_MS));
+    const again = await p.read().catch(() => []);
+    if (again.length > list.length) list = again;
+  }
+  lastCount[p.id] = list.length;
+  return list;
+}
+
+/**
  * Every provider's dedicated offers, read now, each compared on its own with
  * the earnings figures: one list per provider, so people can look at them one
  * provider at a time.
@@ -174,7 +197,7 @@ async function estimate(earnings, { force = false } = {}) {
   for (const p of PROVIDERS) {
     const at = new Date().toISOString();
     try {
-      const list = await p.read();
+      const list = await readFull(p);
       providers.push({ id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: compare(earnings, list) });
     } catch (e) {
       providers.push({ id: p.id, name: p.name, site: p.site, at, offers: 0, error: e.message, rows: [] });
@@ -188,4 +211,4 @@ async function estimate(earnings, { force = false } = {}) {
 module.exports = { estimate, compare, spheron, shortOf };
 // The pieces the website's Base44 function is built from (scripts/build-base44-rentals.js),
 // so the website compares with exactly this code.
-module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, cudaAtLeast, newestCuda, spheron, PROVIDERS, shortOf, compare, estimate };
+module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, cudaAtLeast, newestCuda, spheron, PROVIDERS, shortOf, compare, THIN_RETRIES, THIN_WAIT_MS, readFull, estimate };

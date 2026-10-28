@@ -43,9 +43,17 @@ const MIN_SAMPLE_GPUS = 8;
 const MIN_OBSERVED_GPUS = 4;
 /** ...and at least this many hosts running it, since each host reports its own hardware. */
 const MIN_OBSERVED_HOSTS = 2;
+/** A machine earning more than this many times the middle machine of its GPU kind, per GPU, is not the hardware it reports. */
+const LEFT_OUT_ABOVE = 3;
 const CACHE_MS = 10 * 60 * 1000;
 
 let cache = null;
+
+const median = (a) => {
+  const v = [...a].sort((x, y) => x - y);
+  if (!v.length) return 0;
+  return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+};
 
 const classOf = (type) => (GPU_CLASSES.find(([re]) => re.test(String(type))) || [, null])[1];
 
@@ -141,6 +149,8 @@ async function chainFacts(seed) {
     map.set(key, cur);
   };
 
+  // Every machine with its slice of the weight, before anything is counted.
+  const machines = [];
   for (const p of active.participants || []) {
     const paid = memberWeight.get(p.index);
     if (!paid) continue;                       // not in the paid set this epoch
@@ -164,25 +174,51 @@ async function chainFacts(seed) {
       if (!node || !(node.hardware || []).length) continue;
       const share = (w / pocTotal) * paid;     // this node's slice of what the member is paid for
       const gpus = node.hardware.reduce((a, h) => a + Number(h.count || 0), 0) || 1;
-      const models = (node.models || []).length ? node.models : [null];
-      const only = node.hardware.length === 1 ? classOf(node.hardware[0].type) : null;
-      if (only) for (const model of models) {
+      // Its kind of GPU: the one it has most of.
+      const kind = classOf([...node.hardware].sort((a, b) => Number(b.count || 0) - Number(a.count || 0))[0].type);
+      machines.push({ host: p.index, node, share, gpus, kind, perGpu: share / gpus });
+    }
+  }
+
+  // Hosts report their own hardware and the network does not check it. In
+  // October 2026 three of the largest hosts reported each of their machines as
+  // a single H100 while the machine carried the weight of dozens of GPUs
+  // (17,000 to 79,000 Proof of Compute weight, where a real 4 × H100 has 3,400
+  // to 5,300): taken at their word, they made a 4 × H100 look fifteen times
+  // better than it is. A machine whose weight per GPU is more than
+  // LEFT_OUT_ABOVE times the middle machine of its kind cannot be the hardware
+  // it reports, so it is left out of the figures — and counted, so the screen
+  // can say so.
+  const typicalOfKind = new Map();
+  for (const m of machines) if (m.kind) (typicalOfKind.get(m.kind) || typicalOfKind.set(m.kind, []).get(m.kind)).push(m.perGpu);
+  for (const [kind, list] of typicalOfKind) typicalOfKind.set(kind, median(list));
+  const leftOut = new Map();                   // kind -> { machines, hosts }
+  for (const { host, node, share, gpus, kind, perGpu } of machines) {
+    const typical = kind ? typicalOfKind.get(kind) : 0;
+    if (typical > 0 && perGpu > typical * LEFT_OUT_ABOVE) {
+      const cur = leftOut.get(kind) || { machines: 0, hosts: new Set() };
+      cur.machines++; cur.hosts.add(host);
+      leftOut.set(kind, cur);
+      continue;
+    }
+    const models = (node.models || []).length ? node.models : [null];
+    const only = node.hardware.length === 1 ? classOf(node.hardware[0].type) : null;
+    if (only) for (const model of models) {
+      if (!model) continue;
+      const key = `${only}|${model}|${gpus}`;
+      const cur = sizes.get(key) || { machines: 0, hosts: new Set() };
+      cur.machines++; cur.hosts.add(host);
+      sizes.set(key, cur);
+    }
+    for (const h of node.hardware) {
+      const cls = classOf(h.type);
+      if (!cls) continue;
+      const count = Number(h.count) || 0;
+      const part = share * (count / gpus);
+      bump(byClass, cls, count, part, gpus, host);
+      for (const model of models) {
         if (!model) continue;
-        const key = `${only}|${model}|${gpus}`;
-        const cur = sizes.get(key) || { machines: 0, hosts: new Set() };
-        cur.machines++; cur.hosts.add(p.index);
-        sizes.set(key, cur);
-      }
-      for (const h of node.hardware) {
-        const cls = classOf(h.type);
-        if (!cls) continue;
-        const count = Number(h.count) || 0;
-        const part = share * (count / gpus);
-        bump(byClass, cls, count, part, gpus, p.index);
-        for (const model of models) {
-          if (!model) continue;
-          bump(byClassModel, cls + "|" + model, count / models.length, part / models.length, gpus, p.index);
-        }
+        bump(byClassModel, cls + "|" + model, count / models.length, part / models.length, gpus, host);
       }
     }
   }
@@ -200,7 +236,7 @@ async function chainFacts(seed) {
     gnkPerWeight: totalWeight ? mintedGnk / totalWeight : 0,
     rewardParams: params.bitcoin_reward_params || null,
     api,
-    byClass, byClassModel, sizes
+    byClass, byClassModel, sizes, leftOut
   };
 }
 
@@ -297,11 +333,6 @@ async function estimate(seed, { force = false } = {}) {
   if (typical && facts.totalWeight) facts.gnkPerWeight = facts.mintedGnk / facts.totalWeight * typical.share;
   else if (paid && facts.totalWeight) facts.gnkPerWeight = paid.gnk / facts.totalWeight;
 
-  const median = (a) => {
-    const v = [...a].sort((x, y) => x - y);
-    if (!v.length) return 0;
-    return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
-  };
   const weightPerGpu = (gpuClass, model) => {
     const pair = facts.byClassModel.get(gpuClass + "|" + model);
     if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), gpus: pair.gpus, basis: "model" };
@@ -427,7 +458,12 @@ async function estimate(seed, { force = false } = {}) {
     // epoch: no observed weight, so they are left out rather than guessed at.
     withoutData: [...skipped].sort(),
     // Setups Gonka publishes that no host runs now, so nothing can be measured.
-    noHosts
+    noHosts,
+    // Machines left out because their weight cannot come from the GPUs their
+    // host reports (more than leftOutAbove × the middle machine of that kind).
+    leftOutAbove: LEFT_OUT_ABOVE,
+    leftOut: [...facts.leftOut].map(([gpuClass, v]) => ({ gpuClass, machines: v.machines, hosts: v.hosts.size }))
+      .sort((a, b) => b.machines - a.machines)
   };
   cache = { at: Date.now(), data };
   return data;
