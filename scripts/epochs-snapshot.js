@@ -68,19 +68,29 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
   await K.loadRemoteManifest();
   const k = K.get();
 
-  // A node that answers the per-host question about a finished epoch.
+  // A node that answers the per-host question about a finished epoch. Just
+  // after an epoch ends its results are not on the chain yet: on 28 October
+  // 2026 a run a minute into epoch 440 found none for 439 on any node and kept
+  // the old file for hours. So when no node has the newest epoch's results,
+  // one that has the epoch before it will do, and the next run reads the newest.
   let seed = null, current = 0;
-  for (const s of k.seedNodes) {
-    try {
-      const latest = await getJson(s + k.api.latestEpoch);
-      const index = Number(((latest || {}).epoch_stages || {}).epoch_index || ((latest || {}).latest_epoch || {}).index);
-      if (!index) continue;
-      const group = await getJson(`${s}${INF}/epoch_group_data/${index - 1}`);
-      const first = ((group && group.epoch_group_data && group.epoch_group_data.validation_weights) || [])[0];
-      if (!first) continue;
-      const probe = await getJson(`${s}${INF}/epoch_performance_summary/${index - 1}/${first.member_address}`);
-      if (probe && probe.epochPerformanceSummary) { seed = s; current = index; break; }
-    } catch (_) { /* try the next node */ }
+  for (const back of [1, 2]) {
+    for (const s of k.seedNodes) {
+      try {
+        const latest = await getJson(s + k.api.latestEpoch);
+        const index = Number(((latest || {}).epoch_stages || {}).epoch_index || ((latest || {}).latest_epoch || {}).index);
+        if (!index) continue;
+        const group = await getJson(`${s}${INF}/epoch_group_data/${index - back}`);
+        const first = ((group && group.epoch_group_data && group.epoch_group_data.validation_weights) || [])[0];
+        if (!first) continue;
+        const probe = await getJson(`${s}${INF}/epoch_performance_summary/${index - back}/${first.member_address}`);
+        if (probe && probe.epochPerformanceSummary) { seed = s; current = index - back + 1; break; }
+      } catch (_) { /* try the next node */ }
+    }
+    if (seed) {
+      if (back > 1) console.log(`epoch ${current} has no results on any node yet; reading up to epoch ${current - 1}`);
+      break;
+    }
   }
   if (!seed) throw new Error("no Gonka node gave past results");
 
@@ -104,7 +114,8 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
     return isFinite(t) ? Math.round(t / 1000) : null;
   }
 
-  const last = current - 1;                              // the newest finished epoch
+  // The newest finished epoch with results, and never fewer epochs than the file held.
+  const last = Math.max(current - 1, ...Object.keys(have).map(Number));
   const first = Math.max(1, last - KEEP + 1);
   const budgetLeft = () => MAX_QUESTIONS - asked;
   let filled = 0, rechecked = 0, stopped = false;
