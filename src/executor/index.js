@@ -88,15 +88,32 @@ class SshDriver {
   constructor() {
     this.kind = "ssh";
     this.conn = null;
+    this.cfg = null;          // how to connect, kept in memory only, to connect again
+    this.reopening = null;
+    this.disposed = false;
   }
 
   /**
    * cfg: { host, port, username, password?, privateKeyPath?, passphrase? }
    */
   connect(cfg) {
+    this.cfg = cfg;
+    this.disposed = false;
+    return this.open();
+  }
+
+  /**
+   * Open the connection. One that drops later (providers close idle ones, and
+   * networks blip: on 29 October 2026 a Spheron server's connection was gone
+   * after the setup sat waiting, and every command after it said "Not
+   * connected") is marked gone, and the next command opens a new one.
+   */
+  open() {
+    const cfg = this.cfg;
     const { Client } = require("ssh2");
     return new Promise((resolve, reject) => {
       const conn = new Client();
+      let settled = false;
       const connCfg = {
         host: cfg.host,
         port: cfg.port || 22,
@@ -118,33 +135,61 @@ class SshDriver {
       } else {
         return reject(new Error("Provide a password or an SSH key file."));
       }
+      const gone = () => { if (this.conn === conn) this.conn = null; };
       conn
-        .on("ready", () => { this.conn = conn; resolve(); })
-        .on("error", (err) => reject(err))
+        .on("ready", () => { settled = true; this.conn = conn; resolve(); })
+        .on("error", (err) => { if (!settled) { settled = true; reject(err); } else gone(); })
+        .on("close", gone)
+        .on("end", gone)
         .connect(connCfg);
     });
   }
 
-  exec(cmd, opts = {}) {
-    return new Promise((resolve) => {
-      if (!this.conn) return resolve({ code: 255, stdout: "", stderr: "Not connected" });
-      const full = `bash -lc ${shq(cmd)}`;
-      this.conn.exec(full, { pty: false, env: opts.env }, (err, stream) => {
-        if (err) return resolve({ code: 255, stdout: "", stderr: String(err) });
-        let stdout = "", stderr = "";
-        const timer = opts.timeoutMs ? setTimeout(() => { try { stream.close(); } catch (_) {} }, opts.timeoutMs) : null;
-        stream.on("data", (d) => { const t = d.toString(); stdout += t; opts.onData && opts.onData(t, "stdout"); });
-        stream.stderr.on("data", (d) => { const t = d.toString(); stderr += t; opts.onData && opts.onData(t, "stderr"); });
-        if (opts.stdin) stream.write(opts.stdin);
-        stream.on("close", (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); });
-      });
-    });
+  /** The live connection, opened again when it has dropped. */
+  async live(onData) {
+    if (this.conn) return this.conn;
+    if (this.disposed || !this.cfg) throw new Error("Not connected to a server yet.");
+    if (!this.reopening) this.reopening = this.open().finally(() => { this.reopening = null; });
+    try { await this.reopening; }
+    catch (e) { throw new Error("The connection to your server dropped, and GNOT couldn't connect again: " + (e.message || e)); }
+    onData && onData("(The connection to your server had dropped; GNOT connected again.)\n", "stdout");
+    return this.conn;
+  }
+
+  /** Run fn on the live connection; if the connection turns out to be gone before anything started, connect again and run it once more. */
+  async withConn(fn, onData) {
+    const conn = await this.live(onData);
+    try { return await fn(conn); }
+    catch (e) {
+      if (!/Not connected|No response from server|socket|ECONNRESET|EPIPE/i.test(String(e && e.message))) throw e;
+      if (this.conn === conn) this.conn = null;
+      return fn(await this.live(onData));
+    }
+  }
+
+  async exec(cmd, opts = {}) {
+    const full = `bash -lc ${shq(cmd)}`;
+    try {
+      return await this.withConn((conn) => new Promise((resolve, reject) => {
+        // ssh2 throws "Not connected" right away when the socket has closed: nothing ran, so it can run again.
+        conn.exec(full, { pty: false, env: opts.env }, (err, stream) => {
+          if (err) return /Not connected|No response from server/i.test(String(err.message || err)) ? reject(err) : resolve({ code: 255, stdout: "", stderr: String(err) });
+          let stdout = "", stderr = "";
+          const timer = opts.timeoutMs ? setTimeout(() => { try { stream.close(); } catch (_) {} }, opts.timeoutMs) : null;
+          stream.on("data", (d) => { const t = d.toString(); stdout += t; opts.onData && opts.onData(t, "stdout"); });
+          stream.stderr.on("data", (d) => { const t = d.toString(); stderr += t; opts.onData && opts.onData(t, "stderr"); });
+          if (opts.stdin) stream.write(opts.stdin);
+          stream.on("close", (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 1, stdout, stderr }); });
+        });
+      }), opts.onData);
+    } catch (e) {
+      return { code: 255, stdout: "", stderr: String((e && e.message) || e) };
+    }
   }
 
   writeFile(remotePath, content) {
-    return new Promise((resolve, reject) => {
-      if (!this.conn) return reject(new Error("Not connected"));
-      this.conn.sftp((err, sftp) => {
+    return this.withConn((conn) => new Promise((resolve, reject) => {
+      conn.sftp((err, sftp) => {
         if (err) return reject(err);
         const dir = remotePath.split("/").slice(0, -1).join("/") || "/";
         // mkdir -p over exec (sftp has no recursive mkdir)
@@ -155,20 +200,20 @@ class SshDriver {
           ws.end(Buffer.from(content, "utf8"));
         });
       });
-    });
+    }));
   }
 
   readFile(remotePath) {
-    return new Promise((resolve, reject) => {
-      if (!this.conn) return reject(new Error("Not connected"));
-      this.conn.sftp((err, sftp) => {
+    return this.withConn((conn) => new Promise((resolve, reject) => {
+      conn.sftp((err, sftp) => {
         if (err) return reject(err);
         sftp.readFile(remotePath, (e, buf) => (e ? reject(e) : resolve(buf.toString("utf8"))));
       });
-    });
+    }));
   }
 
   dispose() {
+    this.disposed = true;
     try { this.conn && this.conn.end(); } catch (_) {}
     this.conn = null;
   }
