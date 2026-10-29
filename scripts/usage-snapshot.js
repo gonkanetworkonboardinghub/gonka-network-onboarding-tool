@@ -18,9 +18,11 @@
  *         439's were there during epoch 440, and 438's were gone), so each
  *         epoch is read while it is the last one, and the line starts at 439.
  *   p     the per-token price in ngonka while the epoch was on, [lowest,
- *         highest] over the models and the runs that saw it. The chain keeps
- *         only the current price, so every run reads it and keeps it with the
- *         epoch. Tokens = paid ÷ price, where the price stayed one number.
+ *         highest] over the models and the times it was read: every run reads
+ *         the price now for the epoch that is on, and the last epoch's at its
+ *         first and last block, which the nodes still answer for about an
+ *         epoch (older state is pruned). Tokens = paid ÷ price, where the
+ *         price stayed one number.
  *
  * The chain's own token counters (developer/stats_by_epochs_backwards and the
  * like) read zero since inference moved to devshards, so they are not used.
@@ -42,11 +44,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let asked = 0;
 const budgetLeft = () => MAX_QUESTIONS - asked;
 
-/** One question, at the pace the node accepts. null = the chain has no such record. */
-async function getJson(url) {
+/** One question, at the pace the node accepts (at a past block when height is given). null = the chain has no such record. */
+async function getJson(url, height) {
   for (let attempt = 0; ; attempt++) {
     if (asked++) await sleep(GAP_MS);
-    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    const res = await fetch(url, { headers: height ? { "x-cosmos-block-height": String(height) } : {}, signal: AbortSignal.timeout(30000) });
     if (res.status === 404) return null;
     if ((res.status === 503 || res.status === 429) && attempt < 4) { await sleep(5000 * (attempt + 1)); continue; }
     const body = await res.json().catch(() => null);
@@ -83,7 +85,7 @@ async function getJson(url) {
     const d = g && g.epoch_group_data;
     if (!d) return null;
     const members = (d.validation_weights || []).slice().sort((a, b) => Number(b.weight) - Number(a.weight)).map((m) => m.member_address);
-    return { w: Number(d.total_weight) || 0, members };
+    return { w: Number(d.total_weight) || 0, members, start: Number(d.poc_start_block_height) || 0 };
   }
   /** What users paid for AI in a settled epoch, host by host. null when it has no devshard results (yet, or any more). */
   async function paidIn(e, g) {
@@ -98,16 +100,22 @@ async function getJson(url) {
     return { paid, hosts };
   }
 
+  /** Add the per-token prices (now, or at a past block) to an epoch's [lowest, highest]. */
+  async function notePrice(e, height) {
+    const prices = await getJson(`${seed}${INF}/all_model_per_token_prices`, height);
+    const list = ((prices && prices.model_prices) || []).map((m) => Number(m.price)).filter((x) => x > 0);
+    if (!list.length) return false;
+    const r = row(e), lo = Math.min(...list), hi = Math.max(...list);
+    r.p = r.p ? [Math.min(r.p[0], lo), Math.max(r.p[1], hi)] : [lo, hi];
+    return true;
+  }
+
   // 1. The epoch that is on: its weight, and the per-token price now.
+  let currentStart = 0;
   try {
     const g = await group(current);
-    if (g) row(current).w = g.w;
-    const prices = await getJson(`${seed}${INF}/all_model_per_token_prices`);
-    const list = ((prices && prices.model_prices) || []).map((m) => Number(m.price)).filter((x) => x > 0);
-    if (list.length) {
-      const now = row(current), lo = Math.min(...list), hi = Math.max(...list);
-      now.p = now.p ? [Math.min(now.p[0], lo), Math.max(now.p[1], hi)] : [lo, hi];
-    }
+    if (g) { row(current).w = g.w; currentStart = g.start; }
+    await notePrice(current);
   } catch (err) { console.error(`epoch ${current}: ${err.message}`); }
 
   // 2. What users paid in the last epoch, and the one before if a run missed it while it could still be read.
@@ -120,6 +128,13 @@ async function getJson(url) {
       row(e).w = g.w;
       const r = await paidIn(e, g);
       if (r) { Object.assign(row(e), r); readPaid.push(e); }
+      // Its price at its first and last block, while the nodes still keep that state (about an epoch).
+      if (e === current - 1 && !(have[e].pAt) && g.start && currentStart) {
+        try {
+          const a = await notePrice(e, g.start), b = await notePrice(e, currentStart - 1);
+          if (a && b) have[e].pAt = [g.start, currentStart - 1];
+        } catch (_) { /* that state is gone: only what was paid is known */ }
+      }
     } catch (err) { console.error(`epoch ${e}: ${err.message}`); }
   }
 
