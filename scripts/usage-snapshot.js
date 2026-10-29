@@ -21,11 +21,16 @@
  *         highest] over the models and the times it was read: every run reads
  *         the price now for the epoch that is on, and the last epoch's at its
  *         first and last block, which the nodes still answer for about an
- *         epoch (older state is pruned). Tokens = paid ÷ price, where the
- *         price stayed one number.
+ *         epoch (older state is pruned).
  *
+ * What was paid is NOT a token count, and is not turned into one: an answer
+ * still running when an escrow's books close is charged its whole reservation,
+ * the input plus the most it may write (devshard settleLiveRecordLocked). On
+ * 29 October 2026 paid ÷ price came to about 900 billion "tokens" for epoch
+ * 439, where gonka.gg, reading the engines, counted about 130 billion a day.
  * The chain's own token counters (developer/stats_by_epochs_backwards and the
- * like) read zero since inference moved to devshards, so they are not used.
+ * like) read zero since inference moved to devshards. So tokens are not on the
+ * chain at all.
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
@@ -154,7 +159,7 @@ async function getJson(url, height) {
     epoch: current,
     method: "w: epoch_group_data total_weight. paid: the sum over the epoch's hosts of devshard_host_epoch_stats cost, in ngonka " +
       "((input + output tokens) x per-token price, devshard/state/machine.go), read while the chain still keeps it (until the next epoch ends). " +
-      "p: all_model_per_token_prices while the epoch was on, [lowest, highest]; tokens = paid / price where the two are equal.",
+      "p: all_model_per_token_prices while the epoch was on, [lowest, highest]. paid is what hosts were charged, not tokens: unfinished answers are charged their whole reservation.",
     from: epochs[0].e, to: epochs[epochs.length - 1].e,
     epochs
   };

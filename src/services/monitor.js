@@ -616,18 +616,13 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
       epoch: c.e, ...epochWhen(c.e, now), gpus: c.g != null ? c.g : c.gs, kinds: c.k || {}, measured: c.g != null
     })),
     // The network's total weight, and what users paid for AI (ngonka), epoch by
-    // epoch (oldest first). An answer costs its tokens, in and out, times the
-    // per-token price, so the tokens follow wherever that price was seen and
-    // stayed one number while the epoch was on.
-    usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => {
-      const price = u.p && u.p[0] === u.p[1] && u.p[0] > 0 ? u.p[0] : null;
-      return {
-        epoch: u.e, ...epochWhen(u.e, now),
-        weight: u.w > 0 ? u.w : null,
-        paid: u.paid != null ? u.paid : null, hosts: u.hosts != null ? u.hosts : null,
-        price, tokens: u.paid != null && price ? Math.round(u.paid / price) : null
-      };
-    })
+    // epoch (oldest first). What was paid is not turned into tokens: an answer
+    // still running when an epoch's books close is charged its whole reservation.
+    usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => ({
+      epoch: u.e, ...epochWhen(u.e, now),
+      weight: u.w > 0 ? u.w : null,
+      paid: u.paid != null ? u.paid : null, hosts: u.hosts != null ? u.hosts : null
+    }))
   };
 }
 
