@@ -147,38 +147,160 @@ async function prepareDataDirs(driver, bigMount, onData) {
   return { moved: (r.stdout.match(/^(moved|linked) \S+$/gm) || []), base };
 }
 
-async function startCore(driver, onData) {
-  // A fresh chain node needs far longer than a fixed `sleep 8` before its RPC
-  // answers — registering too early fails with "node RPC endpoint not
-  // responding". Poll until the container is actually up, then give the RPC a
-  // moment to bind.
+/** The host name in a node's address ("node1.gonka.ai"), or null when it is not a plain one. */
+const hostOf = (url) => { try { const h = new URL(url).hostname; return /^[A-Za-z0-9.-]+$/.test(h) ? h : null; } catch (_) { return null; } };
+
+/**
+ * Gonka's public nodes as this SERVER reaches them, fastest first: each one is
+ * asked for the genesis file, the very first thing the chain node downloads,
+ * with a time limit. Only the ones that answer come back.
+ *
+ * On 28 October 2026 a Spheron server's chain node hung for good on that first
+ * download: Gonka's `inferenced download-genesis` uses Go's http.Get, which has
+ * no timeout, and node2 never answered that server (node3 answered nobody that
+ * day). What answers GNOT's computer says nothing about what answers the
+ * server, so the server itself is asked.
+ */
+async function reachableSeeds(driver, seeds = K.get().seedNodes) {
+  const list = seeds.map((s) => String(s).replace(/\/+$/, "")).filter((s) => hostOf(s));
   const r = await driver.exec(
-    `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && ` +
-    `docker compose up tmkms node -d --no-deps && ` +
-    `cid=""; for i in $(seq 1 60); do ` +
-    `  cid=$(docker compose ps -q node 2>/dev/null); ` +
-    `  if [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" = "true" ]; then echo NODE_UP; break; fi; ` +
-    `  sleep 5; ` +
-    `done; ` +
-    // A crash-looping node passes a single "is it running?" check during the
-    // brief window between restarts, then is gone by registration time — which
-    // surfaces as a baffling DNS error. Re-check after a pause, and report the
-    // restart count so a loop is obvious.
-    `sleep 20; cid=$(docker compose ps -q node 2>/dev/null); ` +
-    `if [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" = "true" ]; then ` +
-    `  echo "NODE_STABLE restarts=$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null)"; fi; ` +
-    `docker compose logs --tail 40 node`,
-    { onData, timeoutMs: 900000 });
-  if (r.code !== 0) throw new Error("Couldn't start tmkms/node:\n" + (r.stderr || "").slice(-600));
-  if (!/NODE_UP/.test(r.stdout)) {
-    throw new Error("The chain node container never started. Its last log lines are above — " +
-      "they usually say why.");
+    list.map((s) => `( echo "SEED ${s} $(curl -s -m 20 -o /dev/null -w '%{http_code} %{time_total}' ${shq(s + "/chain-rpc/genesis")} 2>/dev/null || echo '000 99')" ) &`).join(" ") + " wait",
+    { timeoutMs: 120000 });
+  const answered = [];
+  for (const m of (r.stdout || "").matchAll(/^SEED (\S+) (\d{3}) ([\d.]+)/gm)) if (m[2] === "200") answered.push({ url: m[1], seconds: Number(m[3]) });
+  return answered.sort((a, b) => a.seconds - b.seconds).map((x) => x.url);
+}
+
+/**
+ * Point the chain node at another public node: every line of config.env that
+ * names the old one (the seed, its peer address, the state-sync servers) now
+ * names the new one, and the node container is made again on it. Its keys live
+ * in .tmkms and the keyring and are not touched.
+ */
+async function switchSeed(driver, from, to, onData) {
+  const a = hostOf(from), b = hostOf(to);
+  if (!a || !b) throw new Error(`Can't switch the chain node from ${from} to ${to}.`);
+  const r = await driver.exec(
+    `cd ${JOIN()} && sed -i -E '/^ *(export +)?(SEED_API_URL|SEED_NODE_RPC_URL|SEED_NODE_P2P_URL|RPC_SERVER_URL_1|RPC_SERVER_URL_2)=/ s#${a.replace(/\./g, "\\.")}#${b}#g' config.env && ` +
+    `source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose up -d --force-recreate --no-deps node 2>&1`,
+    { onData, timeoutMs: 300000 });
+  if (r.code !== 0) throw new Error(`Couldn't restart the chain node on ${b}:\n` + (r.stdout + r.stderr).slice(-600));
+}
+
+/**
+ * Start tmkms and the chain node, and wait until the node really answers: its
+ * RPC says how far it is, which is also what registration needs (it reads the
+ * consensus key there). A running container is not enough. Before it answers,
+ * the node downloads the genesis file, applies its settings and starts, and any
+ * of that can stall; the old two-minute wait gave up on a node that was simply
+ * stuck on its download.
+ *
+ * Every step shows in the activity log as it happens ("▶ Chain node: …"), so a
+ * slow node never looks like a stuck app. When the genesis download sits for
+ * over a minute, or fails, the public node is not answering this server: the
+ * next one that does goes into config.env and the node starts again on it.
+ */
+async function startCore(driver, onData, { pollMs = 6000, stallMs = 60 * 1000, waitMs = 15 * 60 * 1000 } = {}) {
+  const say = (s) => onData && onData(`▶ Chain node: ${s}\n`);
+  const up = await driver.exec(
+    `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose up tmkms node -d --no-deps 2>&1`,
+    { onData, timeoutMs: 600000 });
+  if (up.code !== 0) throw new Error("Couldn't start tmkms and the chain node:\n" + (up.stdout + up.stderr).slice(-600));
+
+  const WAIT_MS = waitMs, STALL_MS = stallMs, CRASHES = 6;
+  const started = Date.now(), tried = new Set();
+  let phase = "", since = Date.now(), firstRestarts = null, alive = null, lastLogs = [], seedLast = "";
+  const PHASES = {
+    genesis: (h) => `downloading the network's starting file (genesis) from ${h}`,
+    settings: () => "applying its settings",
+    starting: () => "starting up",
+    restarting: (h, n) => `restarted ${n} times, reading why`
+  };
+  while (Date.now() - started < WAIT_MS) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const s = await driver.exec(
+      `cd ${JOIN()} && echo "STATE $(docker inspect -f '{{.State.Status}} {{.RestartCount}}' node 2>/dev/null)"; ` +
+      `echo "SEED $(grep -m1 -E '^ *(export +)?SEED_NODE_RPC_URL=' config.env | sed 's/^[^=]*=//')"; ` +
+      `docker logs --tail 12 node 2>&1 | tail -12 | sed 's/^/LOG /'; ` +
+      // Asked inside the container; whichever of these its image has answers.
+      `echo "RPC $(timeout 15 docker exec node sh -c 'inferenced status 2>/dev/null || curl -s -m 5 http://127.0.0.1:26657/status 2>/dev/null || wget -qO- -T 5 http://127.0.0.1:26657/status 2>/dev/null' | tr -d '\\n' | head -c 4000)"`,
+      { timeoutMs: 90000 });
+    const out = s.stdout || "";
+    const [, status = "", restartText = ""] = /^STATE (\S*) ?(\d*)/m.exec(out) || [];
+    const restarts = Number(restartText) || 0;
+    if (firstRestarts === null) firstRestarts = restarts;
+    const seedNow = ((/^SEED (\S*)/m.exec(out) || [])[1] || "").replace(/\/chain-rpc\/?$/, "").replace(/\/+$/, "");
+    if (seedNow) seedLast = seedNow;
+    lastLogs = [...out.matchAll(/^LOG (.*)$/gm)].map((m) => m[1]);
+    const rpc = ((/^RPC (.*)$/m.exec(out) || [])[1] || "");
+
+    // It answers: done. How far it has synced is the Verify step's to show.
+    if (/sync_info|SyncInfo/.test(rpc)) {
+      const height = Number((/"latest_block_height"\s*:\s*"?(\d+)/i.exec(rpc) || [])[1]) || null;
+      const catchingUp = /"catching_up"\s*:\s*true/i.test(rpc);
+      say(catchingUp ? `answering; catching up with the network${height ? ` (block ${height.toLocaleString("en")})` : ""}` : "answering");
+      return { ok: true, seed: seedNow, catchingUp, height };
+    }
+
+    const last = lastLogs[lastLogs.length - 1] || "", all = lastLogs.join("\n");
+    const failedDownload = /failed to download genesis/i.test(all);
+    const now = /download-genesis/.test(last) ? "genesis"
+      // (the settings lines also name state-sync and snapshots, so only the node's own start counts here)
+      : /Starting node|cosmovisor run|CometBFT|INF.*(state ?sync|snapshot|Starting)/i.test(all) ? "starting"
+      : /Applying configuration|set-seeds|set-statesync|\+ kv /i.test(all) ? "settings"
+      : status === "restarting" || status === "exited" ? "restarting" : phase;
+    if (now && now !== phase) {
+      phase = now; since = Date.now();
+      say(PHASES[phase](hostOf(seedNow) || "a public node", restarts - firstRestarts));
+    }
+
+    // The public node is not answering this server: on to the next one that does.
+    if ((phase === "genesis" && Date.now() - since > STALL_MS) || failedDownload) {
+      tried.add(seedNow);
+      if (!alive) alive = await reachableSeeds(driver);
+      const next = alive.find((x) => !tried.has(x));
+      if (!next) {
+        throw new Error(
+          `The chain node can't download the network's starting file: ${hostOf(seedNow) || seedNow} doesn't answer this server, ` +
+          `and no other public Gonka node did either.\n\n` +
+          `Check that the server can reach the internet (for example: curl -I http://node1.gonka.ai:8000/chain-rpc/status), ` +
+          `then press "Run launch sequence" again.\n\nThe chain node's last lines:\n${lastLogs.join("\n")}`);
+      }
+      say(`${hostOf(seedNow)} isn't answering this server; switching to ${hostOf(next)}`);
+      await switchSeed(driver, seedNow, next, onData);
+      phase = ""; since = Date.now(); firstRestarts = null;
+      continue;
+    }
+
+    // Starting over and over is not slowness: stop and say why.
+    if (restarts - firstRestarts >= CRASHES) {
+      throw new Error(
+        `The chain node keeps stopping and starting again (${restarts - firstRestarts} times while GNOT waited), so it never gets to answer.\n\n` +
+        `Its last lines usually say why:\n${lastLogs.join("\n")}`);
+    }
   }
-  if (!/NODE_STABLE/.test(r.stdout)) {
-    throw new Error("The chain node started but then stopped again (it's crash-looping), so registration " +
-      "would fail with a confusing DNS error. Its last log lines are above — they usually say why.");
-  }
-  return { ok: true };
+  throw new Error(
+    `The chain node didn't answer within 15 minutes. It was ${phase ? PHASES[phase](hostOf(seedLast) || "a public node", 0) : "starting"} when GNOT stopped waiting.\n\n` +
+    `Press "Run launch sequence" again: it carries on from where it is. Its last lines:\n${lastLogs.join("\n")}`);
+}
+
+/**
+ * What the server looks like now, for whoever helps: the containers, the chain
+ * node's last lines, disk, memory, and which public nodes answer it. Nothing
+ * secret: config.env and the API container's log (which can carry settings)
+ * are never read out.
+ */
+async function diagnostics(driver) {
+  const seeds = K.get().seedNodes.map((s) => String(s).replace(/\/+$/, "")).filter((s) => hostOf(s));
+  const r = await driver.exec(
+    `cd ${JOIN()} 2>/dev/null; echo "## docker compose ps"; docker compose ps -a 2>&1 | head -30; ` +
+    `echo; echo "## chain node, last 60 lines"; docker logs --tail 60 node 2>&1; ` +
+    `echo; echo "## disk"; df -h . / 2>&1 | head -6; echo; echo "## memory"; free -g 2>&1 | head -3; ` +
+    `echo; echo "## GPUs"; nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>&1 | head -10; ` +
+    `echo; echo "## public Gonka nodes, from this server"; ` +
+    seeds.map((s) => `echo "${s}: $(curl -s -m 15 -o /dev/null -w '%{http_code} in %{time_total}s' ${shq(s + "/chain-rpc/status")} 2>/dev/null || echo 'no answer')"`).join("; "),
+    { timeoutMs: 120000 });
+  return (r.stdout || "") + (r.stderr || "");
 }
 
 /**
@@ -536,7 +658,7 @@ async function containersStatus(driver) {
 module.exports = {
   cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName,
   listComposeImages, serverArch,
-  pullImages, startCore, warmKeyExists, createWarmKey, getConsensusKey,
+  pullImages, startCore, reachableSeeds, switchSeed, diagnostics, warmKeyExists, createWarmKey, getConsensusKey,
   registerHost, launchAll, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
   feeBudget
 };

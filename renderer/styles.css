@@ -563,6 +563,11 @@ button:disabled:hover { border-color: var(--line-strong); background: transparen
   margin: 14px 0;
 }
 
+/* the Launch step's card when something fails: where, in plain words, and two ways on */
+.problem-card { border-color: var(--red); }
+.problem-card h3 { color: var(--text); }
+.problem-card pre { max-height: 320px; overflow: auto; }
+
 /* the first step's "No SSH key yet?": in plain sight, with its own button */
 .ssh-early { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--wash); font-size: 13px; line-height: 1.55; }
 

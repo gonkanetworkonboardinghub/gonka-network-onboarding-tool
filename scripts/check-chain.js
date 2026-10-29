@@ -204,6 +204,14 @@ function commandsIn(html) {
     if (info && info.version) { seed = s; version = info.version; height = Number(info.last_block_height); break; }
   }
   if (!seed) throw new Error("no Gonka node answered — nothing can be checked");
+  // Every public node the app may send a new chain node to: its first download
+  // is the genesis file, and Gonka's downloader waits for ever on a node that
+  // does not answer (October 2026). The app steers around one from the server
+  // (deploy.reachableSeeds), but a node that answers nobody should leave the list.
+  for (const s of k.seedNodes) {
+    const g = await get(`${s}/chain-rpc/genesis`);
+    if (g.status !== 200) warnings.push(`${s} didn't give the genesis file (${g.status || g.error}). New nodes are steered around it, but if it stays down it should leave knowledge.seedNodes.`);
+  }
   seen.chainVersion = version;
   if (was.chainVersion && was.chainVersion !== version) changed(`Gonka's chain went from ${was.chainVersion} to ${version}.`);
 

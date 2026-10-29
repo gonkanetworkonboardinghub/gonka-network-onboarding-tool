@@ -101,6 +101,8 @@ const errorSteps = new Set();
 /* Console                                                             */
 /* ------------------------------------------------------------------ */
 function logLine(line, stream) {
+  const step = /^▶ Chain node: (.+)$/m.exec(line);
+  if (step && S.coreProgress) S.coreProgress(step[1]);
   const out = $("#console-out");
   const span = document.createElement("span");
   if (stream === "stderr") span.className = "err";
@@ -891,6 +893,7 @@ RENDER.connect = () => {
         setBusy(true, "Checking local machine…");
         const r = await api("connect", { mode: "local" });
         S.connected = true;
+        S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
         toast("Connected: " + r.info);
         refreshTermPrompt();   // the command line can work from here on
         markDone();
@@ -1040,6 +1043,7 @@ RENDER.connect = () => {
         passphrase: s.passphrase || undefined
       }});
       S.connected = true;
+      S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
       toast("Connected: " + r.info);
       refreshTermPrompt();   // the command line can work from here on
       markDone();
@@ -1048,7 +1052,7 @@ RENDER.connect = () => {
       // written with an empty keyring password.
       if (S.resumeTo && S.resumeTo > 3) { go(4); return; }
       go(3);
-    } catch (e) { markError(); alert("Connection failed: " + e.message); }
+    } catch (e) { markError(); showProblem(null, { at: t("Connect"), message: t("Connection failed:") + " " + e.message, retry: () => $("#b-conn").click() }); }
     finally { setBusy(false); }
   };
 };
@@ -1857,6 +1861,7 @@ RENDER.review = () => {
         <div class="btn-row" style="margin-top:8px"><button id="b-edit-node">${esc(t("Change it"))}</button></div>
         <p class="small">${esc(t("It is changed on the Model step, under \"Edit the configuration\". This takes you there."))}</p>`)}
     </div>
+    <div id="seed-warn"></div>
     <div class="btn-row">
       <button id="b-back">Back</button>
       <button class="primary" id="b-write">Write to server & continue</button>
@@ -1877,7 +1882,20 @@ RENDER.review = () => {
         }
       } catch (_) {}
     }
+    // Which of Gonka's public nodes answer this SERVER, fastest first: the chain
+    // node downloads its first file from one, and a node that answers this
+    // computer may not answer the server (deploy.reachableSeeds).
+    if (!S.serverSeeds) {
+      try {
+        S.serverSeeds = await api("reachableSeeds");
+        if (S.serverSeeds.length) logLine(`\nPublic Gonka nodes that answer your server, fastest first: ${S.serverSeeds.join(", ")}\n`);
+      } catch (_) { S.serverSeeds = null; }
+    }
+    if (S.serverSeeds && !S.serverSeeds.length && $("#seed-warn")) {
+      $("#seed-warn").innerHTML = `<div class="warn-banner">${esc(t("None of Gonka's public nodes answered your server just now, and the chain node needs one to start. Check that the server can reach the internet, then come back to this step."))}</div>`;
+    }
     const answers = {
+      seeds: S.serverSeeds && S.serverSeeds.length ? S.serverSeeds : undefined,
       keyName: S.serverKeyName || ("node-" + Math.floor(100000 + Math.random() * 900000)),
       keyringPassword: S.wallet.passphrase,   // reuse — one passphrase to remember
       mode: S.net.scheme,
@@ -1928,6 +1946,7 @@ RENDER.review = () => {
 
   $("#b-write").onclick = async () => {
     if (!S.configEnvText) return;
+    if ($("#problem-box")) $("#problem-box").innerHTML = "";
     const configEnv = envToWrite();
     if (configEnv === null) return;
     S.configEnvText = configEnv;
@@ -1937,7 +1956,7 @@ RENDER.review = () => {
       await api("writeConfigs", { configEnv, nodeConfigJson: S.nodeConfigText });
       toast("Configuration written to the server.");
       markDone(); go(8);
-    } catch (e) { markError(); alert(e.message); }
+    } catch (e) { markError(); showProblem(null, { at: t("Review config"), message: e.message, retry: () => $("#b-write").click() }); }
     finally { setBusy(false); }
   };
 };
@@ -1961,6 +1980,7 @@ RENDER.weights = () => {
   $("#b-back").onclick = () => go(7);
   $("#b-skip").onclick = () => { markDone(); go(9); };
   $("#b-dl").onclick = async () => {
+    if ($("#problem-box")) $("#problem-box").innerHTML = "";
     try {
       setBusy(true, "Downloading model weights…");
       $("#b-dl").disabled = true;
@@ -1968,12 +1988,63 @@ RENDER.weights = () => {
       S.weightsDone = true;
       toast("All model weights downloaded.");
       markDone(); RENDER.weights();
-    } catch (e) { markError(); alert(e.message); $("#b-dl").disabled = false; }
+    } catch (e) { markError(); showProblem(null, { at: t("Model weights"), message: e.message, retry: () => $("#b-dl").click() }); $("#b-dl").disabled = false; }
     finally { setBusy(false); }
   };
 };
 
 /* --- 9 Deploy -------------------------------------------------------- */
+/* Something on the server failed: say where, in plain words, with the details
+   folded away; "Try again" runs the step again (it skips what is done), and
+   "Copy the details" copies the error with the server's state (containers,
+   the chain node's log, disk, which public nodes answer it), ready to paste
+   into the Gonka Discord or one's own AI. No secret is ever in it. */
+function showProblem(box, { at, message, retry }) {
+  if (!box) box = $("#problem-box");
+  if (!box && $("#stage")) {
+    box = document.createElement("div");
+    box.id = "problem-box";
+    const rows = $("#stage").querySelectorAll(".btn-row");
+    const last = rows[rows.length - 1];
+    if (last) last.parentNode.insertBefore(box, last); else $("#stage").appendChild(box);
+  }
+  if (!box) return alert(message);
+  const text = String(message || "");
+  const cut = text.indexOf("\n\n");
+  const head = cut > 0 ? text.slice(0, cut) : text.split("\n")[0];
+  const rest = cut > 0 ? text.slice(cut + 2) : text.split("\n").slice(1).join("\n");
+  box.innerHTML = `
+    <div class="card problem-card">
+      <h3>${esc(at ? t("Stopped at: {step}", { step: at }) : t("Something went wrong"))}</h3>
+      <p>${esc(head)}</p>
+      ${rest.trim() ? more("Details", `<pre class="preview mono" style="white-space:pre-wrap">${esc(rest)}</pre>`) : ""}
+      <div class="btn-row" style="margin-top:10px">
+        ${retry ? `<button class="primary" id="b-problem-retry">${esc(t("Try again"))}</button>` : ""}
+        <button id="b-problem-copy">${esc(t("Copy the details"))}</button>
+      </div>
+      <p class="small">${esc(t("\"Copy the details\" copies what went wrong with your server's state, ready to paste into the Gonka Discord or your own AI. You can also look yourself: the command line under the activity log runs commands on your server, for example: docker compose ps"))}</p>
+    </div>`;
+  if (retry) $("#b-problem-retry").onclick = retry;
+  $("#b-problem-copy").onclick = async () => {
+    const b = $("#b-problem-copy");
+    b.disabled = true; b.textContent = t("Reading your server…");
+    let server = "";
+    try { server = await api("diagnostics"); } catch (err) { server = "(couldn't read the server: " + err.message + ")"; }
+    // Nothing secret leaves: the wallet passphrase never appears, even by accident.
+    const hide = (x) => [S.wallet && S.wallet.passphrase, S.ssh && S.ssh.password, S.ssh && S.ssh.passphrase]
+      .filter((p) => p && p.length >= 4).reduce((acc, p) => acc.split(p).join("[hidden]"), String(x));
+    const report = hide([
+      `GNOT ${(S.update && S.update.current) || ""}, Gonka Host Setup, step: ${at || "?"}`,
+      "", "## What GNOT said", text, "", server
+    ].join("\n"));
+    try { await navigator.clipboard.writeText(report); }
+    catch (_) { const ta = document.createElement("textarea"); ta.value = report; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    b.disabled = false; b.textContent = t("Copied ✓");
+    setTimeout(() => { if (document.contains(b)) b.textContent = t("Copy the details"); }, 2500);
+  };
+  box.scrollIntoView({ block: "nearest" });
+}
+
 RENDER.deploy = () => {
   const tasks = [
     { id: "pull",    label: "Download Gonka software (Docker images)" },
@@ -2010,6 +2081,7 @@ RENDER.deploy = () => {
 
   $("#b-run").onclick = async () => {
     $("#b-run").disabled = true;
+    $("#deploy-extra").innerHTML = "";
     try {
       setBusy(true, "Checking image compatibility…");
       set("pull", "running");
@@ -2036,7 +2108,8 @@ RENDER.deploy = () => {
 
       setBusy(true, "Starting core services…");
       set("core", "running");
-      await api("startCore");
+      S.coreProgress = (what) => set("core", "running", what);
+      try { await api("startCore"); } finally { S.coreProgress = null; }
       set("core", "done");
 
       setBusy(true, "Creating operational key…");
@@ -2129,7 +2202,8 @@ RENDER.deploy = () => {
       markError();
       const running = document.querySelector(".task.running");
       if (running) running.className = "task err";
-      alert(e.message);
+      const at = running ? running.querySelector(".t-label").textContent : "";
+      showProblem($("#deploy-extra"), { at, message: e.message, retry: () => $("#b-run").click() });
       $("#b-run").disabled = false;
     } finally { setBusy(false); }
   };
@@ -2645,7 +2719,7 @@ RENDER.collateral = () => {
             { amt: gnk(onChain.amount.amount) })}</div>`;
           markDone();
           setTimeout(() => go(11), 1200);   // -> Verify, where the waiting happens
-        } catch (e) { alert(e.message); }
+        } catch (e) { showProblem(null, { at: t("Collateral"), message: e.message, retry: () => $("#b-dep") && $("#b-dep").click() }); }
         finally { setBusy(false); }
       };
     } catch (e) {

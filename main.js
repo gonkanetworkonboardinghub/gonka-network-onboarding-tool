@@ -330,6 +330,10 @@ ipcMain.handle("deploy:startCore", wrap(async () => {
   }
   return deploy.startCore(d, onData);
 }));
+// Which of Gonka's public nodes answer this server (not this computer), fastest first.
+ipcMain.handle("deploy:reachableSeeds", wrap(async () => deploy.reachableSeeds(needDriver())));
+// The server's state for whoever helps: containers, the chain node's log, disk, memory. No secrets.
+ipcMain.handle("deploy:diagnostics", wrap(async () => deploy.diagnostics(needDriver())));
 ipcMain.handle("deploy:warmKeyExists", wrap(async () => deploy.warmKeyExists(needDriver())));
 ipcMain.handle("deploy:createWarmKey", wrap(async () => deploy.createWarmKey(needDriver(), onData)));
 ipcMain.handle("deploy:getConsensusKey", wrap(async () => deploy.getConsensusKey(needDriver())));

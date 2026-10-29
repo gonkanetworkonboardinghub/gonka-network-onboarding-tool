@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld("gonka", {
   archPreflight: call("deploy:archPreflight"),
   pull: call("deploy:pull"),
   startCore: call("deploy:startCore"),
+  reachableSeeds: call("deploy:reachableSeeds"),
+  diagnostics: call("deploy:diagnostics"),
   warmKeyExists: call("deploy:warmKeyExists"),
   createWarmKey: call("deploy:createWarmKey"),
   getConsensusKey: call("deploy:getConsensusKey"),

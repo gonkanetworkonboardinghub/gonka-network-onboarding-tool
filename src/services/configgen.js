@@ -24,7 +24,11 @@ function answerDrivenVars(answers) {
   const https = answers.mode === "https";
   const port = https ? 8443 : 8000;
   const publicUrl = `${https ? "https" : "http"}://${answers.host}:${port}`;
-  const seed = k.seedNodes[0];
+  // The public nodes that answer the server, fastest first (deploy.reachableSeeds,
+  // asked from the server itself); Gonka's own order when they could not be asked.
+  const seeds = (answers.seeds && answers.seeds.length ? answers.seeds : k.seedNodes).map((s) => String(s).replace(/\/+$/, ""));
+  const seed = seeds[0];
+  const seedHost = (() => { try { return new URL(seed).hostname; } catch (_) { return null; } })();
 
   const vars = {
     KEY_NAME: answers.keyName,
@@ -40,7 +44,11 @@ function answerDrivenVars(answers) {
     HF_HOME: answers.hfHome || k.hfHome,
     SEED_API_URL: seed,
     SEED_NODE_RPC_URL: seed + "/chain-rpc/",
-    SEED_NODE_P2P_URL: k.seedP2P,
+    // Gonka's public nodes take peers on port 5000.
+    SEED_NODE_P2P_URL: seedHost ? `tcp://${seedHost}:5000` : k.seedP2P,
+    // State sync checks what it is given against two nodes: the two that answer the server best.
+    RPC_SERVER_URL_1: seed + "/chain-rpc/",
+    RPC_SERVER_URL_2: (seeds[1] || seed) + "/chain-rpc/",
     DAPI_API__POC_CALLBACK_URL: "http://api:9100",
     DAPI_CHAIN_NODE__URL: "http://node:26657",
     DAPI_CHAIN_NODE__P2P_URL: "http://node:26656",
