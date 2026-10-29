@@ -2224,6 +2224,16 @@ RENDER.deploy = () => {
   }
 };
 
+/* A participant's status in words: the chain's own record says "ACTIVE", and
+   Gonka's /v2/participants answers the same as a number (participant.proto's
+   ParticipantStatus), which showed as a bare "1". */
+function participantStatus(v) {
+  const names = { 0: "Unspecified", 1: "Active", 2: "Inactive", 3: "Invalid", 4: "Ramping", 5: "Unconfirmed" };
+  const n = typeof v === "number" || /^d+$/.test(String(v)) ? names[Number(v)] : null;
+  const word = n || (v ? String(v).replace(/^PARTICIPANT_STATUS_/, "").toLowerCase().replace(/^./, (c) => c.toUpperCase()) : "—");
+  return word === "—" ? word : t(word);
+}
+
 /* --- 10 Verify ------------------------------------------------------- */
 RENDER.verify = () => {
   if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; }
@@ -2526,7 +2536,7 @@ RENDER.verify = () => {
           ${reachHtml}
           ${tiles([
             { label: "Address on the network", value: esc(pd.inferenceUrl || pd.inference_url || "—") },
-            { label: "Status", value: esc(pd.status || "—") }
+            { label: "Status", value: esc(participantStatus(pd.status)) }
           ])}
           <hr class="sep">
           <p class="small">${t("Registering no longer waits for the node to finish syncing, so keep watching this until every line is ticked — your node can only take part in Proof of Compute once it's caught up.")}</p>
