@@ -399,17 +399,28 @@ async function broadcast(seed, txBytes) {
   return { txhash: r.txhash, code: Number(r.code || 0), rawLog: r.raw_log || "" };
 }
 
-/** Poll until the tx is in a block (the CLI waits 20 × 3 s). null = not seen yet. */
-async function waitForTx(seed, txhash, onData, tries = 20, delayMs = 3000) {
+/**
+ * Poll until the tx is in a block, about a minute and a half. Every public
+ * node is asked, not only the one it was sent through: on 29 October 2026
+ * node2 answered every lookup with "transaction indexing is disabled", so a
+ * grant that had landed in block 6,787,965 looked lost and the setup stopped.
+ * null = not seen yet.
+ */
+async function waitForTx(seed, txhash, onData, tries = 30, delayMs = 3000) {
+  let others = [];
+  try { others = require("../knowledge").get().seedNodes || []; } catch (_) { /* only the one it was sent through */ }
+  const nodes = [...new Set([seed, ...others].map(trimBase))];
   for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, delayMs));
-    try {
-      const { status, body } = await getJson(`${trimBase(seed)}/chain-api/cosmos/tx/v1beta1/txs/${txhash}`);
-      const r = body && body.tx_response;
-      if (status === 200 && r && Number(r.height) > 0) {
-        return { height: Number(r.height), code: Number(r.code || 0), rawLog: r.raw_log || "", gasUsed: r.gas_used, gasWanted: r.gas_wanted };
-      }
-    } catch (_) { /* transient — keep polling */ }
+    for (const node of nodes) {
+      try {
+        const { status, body } = await getJson(`${node}/chain-api/cosmos/tx/v1beta1/txs/${txhash}`, 8000);
+        const r = body && body.tx_response;
+        if (status === 200 && r && Number(r.height) > 0) {
+          return { height: Number(r.height), code: Number(r.code || 0), rawLog: r.raw_log || "", gasUsed: r.gas_used, gasWanted: r.gas_wanted };
+        }
+      } catch (_) { /* this node can't say just now: the next one may */ }
+    }
     onData && onData(".");
   }
   return null;
