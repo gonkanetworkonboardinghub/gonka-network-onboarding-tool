@@ -116,8 +116,8 @@ const overridable = {
   // The GPUs that took part each epoch, and of what kind
   // (scripts/capacity-snapshot.js), for the network page's GPU chart.
   capacityUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/capacity.json",
-  // The network's total weight and what users paid for AI each epoch, with the
-  // per-token price (scripts/usage-snapshot.js), for the network page's charts.
+  // The network's total weight each epoch (scripts/usage-snapshot.js), for the
+  // network page's weight chart.
   usageUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/usage.json",
 
   // API paths (relative to a node base URL)

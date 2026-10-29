@@ -772,13 +772,11 @@ function monGpusCard(o) {
   </div>`;
 }
 
-/* The network's total weight, and what users paid for AI, epoch by epoch
-   (usage.json, scripts/usage-snapshot.js). Weight is what the machines proved
-   they can compute, so it does not depend on what hosts report. What users paid
-   is what the chain records each host was charged; it is not turned into tokens,
-   because an answer still running when the books close is charged its whole
-   reservation (devshard settleLiveRecordLocked): divided by the price it gave
-   about seven times the tokens the engines counted. */
+/* The network's total weight, epoch by epoch (usage.json,
+   scripts/usage-snapshot.js). Weight is what the machines proved they can
+   compute, so it does not depend on what hosts report. What users paid for AI
+   is collected too but not shown: the chain charges an answer still running
+   when the books close its whole reservation, so it says little about use. */
 function monUsageCards(o) {
   const use = o.usage || [];
   const notYet = `<p class="small">${esc(t("Not collected yet. It fills in over the next few hours."))}</p>`;
@@ -791,24 +789,7 @@ function monUsageCards(o) {
     <p class="small">${esc(t("{a} then, {b} in epoch {n}.", { a: monShortNum(weight[0].weight), b: monShortNum(wLast.weight), n: wLast.epoch }))}</p>
     ${more("What is weight?", `<p>${esc(t("What the network's machines proved they can compute in the epoch's Proof of Compute, added up. Rewards are shared out by it, and unlike the GPU count it does not depend on what hosts report."))}</p>`)}
   </div>`;
-  const ai = use.filter((u) => u.paid != null && u.hosts > 0 && u.epoch < o.epoch.index);
-  const aHead = `<h3>${esc(t("What users paid for AI, epoch by epoch"))}</h3>`;
-  const aLast = ai[ai.length - 1];
-  // The last epoch's devshards keep settling into it while the next one is on.
-  const settling = aLast && aLast.epoch === o.epoch.index - 1;
-  // One epoch is a figure, not a line: the chain keeps these results only until the next epoch ends, so the line starts at epoch 439.
-  const aBig = ai.length === 1 ? `<div class="mon-paid-main"><b>${esc(monGnkShort(aLast.paid))}</b><span>${esc(monEpochWhen(aLast))}</span></div>` : "";
-  const aCard = !ai.length ? `<div class="card">${aHead}${notYet}</div>` : `<div class="card">${aHead}
-    ${aBig || monPlot("ai", { label: t("What users paid for AI, epoch by epoch"), kind: "line", unit: "GNK", fmt: (v) => monShortNum(v),
-      points: ai.map((u) => ({ y: u.paid / MON_NGONKA, x: monDay(u.at) || String(u.epoch), tip: [t("{gnk} paid for AI", { gnk: monGnkShort(u.paid) }), monEpochWhen(u)] })) })}
-    <p class="small">${esc(settling
-      ? t("Epoch {n} so far: {gnk} paid for AI. It keeps adding up until epoch {m} ends.", { n: aLast.epoch, m: o.epoch.index, gnk: monGnkShort(aLast.paid) })
-      : t("Epoch {n}: {gnk} paid for AI.", { n: aLast.epoch, gnk: monGnkShort(aLast.paid) }))}</p>
-    ${more("What does this count?", `
-      <p>${esc(t("What users paid the hosts for AI answers in each epoch, read from the chain host by host. It is not a count of tokens: the chain keeps what each host was charged, and an answer still running when the epoch's books close is charged for all it reserved, so the tokens can't be worked out from it."))}</p>
-      <p>${esc(t("The network's AI runs through devshards. The chain keeps each epoch's devshard results only until the next epoch ends, so GNOT reads every epoch as it closes, and the line starts at epoch 439 (October 2026). It grows by one point each epoch."))}</p>`)}
-  </div>`;
-  return `<div class="mon-two">${wCard}${aCard}</div>`;
+  return wCard;
 }
 
 /* ---- every host -------------------------------------------------------- */

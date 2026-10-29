@@ -1,16 +1,12 @@
-PROMPT FOR BASE44 — Monitor/Vote: the network's total weight and what users paid for AI
-(attach network-weight-ai.png from the folder "monitor-update-pictures" — a
-reference from the app for the layout only, do not put it on the site — then
-paste everything below and publish)
+PROMPT FOR BASE44 — Monitor/Vote: the network's total weight, epoch by epoch
+(paste everything below and publish)
 
 1. REPLACE THE WHOLE CODE of the backend function gnot-monitor with EXACTLY the
    code below, unchanged — not rewritten, not shortened, not split, not
    reformatted. It is generated from the app's own code. It answers exactly as
-   before, and The network's answer (view "network") now also has
-   usage: [{ epoch, at, est, weight, paid, hosts, price, tokens }], one entry
-   per epoch, oldest first: weight = the epoch's total weight; paid = what
-   users paid for AI in it, in ngonka (null when unknown); tokens = the AI
-   tokens it paid for (null when the price per token was not recorded).
+   before, and the network's answer (view "network") now also has
+   usage: [{ epoch, at, est, weight }], one entry per epoch, oldest first:
+   weight = the network's total weight in that epoch.
 
 ----- code for gnot-monitor (start) -----
 // gnot-monitor — the data behind the website's Monitor/Vote pages.
@@ -584,7 +580,7 @@ async function hardwareSetups() {
  * minutes; null when it cannot be had.
  */
 let capFile = { at: 0, data: null };
-/** The network's total weight and what users paid for AI, each epoch (scripts/usage-snapshot.js), kept ten minutes. */
+/** The network's total weight each epoch (scripts/usage-snapshot.js), kept ten minutes. */
 let useFile = { at: 0, data: null };
 async function usageFile() {
   const url = K.get().usageUrl;
@@ -715,19 +711,13 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     capacity: ((cap && cap.epochs) || []).filter((c) => c.e > now.index - epochs && (c.g != null || c.gs != null)).map((c) => ({
       epoch: c.e, ...epochWhen(c.e, now), gpus: c.g != null ? c.g : c.gs, kinds: c.k || {}, measured: c.g != null
     })),
-    // The network's total weight, and what users paid for AI (ngonka), epoch by
-    // epoch (oldest first). An answer costs its tokens, in and out, times the
-    // per-token price, so the tokens follow wherever that price was seen and
-    // stayed one number while the epoch was on.
-    usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => {
-      const price = u.p && u.p[0] === u.p[1] && u.p[0] > 0 ? u.p[0] : null;
-      return {
-        epoch: u.e, ...epochWhen(u.e, now),
-        weight: u.w > 0 ? u.w : null,
-        paid: u.paid != null ? u.paid : null, hosts: u.hosts != null ? u.hosts : null,
-        price, tokens: u.paid != null && price ? Math.round(u.paid / price) : null
-      };
-    })
+    // The network's total weight, epoch by epoch (oldest first). What users paid
+    // for AI is in the file too but not passed on: an answer still running when
+    // an epoch's books close is charged its whole reservation, so it says little.
+    usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => ({
+      epoch: u.e, ...epochWhen(u.e, now),
+      weight: u.w > 0 ? u.w : null
+    }))
   };
 }
 
@@ -1080,53 +1070,23 @@ Deno.serve(async (req) => {
 });
 ----- code for gnot-monitor (end) -----
 
-2. THE NETWORK (/monitor/network): a new row of two cards, as in the picture,
-   right after the row with "Hosts, epoch by epoch" and "GPUs hosts report,
-   epoch by epoch", in the same look as those two cards and their charts
-   (line chart, the same axis and pointing box, the same fold-outs):
-
-   a. "Total weight, epoch by epoch"
-      - A line chart of usage[].weight, for the entries where weight is above
-        0; the dates under it as on the other charts.
-      - Pointing box: "Total weight {weight, with thousands separators}" and,
-        under it, the epoch line the other charts use ("Epoch {n} · began
-        {date and time}", or "began about" when est is true).
-      - Under the chart, small: "{first weight} then, {last weight} in epoch
-        {its epoch}." with the weights short, as 986.3k and 1.7M.
-      - A fold-out "What is weight?": "What the network's machines proved they
-        can compute in the epoch's Proof of Compute, added up. Rewards are
-        shared out by it, and unlike the GPU count it does not depend on what
-        hosts report."
-
-   b. "What users paid for AI, epoch by epoch"
-      - Its entries: usage[] where paid is not null, hosts is above 0, and the
-        epoch is before the current one.
-      - With two or more: a line chart of paid ÷ 1,000,000,000 (GNK), with
-        "GNK" above the axis as the node page's reward chart. Pointing box:
-        "{paid in GNK, short} paid for AI", then "about {tokens, short} tokens"
-        (short as 719.67B), or "tokens unknown: the price was not recorded
-        then" when tokens is null, then the epoch line.
-      - With exactly one (as today: epoch 439): no chart; instead the big
-        figure "about {tokens, short} tokens" (or the GNK paid when tokens is
-        null) with the epoch line under it, as in the picture.
-      - Under it, small, about the last entry: when its epoch is the one just
-        before the current epoch, "Epoch {n} so far: about {tokens} tokens of
-        AI, {GNK} paid. It keeps adding up until epoch {current} ends." (or
-        "Epoch {n} so far: {GNK} paid for AI. It keeps adding up until epoch
-        {current} ends." without tokens); otherwise "Epoch {n}: about {tokens}
-        tokens of AI, {GNK} paid." (or "Epoch {n}: {GNK} paid for AI.").
-      - A fold-out "What does this count?" with two paragraphs:
-        "What users paid the hosts for AI answers in each epoch, read from the
-        chain host by host. An answer costs its tokens, in and out, times the
-        price per token, so wherever that price was recorded the tokens follow
-        from it."
-        "The network's AI runs through devshards. The chain keeps each epoch's
-        devshard results only until the next epoch ends, so GNOT reads every
-        epoch as it closes, and the line starts at epoch 439 (October 2026).
-        It grows by one point each epoch."
-   - Either card with no entries: "Not collected yet. It fills in over the
-     next few hours."
-   - On phones the two cards stack, as the row above.
+2. THE NETWORK (/monitor/network): a new card, full width, right after the row
+   with "Hosts, epoch by epoch" and "GPUs hosts report, epoch by epoch", in the
+   same look as those cards and their charts (line chart, the same axis and
+   pointing box, the same fold-outs):
+   Title: "Total weight, epoch by epoch"
+   - A line chart of usage[].weight, for the entries where weight is above 0;
+     the dates under it as on the other charts.
+   - Pointing box: "Total weight {weight, with thousands separators}" and,
+     under it, the epoch line the other charts use ("Epoch {n} · began {date
+     and time}", or "began about" when est is true).
+   - Under the chart, small: "{first weight} then, {last weight} in epoch {its
+     epoch}." with the weights short, as 986.3k and 1.7M.
+   - A fold-out "What is weight?": "What the network's machines proved they can
+     compute in the epoch's Proof of Compute, added up. Rewards are shared out
+     by it, and unlike the GPU count it does not depend on what hosts report."
+   - With no entries: "Not collected yet. It fills in over the next few hours."
+   - Nothing about AI, tokens or what users paid on this card.
 
 Add the new words to every language the site offers. Change nothing else on
 the site.

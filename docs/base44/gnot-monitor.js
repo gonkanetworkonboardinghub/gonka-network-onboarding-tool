@@ -569,7 +569,7 @@ async function hardwareSetups() {
  * minutes; null when it cannot be had.
  */
 let capFile = { at: 0, data: null };
-/** The network's total weight and what users paid for AI, each epoch (scripts/usage-snapshot.js), kept ten minutes. */
+/** The network's total weight each epoch (scripts/usage-snapshot.js), kept ten minutes. */
 let useFile = { at: 0, data: null };
 async function usageFile() {
   const url = K.get().usageUrl;
@@ -700,13 +700,12 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     capacity: ((cap && cap.epochs) || []).filter((c) => c.e > now.index - epochs && (c.g != null || c.gs != null)).map((c) => ({
       epoch: c.e, ...epochWhen(c.e, now), gpus: c.g != null ? c.g : c.gs, kinds: c.k || {}, measured: c.g != null
     })),
-    // The network's total weight, and what users paid for AI (ngonka), epoch by
-    // epoch (oldest first). What was paid is not turned into tokens: an answer
-    // still running when an epoch's books close is charged its whole reservation.
+    // The network's total weight, epoch by epoch (oldest first). What users paid
+    // for AI is in the file too but not passed on: an answer still running when
+    // an epoch's books close is charged its whole reservation, so it says little.
     usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => ({
       epoch: u.e, ...epochWhen(u.e, now),
-      weight: u.w > 0 ? u.w : null,
-      paid: u.paid != null ? u.paid : null, hosts: u.hosts != null ? u.hosts : null
+      weight: u.w > 0 ? u.w : null
     }))
   };
 }
