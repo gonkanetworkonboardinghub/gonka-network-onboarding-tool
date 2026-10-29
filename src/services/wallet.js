@@ -427,6 +427,16 @@ async function waitForTx(seed, txhash, onData, tries = 30, delayMs = 3000) {
 }
 
 /**
+ * The gas to ask for: the simulation's figure times the adjustment, and never
+ * less than 50,000 above it. The simulation runs without a signature and
+ * against state the real run then changes, so a small transaction can need
+ * more than a fifth extra: on 29 October 2026 a fee-allowance renewal
+ * simulated at 86,457 used 105,565 and failed "out of gas" at 103,748. At the
+ * chain's 1 ngonka per gas the margin costs 0.00005 GNK.
+ */
+const gasFor = (gasUsed, gasAdjustment) => Math.max(Math.floor(gasUsed * gasAdjustment), gasUsed + 50000);
+
+/**
  * What sending `messages` would cost, without sending anything: the chain runs
  * them unsigned and says the gas they use, or why it would refuse them.
  */
@@ -435,7 +445,7 @@ async function estimate({ seed, priv, messages, gasAdjustment, gasPrice = 10, me
   const acct = await getAccount(seed, addressOf(pub));
   if (!acct) throw new Error(`account ${addressOf(pub)} not found on the network — it has never received any GNK.`);
   const gasUsed = await simulate(seed, txRaw(txBody(messages, memo), authInfo(pub, acct.sequence, { amount: [], gas: 0 }), [EMPTY]));
-  const gas = Math.floor(gasUsed * gasAdjustment);
+  const gas = gasFor(gasUsed, gasAdjustment);
   return { gas, fee: String(BigInt(gas) * BigInt(gasPrice)) };
 }
 
@@ -463,7 +473,7 @@ async function signAndBroadcast({ seed, chainId, priv, messages, gasAdjustment, 
     // Simulation runs the messages without committing them. The signature is
     // left empty; the chain skips verifying it when simulating.
     const gasUsed = await simulate(seed, txRaw(body, authInfo(pub, sequence, { amount: [], gas: 0 }), [EMPTY]));
-    gas = Math.floor(gasUsed * gasAdjustment);
+    gas = gasFor(gasUsed, gasAdjustment);
     onData && onData(`gas estimate: ${gas}\n`);
 
     fee = { amount: [{ denom: DENOM, amount: String(BigInt(gas) * BigInt(gasPrice)) }], gas };

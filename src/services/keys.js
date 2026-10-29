@@ -191,7 +191,9 @@ function allowanceRefresh(existing, expiration, defaultNgonka, minNgonka = defau
   }
   let exp = expiration, expiring = false;
   if (!existing.expiration) exp = null;
-  else if (new Date(existing.expiration) > expiration) exp = new Date(existing.expiration);
+  // Lasting as long as the permissions is enough: both are granted together, to the
+  // same moment, and a strict "later than" renewed a fresh allowance on every re-run.
+  else if (new Date(existing.expiration) >= expiration) exp = new Date(existing.expiration);
   else expiring = true;
   return { refresh: low || expiring, low, expiring, spendLimit, expiration: exp };
 }
