@@ -187,6 +187,96 @@ async function switchSeed(driver, from, to, onData) {
   if (r.code !== 0) throw new Error(`Couldn't restart the chain node on ${b}:\n` + (r.stdout + r.stderr).slice(-600));
 }
 
+/** The public node config.env names for the chain node ("http://node1.gonka.ai:8000"), or null. */
+async function configuredSeed(driver) {
+  const r = await driver.exec(`cd ${JOIN()} && grep -m1 -E '^ *(export +)?SEED_NODE_RPC_URL=' config.env | sed 's/^[^=]*=//'`);
+  const u = (r.stdout || "").trim().replace(/\/chain-rpc\/?$/, "").replace(/\/+$/, "");
+  return hostOf(u) ? u : null;
+}
+
+/** A download of the genesis file, from this server itself or from inside a container on the node's network: { ok, code, bytes }. */
+async function genesisDownload(driver, seedUrl, inContainer) {
+  const url = String(seedUrl).replace(/\/+$/, "") + "/chain-rpc/genesis";
+  const curl = `curl -s -m 40 -o /dev/null -w '%{http_code} %{size_download}' ${shq(url)}`;
+  const r = await driver.exec(inContainer
+    ? `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose run --rm --no-deps -T api sh -c ${shq(curl)} 2>/dev/null; echo`
+    : `${curl}; echo`, { timeoutMs: 180000 });
+  const [, code = "000", bytes = "0"] = /(\d{3}) (\d+)/.exec(r.stdout || "") || [];
+  return { ok: code === "200" && Number(bytes) > 100000, code, bytes: Number(bytes) };
+}
+
+/**
+ * Fit the containers' TCP packets to this server's network.
+ *
+ * Docker's networks use packets of up to 1,500 bytes, and many rented
+ * machines sit on a smaller network (often 1,450, behind the provider's
+ * overlay). The server's own connections offer the smaller size and work; a
+ * container's offer 1,500, so anything big sent to it is lost on the way and
+ * the download hangs or is reset, while small answers get through. On
+ * 29 October 2026 that stopped a Spheron server's chain node twice: its
+ * genesis download hung on node2, then node1 reset it, while the server
+ * itself fetched the same file in 0.3 s. State sync and the API would have
+ * hit the same wall.
+ *
+ * So the genesis download is tried from inside a container. Only when it
+ * fails there and works from the server is anything changed: the size a
+ * forwarded connection offers (TCP MSS) is capped to what this network
+ * carries, the standard cure, and a small systemd unit keeps it after a
+ * reboot. Nothing changes on a server where containers download fine.
+ */
+async function fitContainerPackets(driver, seedUrl, onData) {
+  const say = (s) => onData && onData(`▶ Chain node: ${s}\n`);
+  const inside = await genesisDownload(driver, seedUrl, true);
+  if (inside.ok) return { changed: false, ok: true };
+  const outside = await genesisDownload(driver, seedUrl, false);
+  if (!outside.ok) return { changed: false, ok: false, outside, inside };   // not this: the server itself can't download it
+  say("downloads from inside Docker are cut off on this server's network; fitting Docker's packets to it");
+  // One small script does it, now and at every boot (systemd runs it again), so a
+  // restarted server keeps it. It works the size out from the network it is on.
+  const script = [
+    "#!/bin/sh",
+    "# Written by GNOT: fit Docker containers' TCP packets to this server's network (MSS clamp).",
+    "IF=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}')",
+    "MTU=$(cat /sys/class/net/$IF/mtu 2>/dev/null || echo 1500)",
+    "MSS=$((MTU - 40)); [ \"$MSS\" -ge 1460 ] && MSS=1360",
+    "RULE=\"-p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss $MSS\"",
+    "iptables -t mangle -C FORWARD $RULE 2>/dev/null || iptables -t mangle -I FORWARD 1 $RULE || exit 1",
+    "echo \"FITTED $IF mtu=$MTU mss=$MSS\"",
+    ""
+  ].join("\n");
+  const unit = [
+    "[Unit]",
+    "Description=GNOT: fit Docker containers' TCP packets to this server's network (MSS clamp)",
+    "After=network-online.target docker.service",
+    "[Service]",
+    "Type=oneshot",
+    "RemainAfterExit=yes",
+    "ExecStart=/usr/local/sbin/gnot-container-mss.sh",
+    "[Install]",
+    "WantedBy=multi-user.target",
+    ""
+  ].join("\n");
+  const b64 = (x) => Buffer.from(x, "utf8").toString("base64");
+  const r = await driver.exec(
+    `SUDO=""; if [ "$(id -u)" != 0 ]; then sudo -n true 2>/dev/null && SUDO=sudo || { echo NO_ROOT; exit 0; }; fi; ` +
+    `echo ${b64(script)} | base64 -d | $SUDO tee /usr/local/sbin/gnot-container-mss.sh >/dev/null && $SUDO chmod 755 /usr/local/sbin/gnot-container-mss.sh && ` +
+    `$SUDO /usr/local/sbin/gnot-container-mss.sh || { echo NO_IPTABLES; exit 0; }; ` +
+    `if command -v systemctl >/dev/null; then echo ${b64(unit)} | base64 -d | $SUDO tee /etc/systemd/system/gnot-container-mss.service >/dev/null && ` +
+    `$SUDO systemctl daemon-reload && $SUDO systemctl enable gnot-container-mss.service >/dev/null 2>&1; fi; true`,
+    { onData, timeoutMs: 120000 });
+  const out = r.stdout || "";
+  if (/NO_ROOT/.test(out)) {
+    throw new Error(
+      "Downloads from inside Docker are cut off on this server's network (the server itself downloads fine), and fixing it needs root, which this login doesn't have.\n\n" +
+      "Log in as root, or give this user passwordless sudo, then press \"Run launch sequence\" again. The fix GNOT applies is the standard one for this: " +
+      "iptables -t mangle -I FORWARD 1 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1410");
+  }
+  if (!/FITTED/.test(out)) throw new Error("Couldn't fit Docker's packets to this server's network:\n" + (out + (r.stderr || "")).slice(-600));
+  const again = await genesisDownload(driver, seedUrl, true);
+  say(again.ok ? "downloads from inside Docker work now" : "downloads from inside Docker still fail after the fix");
+  return { changed: true, ok: again.ok, detail: (/FITTED (.*)/.exec(out) || [])[1] };
+}
+
 /**
  * Start tmkms and the chain node, and wait until the node really answers: its
  * RPC says how far it is, which is also what registration needs (it reads the
@@ -202,8 +292,13 @@ async function switchSeed(driver, from, to, onData) {
  */
 async function startCore(driver, onData, { pollMs = 6000, stallMs = 60 * 1000, waitMs = 15 * 60 * 1000 } = {}) {
   const say = (s) => onData && onData(`▶ Chain node: ${s}\n`);
+  const seedNow0 = await configuredSeed(driver);
+  // Downloads from inside Docker have to work on this server's network first.
+  const fit = seedNow0 ? await fitContainerPackets(driver, seedNow0, onData) : null;
   const up = await driver.exec(
-    `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose up tmkms node -d --no-deps 2>&1`,
+    `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose up tmkms node -d --no-deps 2>&1` +
+    // A node stuck on a download from before the fix has to start again to use it.
+    (fit && fit.changed ? ` && docker compose up -d --force-recreate --no-deps node 2>&1` : ""),
     { onData, timeoutMs: 600000 });
   if (up.code !== 0) throw new Error("Couldn't start tmkms and the chain node:\n" + (up.stdout + up.stderr).slice(-600));
 
@@ -260,6 +355,12 @@ async function startCore(driver, onData, { pollMs = 6000, stallMs = 60 * 1000, w
       if (!alive) alive = await reachableSeeds(driver);
       const next = alive.find((x) => !tried.has(x));
       if (!next) {
+        const inside = await genesisDownload(driver, seedNow, true), outside = await genesisDownload(driver, seedNow, false);
+        if (outside.ok && !inside.ok) {
+          throw new Error(
+            `This server downloads the network's starting file from ${hostOf(seedNow)} fine, but the same download from inside Docker fails (${inside.code}, ${inside.bytes} bytes), even after GNOT fitted Docker's packets to this network.\n\n` +
+            `Something on this server or at the provider blocks or cuts off large downloads from containers. "Copy the details" and ask in the Gonka Discord, or ask the provider about the network's MTU.\n\nThe chain node's last lines:\n${lastLogs.join("\n")}`);
+        }
         throw new Error(
           `The chain node can't download the network's starting file: ${hostOf(seedNow) || seedNow} doesn't answer this server, ` +
           `and no other public Gonka node did either.\n\n` +
@@ -293,14 +394,24 @@ async function startCore(driver, onData, { pollMs = 6000, stallMs = 60 * 1000, w
 async function diagnostics(driver) {
   const seeds = K.get().seedNodes.map((s) => String(s).replace(/\/+$/, "")).filter((s) => hostOf(s));
   const r = await driver.exec(
-    `cd ${JOIN()} 2>/dev/null; echo "## docker compose ps"; docker compose ps -a 2>&1 | head -30; ` +
+    `cd ${JOIN()} 2>/dev/null; source config.env 2>/dev/null; echo "## docker compose ps"; docker compose ps -a 2>&1 | head -30; ` +
     `echo; echo "## chain node, last 60 lines"; docker logs --tail 60 node 2>&1; ` +
     `echo; echo "## disk"; df -h . / 2>&1 | head -6; echo; echo "## memory"; free -g 2>&1 | head -3; ` +
     `echo; echo "## GPUs"; nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>&1 | head -10; ` +
+    `echo; echo "## network"; ip -o link show 2>/dev/null | awk '{print $2, "mtu", $5}'; iptables -t mangle -S FORWARD 2>/dev/null | grep TCPMSS; ` +
     `echo; echo "## public Gonka nodes, from this server"; ` +
     seeds.map((s) => `echo "${s}: $(curl -s -m 15 -o /dev/null -w '%{http_code} in %{time_total}s' ${shq(s + "/chain-rpc/status")} 2>/dev/null || echo 'no answer')"`).join("; "),
     { timeoutMs: 120000 });
-  return (r.stdout || "") + (r.stderr || "");
+  // The big download, from the server and from inside Docker: the two differ when the network cuts off containers.
+  const seed = await configuredSeed(driver).catch(() => null);
+  let both = "";
+  if (seed) {
+    const outside = await genesisDownload(driver, seed, false).catch(() => null);
+    const inside = await genesisDownload(driver, seed, true).catch(() => null);
+    const line = (x) => (x ? `${x.code}, ${x.bytes} bytes` : "couldn't try");
+    both = `\n## the genesis file from ${hostOf(seed)}\nfrom this server: ${line(outside)}\nfrom inside Docker: ${line(inside)}\n`;
+  }
+  return (r.stdout || "") + (r.stderr || "") + both;
 }
 
 /**
