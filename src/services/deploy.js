@@ -226,11 +226,23 @@ async function genesisDownload(driver, seedUrl, inContainer) {
  */
 async function fitContainerPackets(driver, seedUrl, onData) {
   const say = (s) => onData && onData(`▶ Chain node: ${s}\n`);
-  const inside = await genesisDownload(driver, seedUrl, true);
-  if (inside.ok) return { changed: false, ok: true };
-  const outside = await genesisDownload(driver, seedUrl, false);
-  if (!outside.ok) return { changed: false, ok: false, outside, inside };   // not this: the server itself can't download it
-  say("downloads from inside Docker are cut off on this server's network; fitting Docker's packets to it");
+  // This server's network, and whether GNOT's fix is already kept for reboots. A
+  // network under 1,500 bytes is fitted at once, before anything fails (that
+  // Spheron server's was 1,400), and so is a hand-made fix a reboot would lose.
+  const net = await driver.exec(
+    `IF=$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'); ` +
+    `echo "MTU $IF $(cat /sys/class/net/$IF/mtu 2>/dev/null || echo 1500)"; [ -x /usr/local/sbin/gnot-container-mss.sh ] && echo HAVE_FIX; true`);
+  const [, iface = "", mtuText = "1500"] = /MTU (\S*) (\d+)/.exec(net.stdout || "") || [];
+  const mtu = Number(mtuText) || 1500;
+  if (mtu < 1500 && !/HAVE_FIX/.test(net.stdout || "")) {
+    say(`this server's network carries ${mtu.toLocaleString("en")}-byte packets (${iface}) and Docker's carry 1,500; fitting Docker's packets to it`);
+  } else {
+    const inside = await genesisDownload(driver, seedUrl, true);
+    if (inside.ok) return { changed: false, ok: true };
+    const outside = await genesisDownload(driver, seedUrl, false);
+    if (!outside.ok) return { changed: false, ok: false, outside, inside };   // not this: the server itself can't download it
+    say("downloads from inside Docker are cut off on this server's network; fitting Docker's packets to it");
+  }
   // One small script does it, now and at every boot (systemd runs it again), so a
   // restarted server keeps it. It works the size out from the network it is on.
   const script = [
