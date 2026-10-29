@@ -494,6 +494,61 @@ function renderPocAdvice() {
   if (el.textContent !== text) el.textContent = text;
 }
 
+/* Most providers ask for an SSH key while the server is being rented, which is
+   before the Connect step that can make one. So the first step offers it too:
+   the key made here is the one Connect then uses ("create one for me"). */
+function sshEarlyHtml() {
+  const g = S.ssh.generated;
+  return `<div class="ssh-early">
+    <div><b>${esc(t("No SSH key yet?"))}</b> ${esc(t("Most providers ask for one when you rent the server. GNOT can make it for you right now."))}</div>
+    ${g ? `
+      <p class="small" style="margin-top:10px">${esc(t("Your public SSH key — safe to share:"))}</p>
+      <pre class="preview mono" style="user-select:text; white-space:pre-wrap; word-break:break-all">${esc(g.publicKey)}</pre>
+      <div class="btn-row" style="margin-top:8px"><button id="b-early-copy">${esc(t("Copy public key"))}</button></div>
+      <p class="small">${esc(t("Paste it into your provider's SSH key box when you rent. The private half stays on this computer, and GNOT uses it by itself when you connect."))}</p>`
+    : `<div class="btn-row" style="margin-top:8px"><button id="b-early-key">${esc(t("Create an SSH key"))}</button></div>`}
+  </div>`;
+}
+function wireSshEarly() {
+  const box = $("#ssh-early");
+  if (!box) return;
+  // Made here, or found and nobody chose a key file of their own: Connect will use it.
+  const use = (key, found) => {
+    S.ssh.generated = key;
+    if (!found || !S.ssh.privateKeyPath || S.ssh.privateKeyPath === key.privatePath) {
+      S.ssh.privateKeyPath = key.privatePath;
+      S.ssh.passphrase = "";
+      S.ssh.auth = "create";
+    }
+    box.innerHTML = sshEarlyHtml();
+    wireSshEarly();
+  };
+  // A key GNOT made before on this computer is shown straight away: it is
+  // probably the one already pasted at the provider.
+  if (!S.ssh.generated && !S.ssh.earlyPeeked) {
+    S.ssh.earlyPeeked = true;
+    api("sshKeyInfo").then((info) => { if (info && info.publicKey && !S.ssh.generated && $("#ssh-early")) use(info, true); }).catch(() => {});
+  }
+  const make = $("#b-early-key");
+  if (make) make.onclick = async () => {
+    try { setBusy(true, "Creating SSH key…"); use(await api("sshKeygen")); }
+    catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  };
+  const copy = $("#b-early-copy");
+  if (copy) copy.onclick = async () => {
+    const pub = S.ssh.generated.publicKey;
+    try { await navigator.clipboard.writeText(pub); }
+    catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = pub; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); ta.remove();
+    }
+    copy.textContent = "✓";
+    setTimeout(() => { copy.textContent = t("Copy public key"); }, 2000);
+  };
+}
+
 RENDER.welcome = () => {
   const req = S.K.requirements;
   const nn = req.networkNode;
@@ -516,9 +571,7 @@ RENDER.welcome = () => {
         <p>${esc(t("Ubuntu is the most common choice; Debian, Rocky and AlmaLinux work too. Windows and macOS cannot run a node. The wizard installs any missing software."))}</p>
         <p>${esc(t("Ports are opened in your rental provider's dashboard (look for firewall, security group or port mapping), not on the server. Many providers leave them open already, and the Verify step at the end tests them from outside."))}</p>
       </div></details>
-      <details class="more"><summary>${esc(t("No SSH key yet?"))}</summary><div class="more-body">
-        <p>${esc(t("Choose \"A rented / remote server\" on the next screen. The wizard makes a key and shows you exactly what to paste into your provider's form."))}</p>
-      </div></details>
+      <div id="ssh-early">${sshEarlyHtml()}</div>
     </div>
     <div class="two-col">
       <div class="card">
@@ -550,6 +603,7 @@ RENDER.welcome = () => {
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
   $("#b-start").onclick = () => { markDone(); go(1); };
+  wireSshEarly();
   $("#stage").querySelectorAll(".check-links a").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
   });
@@ -1313,7 +1367,6 @@ RENDER.wallet = () => {
   }
 
   function walletDone() {
-    const fa = S.K.faucet || {};
     stage(`
       ${header("Step 5", "Wallet ready", "Your Account Key is set up on this computer.")}
       <div class="card">
@@ -1326,10 +1379,10 @@ RENDER.wallet = () => {
         <button id="b-back">Back</button>
         <button class="primary" id="b-next">Continue</button>
       </div>`);
-    $("#b-back").onclick = () => { S.balPoll && clearInterval(S.balPoll); S.balPoll = null; RENDER.wallet(); };
+    $("#b-back").onclick = () => { stopWatching(); RENDER.wallet(); };
     wireCopy();
     $("#b-next").onclick = () => {
-      S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
+      stopWatching();
       // Wallet is unlocked, so a resumed session can now jump the rest of the
       // way back to where the user actually left off.
       const target = S.resumeTo && S.resumeTo > 5 ? S.resumeTo : 5;
@@ -1337,74 +1390,125 @@ RENDER.wallet = () => {
       goResumed(target);
     };
 
-    // Live funding helper: shows how to fund the wallet, and auto-detects the
-    // moment GNK arrives (polls the address) so there's no guessing.
-    // What Gonka's guide suggests keeping here for fees, in ngonka.
-    const feeStart = (Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK;
-    const feesButton = () => (S.K.docs.fees ? `<button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button>` : "");
-    const wireFeesButton = () => { if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees }); };
+    // Live funding helper: what this wallet needs, how to get GNK, and a live
+    // watch on the address that says what it is doing and when it last looked,
+    // so nobody wonders whether it is stuck. GNK that arrives shows up by itself.
+    const feeStart = (Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK;   // what Gonka's guide suggests keeping for fees
+    const setupNeed = Number(S.K.setupNgonka) || 10000000;                // what setting up asks for, with room to spare
+    const docs = S.K.docs || {};
+    const POLL_MS = 8000;
+    let lastCheck = 0, lastBal = null, lastFailed = false, shown = "";
+    function stopWatching() {
+      S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
+      S.balTick && clearInterval(S.balTick); S.balTick = null;
+    }
+    const feesButton = () => (docs.fees ? `<button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button>` : "");
+    const wireFeesButton = () => { if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: docs.fees }); };
+    // When the next Proof of Compute is, on this computer's clock: fees must be here by then.
+    const pocWhen = () => {
+      if (!pocState) return "";
+      const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
+      return new Date(Date.now() + remain).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+    };
 
-    // What the wallet needs, as two figures; how to get it and why, folded away.
-    function fundingCard() {
-      const claim = fa.amount ? String(fa.amount).split("/")[0].trim() : "0.01 GNK";
+    // The live line: the balance so far, when it last looked and when it looks again.
+    function watchHtml() {
+      const ago = lastCheck ? Math.round((Date.now() - lastCheck) / 1000) : null;
+      const next = lastCheck ? Math.max(0, Math.ceil((lastCheck + POLL_MS - Date.now()) / 1000)) : null;
+      const said = !lastCheck ? t("Checking…")
+        : lastFailed ? t("couldn't read it just now, trying again in {n} s", { n: next })
+        : t("checked {s} s ago, again in {n} s", { s: ago, n: next });
+      return `<span class="watch-dot" aria-hidden="true"></span>
+        <span class="watch-text">${t("Watching this wallet on the Gonka network. Balance: {n}", { n: `<b>${lastBal == null ? "…" : gnk(lastBal)}</b>` })}</span>
+        <span class="watch-when">${esc(said)}</span>`;
+    }
+    function tickWatch() { const el = $("#fund-watch"); if (el) el.innerHTML = watchHtml(); }
+
+    const howToGet = () => more("How do I get GNK?", `
+      <ul>
+        <li>${t("<b>From a Gonka wallet you already have</b>, such as Keplr or Tangem: send GNK to the address above.")}</li>
+        <li>${t("<b>From WGNK on Ethereum</b>: Gonka's bridge, on its own dashboard, turns WGNK into GNK in about 15–20 minutes. It pays out to the gonka1 address that belongs to your Ethereum wallet; from there, send it to the address above.")}</li>
+        <li>${t("<b>No GNK or WGNK yet?</b> The traded form is WGNK on Ethereum, on Uniswap. The only official WGNK is contract {addr}.", { addr: `<code>${esc(S.K.wgnkContract || "")}</code>` })}</li>
+      </ul>
+      <p class="small">${esc(t("Start with a small amount: transfers cannot be undone."))}</p>
+      <div class="btn-row">
+        ${docs.walletGuide ? `<button data-open="${esc(docs.walletGuide)}">${esc(t("Gonka's wallet guide"))}</button>` : ""}
+        ${docs.bridge ? `<button data-open="${esc(docs.bridge)}">${esc(t("Gonka's bridge guide"))}</button>` : ""}
+      </div>`);
+    const whyMore = () => more("Why does this wallet need GNK?", `
+      <p>${esc(t("Setting up signs one or two small transactions (the node's permissions, and its registration if the network does not do it), about 0.001 GNK in all. Taking part costs more: since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Collateral is optional and separate."))}</p>`);
+
+    // Nothing usable yet: what to send, where, and what happens next.
+    const emptyHtml = () => `
+      <div class="card">
+        <h3>${esc(t("Fund this wallet"))}</h3>
+        ${tiles([
+          { label: "To set up", value: "≈ 0.001 GNK", sub: t("send {n} to be safe", { n: gnk(setupNeed) }) },
+          { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("Gonka's suggested start for the fees of each Proof of Compute; it lasts a long time") }
+        ])}
+        <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
+        ${copyLine(w.address, "fund-addr")}
+        <div class="fund-watch" id="fund-watch" role="status"></div>
+        <ol class="fund-steps">
+          <li>${esc(t("Send at least {n} to the address above, from any Gonka wallet.", { n: gnk(setupNeed) }))}</li>
+          <li>${esc(t("GNOT sees it arrive by itself, usually within a minute of sending. There is nothing to press."))}</li>
+          <li>${esc(t("Then Continue. The GNK for fees can come now or later: the Verify step reads from your server what your node will need."))}</li>
+        </ol>
+        ${howToGet()}
+        ${whyMore()}
+        <div class="btn-row" style="margin-top:6px">${feesButton()}</div>
+      </div>`;
+
+    // Enough to set up, not yet for fees: say so, and what else is needed, and keep watching.
+    const setupHtml = () => {
+      const when = pocWhen();
       return `
-        <div class="card">
-          <h3>${esc(t("Fund this wallet"))}</h3>
-          ${tiles([
-            { label: "To set up", value: "≈ 0.001 GNK", sub: t("one faucet claim ({amt}) covers it", { amt: claim }) },
-            { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("network fees for each Proof of Compute, by Gonka's guide") }
-          ])}
-          <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
-          ${copyLine(w.address, "fund-addr")}
-          <div class="btn-row" style="margin-top:6px">
-            ${fa.url ? `<button id="b-faucet" class="primary">${esc(t("Open the Gonka faucet"))}</button>` : ""}
-            ${feesButton()}
-          </div>
-          ${more("How do I get GNK from the faucet into this wallet?", `
-            <p>${t("The faucet sends GNK to a browser \"gg wallet,\" not directly here. Two ways to get it into this wallet:")}</p>
-            <ul>
-              <li>${t("Easiest — when you set up the gg wallet, use its 24-word phrase: go Back, choose \"Restore from my 24-word recovery phrase,\" and this wallet becomes the funded one (no transfer).")}</li>
-              <li>${t("Or claim to the gg wallet, then send the GNK from it to the address above.")}</li>
-            </ul>`)}
-          ${more("Why does this wallet need GNK?", `
-            <p>${esc(t("Setting up signs one or two small transactions (the node's permissions, and its registration if the network does not do it), about 0.001 GNK in all. Taking part costs more: since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Collateral is optional and separate."))}</p>`)}
-          <div class="info-banner" id="bal-live" style="margin-top:14px">${esc(t("Watching this address for incoming GNK…"))}</div>
-        </div>`;
+      <div class="card">
+        <h3><span class="pill warn">${esc(t("ENOUGH TO SET UP"))}</span></h3>
+        <p>${t("This wallet has {n}: enough to set up, so you can Continue now.", { n: `<b>${gnk(lastBal)}</b>` })}</p>
+        <p class="lead-line">${esc(t("What else it needs"))}</p>
+        <ul class="fund-steps">
+          <li>${esc(t("Fees for every Proof of Compute, paid from this wallet: a little each epoch, more for a bigger node. Gonka's guide suggests about {start} to start with, which lasts a long time.", { start: gnk(feeStart) }))}</li>
+          <li>${esc(t("They must be here before the next Proof of Compute, or the node stays registered but sits that epoch out."))}${when ? " " + esc(t("The next one: {when}.", { when })) : ""}</li>
+          <li>${esc(t("The Verify step reads from your server exactly what your node will need."))}</li>
+        </ul>
+        <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
+        ${copyLine(w.address, "more-addr")}
+        <div class="fund-watch" id="fund-watch" role="status"></div>
+        ${howToGet()}
+        <div class="btn-row" style="margin-top:6px">${feesButton()}</div>
+      </div>`;
+    };
+
+    const fundedHtml = () => `<div class="info-banner"><span class="pill ok">FUNDED</span> ${t("Balance: {n}. Enough to set up, and by Gonka's guide enough for the node's fees in its first epochs.", { n: `<b>${gnk(lastBal)}</b>` })}</div>`;
+
+    function draw(state) {
+      const area = $("#bal-area");
+      if (!area) return;
+      area.innerHTML = state === "funded" ? fundedHtml() : state === "setup" ? setupHtml() : emptyHtml();
+      wireCopy(); wireFeesButton();
+      area.querySelectorAll("[data-open]").forEach((b) => { b.onclick = () => api("openExternal", { url: b.dataset.open }); });
+      tickWatch();
     }
 
-    const paint = async () => {
+    async function check() {
+      let bal = null;
       try {
         if (!S.seed) S.seed = await api("seed");
-        const bal = await api("balance", { seed: S.seed, address: w.address });
-        const area = $("#bal-area");
-        if (!area) { S.balPoll && clearInterval(S.balPoll); S.balPoll = null; return; }
-        if (bal === null) {
-          area.innerHTML = `<div class="info-banner">${esc(t("Couldn't read the balance right now — that's fine, you can continue."))}</div>`;
-        } else if (bal >= feeStart) {
-          S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
-          area.innerHTML = `<div class="info-banner"><span class="pill ok">FUNDED</span> ${t("Balance: {n}. Enough to set up, and by Gonka's guide enough for the node's fees in its first epochs.", { n: `<b>${gnk(bal)}</b>` })}</div>`;
-        } else if (bal > 0) {
-          // Enough to set up, not enough to keep taking part: say both, and keep
-          // watching, because the rest can arrive at any moment.
-          area.innerHTML = `<div class="info-banner"><span class="pill warn">${esc(t("SETUP ONLY"))}</span> ${t("Balance: {n}. Enough to set up. To take part in epochs the node also pays fees from this wallet; Gonka's guide suggests about {start} to start with. You can add it now or after launch: the Verify step shows whether your node has enough.", { n: `<b>${gnk(bal)}</b>`, start: `<b>${gnk(feeStart)}</b>` })}
-            <p class="lead-line" style="margin:10px 0 0">${esc(t("Send GNK to"))}</p>
-            ${copyLine(w.address, "more-addr")}
-            <div class="btn-row" style="margin-top:6px">${feesButton()}</div></div>`;
-          wireFeesButton(); wireCopy();
-        } else {
-          // Only (re)render the funding card once, then just refresh the live line.
-          if (!$("#bal-live")) {
-            area.innerHTML = fundingCard();
-            wireCopy();
-            if ($("#b-faucet")) $("#b-faucet").onclick = () => api("openExternal", { url: fa.url });
-            wireFeesButton();
-          }
-        }
-      } catch (_) {}
-    };
-    paint();
-    S.balPoll && clearInterval(S.balPoll);
-    S.balPoll = setInterval(paint, 8000);   // auto-detect funds arriving
+        bal = await api("balance", { seed: S.seed, address: w.address });
+      } catch (_) { /* said on the live line; asked again in a moment */ }
+      if (!$("#bal-area")) { stopWatching(); return; }
+      lastCheck = Date.now();
+      lastFailed = bal === null;
+      if (bal !== null) lastBal = bal;
+      const state = lastBal === null ? "empty" : lastBal >= feeStart ? "funded" : lastBal >= setupNeed ? "setup" : "empty";
+      if (state !== shown) { shown = state; draw(state); } else tickWatch();
+      if (state === "funded") stopWatching();
+    }
+    stopWatching();
+    check();
+    S.balPoll = setInterval(check, POLL_MS);   // GNK that arrives shows up by itself
+    S.balTick = setInterval(tickWatch, 1000);  // and the live line counts the seconds
   }
 };
 
@@ -1676,7 +1780,7 @@ RENDER.model = () => {
       ${more("Edit the configuration (advanced)", `
         <p>${esc(t("Advanced users can change the vLLM arguments here. Most people should leave it as it is."))}</p>
         <textarea id="f-nodecfg" class="mono" rows="14" spellcheck="false">${esc(S.nodeConfigText)}</textarea>`,
-        { open: S.chosenConfigFile === "(custom)" })}`;
+        { open: S.chosenConfigFile === "(custom)" || !!S.openModelEditor, id: "edit-config" })}`;
 
     async function choose(e) {
       try {
@@ -1711,6 +1815,12 @@ RENDER.model = () => {
       $("#b-next").disabled = !S.nodeConfigText.trim();
       if (S.nodeConfigText.trim() && !S.chosenConfigFile) { S.chosenConfigFile = "(custom)"; S.chosenSetupKey = null; S.chosenWhole = null; }
     };
+    // Sent here from the review step to change it: open, in view, ready to type.
+    if (S.openModelEditor) {
+      S.openModelEditor = false;
+      const box = $("#edit-config");
+      if (box) { box.open = true; box.scrollIntoView({ block: "center" }); ta.focus(); }
+    }
   }
 };
 
@@ -1738,8 +1848,14 @@ RENDER.review = () => {
           return f.replace(/^node-config-|\.json$/g, "") || "—";
         })()) }
       ])}
-      ${more("The settings file (config.env)", `<pre class="preview mono" id="pv-env">generating…</pre>`)}
-      ${more("The model settings (node-config.json)", `<pre class="preview mono" id="pv-node">${esc(S.nodeConfigText)}</pre>`)}
+      ${more("The settings file (config.env)", `
+        <p class="small">${esc(t("Made from your answers in the earlier steps. To change it, change those steps, or edit it here by hand."))}</p>
+        <div id="env-box"><pre class="preview mono" id="pv-env">generating…</pre></div>
+        <div class="btn-row" style="margin-top:8px"><button id="b-edit-env">${esc(t("Edit it by hand (advanced)"))}</button></div>`)}
+      ${more("The model settings (node-config.json)", `
+        <pre class="preview mono" id="pv-node">${esc(S.nodeConfigText)}</pre>
+        <div class="btn-row" style="margin-top:8px"><button id="b-edit-node">${esc(t("Change it"))}</button></div>
+        <p class="small">${esc(t("It is changed on the Model step, under \"Edit the configuration\". This takes you there."))}</p>`)}
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
@@ -1778,15 +1894,47 @@ RENDER.review = () => {
     envText = await api("genEnv", { answers, templateText: template });
     S.configEnvText = envText;
     // Hide the passphrase in the preview only.
-    $("#pv-env").textContent = envText.replace(/(KEYRING_PASSWORD=)[^\s#]+/, "$1••••••••");
+    if ($("#pv-env")) $("#pv-env").textContent = maskEnv(envText);
   })();
+
+  // The keyring password never shows; these three lines must match the wallet,
+  // the key on the server and that password, or the node will not start.
+  const KEEP_LINES = ["KEY_NAME", "KEYRING_PASSWORD", "ACCOUNT_PUBKEY"];
+  const lineOf = (text, key) => String(text).split(/\r?\n/).find((l) => new RegExp(`^\\s*(export\\s+)?${key}=`).test(l)) || "";
+  function maskEnv(text) { return String(text).replace(/(KEYRING_PASSWORD=)[^\s#]+/, "$1••••••••"); }
+  $("#b-edit-node").onclick = () => { S.openModelEditor = true; go(6); };
+  $("#b-edit-env").onclick = () => {
+    if (!S.configEnvText) return;
+    $("#env-box").innerHTML = `
+      <div class="warn-banner">${esc(t("Only change what you understand. Leave the KEY_NAME, KEYRING_PASSWORD and ACCOUNT_PUBKEY lines as they are: they must match your wallet and the key on your server, or the node will not start."))}</div>
+      <textarea id="f-env" class="mono" rows="16" spellcheck="false"></textarea>`;
+    $("#f-env").value = maskEnv(S.configEnvText);
+    $("#b-edit-env").remove();
+  };
+  // What will be written: the generated file, or the one edited by hand with its password put back.
+  function envToWrite() {
+    const box = $("#f-env");
+    if (!box) return S.configEnvText;
+    const masked = maskEnv(S.configEnvText);
+    for (const key of KEEP_LINES) {
+      if (lineOf(box.value, key) !== lineOf(masked, key)) {
+        alert(t("Leave the {key} line as it is: it must match your wallet and the key on your server.", { key }));
+        return null;
+      }
+    }
+    const real = lineOf(S.configEnvText, "KEYRING_PASSWORD"), shown = lineOf(masked, "KEYRING_PASSWORD");
+    return box.value.split(/\r?\n/).map((l) => (l === shown ? real : l)).join("\n");
+  }
 
   $("#b-write").onclick = async () => {
     if (!S.configEnvText) return;
+    const configEnv = envToWrite();
+    if (configEnv === null) return;
+    S.configEnvText = configEnv;
     try {
       setBusy(true, "Hardening ports & writing configuration…");
       await api("hardenPorts");
-      await api("writeConfigs", { configEnv: S.configEnvText, nodeConfigJson: S.nodeConfigText });
+      await api("writeConfigs", { configEnv, nodeConfigJson: S.nodeConfigText });
       toast("Configuration written to the server.");
       markDone(); go(8);
     } catch (e) { markError(); alert(e.message); }

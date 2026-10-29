@@ -105,6 +105,8 @@ const Msg = {
     opt(3, any("/cosmos.feegrant.v1beta1.BasicAllowance", cat(
       spendLimit.map((c) => req(1, coin(c))),
       opt(2, expiration && timestamp(expiration))))))),
+  revokeAllowance: (granter, grantee) => any("/cosmos.feegrant.v1beta1.MsgRevokeAllowance", cat(
+    str(1, granter), str(2, grantee))),
   submitNewParticipant: ({ creator, url, validatorKey, workerKey }) => any("/inference.inference.MsgSubmitNewParticipant", cat(
     str(1, creator), str(2, url), str(3, validatorKey), str(4, workerKey))),
   depositCollateral: (participant, amount) => any("/inference.collateral.MsgDepositCollateral", cat(
@@ -439,7 +441,7 @@ async function signAndBroadcast({ seed, chainId, priv, messages, gasAdjustment, 
   const acct = await getAccount(seed, address);
   if (!acct) {
     throw new Error(`account ${address} not found on the network — it has never received any GNK. ` +
-      "Fund it first (e.g. the faucet), then try again.");
+      "Send GNK to it first, then try again.");
   }
   const chain = chainId || await getChainId(seed);
   const body = txBody(messages, memo);

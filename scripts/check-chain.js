@@ -305,10 +305,10 @@ function commandsIn(html) {
     unknown.push("fee rules: the chain's parameters could not be read");
     seen.fees = was.fees;
   }
-  const claim = Math.round(parseFloat((k.faucet || {}).amount) * NGONKA_PER_GNK);
+  const claim = Number(k.setupNgonka) || 0;
   if (grantFee && claim && grantFee > claim) {
-    problem("grant-over-faucet", `The grant would cost ${grantFee.toLocaleString("en")} ngonka, more than the one faucet claim ` +
-      `(${claim.toLocaleString("en")}) the app tells people is enough.`);
+    problem("grant-over-setup", `The grant would cost ${grantFee.toLocaleString("en")} ngonka, more than the ` +
+      `${claim.toLocaleString("en")} the app tells people to send before setting up.`);
   }
 
   /* ---- 5. the files and commands the setup relies on ------------------ */
@@ -431,7 +431,7 @@ function commandsIn(html) {
     // What a corrected permission list would be: Gonka's own, inference
     // messages only, and accepted by the live chain in a dry run.
     fix,
-    grant: grantFee ? { feeNgonka: grantFee, faucetClaimNgonka: claim || null } : null,
+    grant: grantFee ? { feeNgonka: grantFee, setupNgonka: claim || null } : null,
     register: registerFee ? { feeNgonka: registerFee } : null,
     // News, newest first; the last sixty are kept.
     changes: [...changes.reverse(), ...(prev.changes || [])].slice(0, 60),

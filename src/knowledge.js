@@ -79,6 +79,9 @@ const overridable = {
   // v0.2.16 a node pays for every Proof of Compute it takes part in, and
   // without the balance it stays registered but is left out of the epoch.
   feeStartGnk: 10,
+  // Wrapped GNK on Ethereum, the traded form: the only official contract
+  // (gonka.ai/docs FAQ), named where the app says how to get GNK.
+  wgnkContract: "0x972a7a92d92796a98801a8818bcf91f1648f2f68",
 
   // The last state of the Gonka network a person checked this app against.
   // scripts/check-chain.js compares it with the live network every day: a newer
@@ -291,9 +294,14 @@ const overridable = {
   // Collateral: recommended buffer multiplier over network max weight.
   collateralBufferX: 2,
 
-  // Community faucet that dispenses a little starter GNK (for grant-gas).
-  // Overridable via the remote manifest if the URL/amount ever changes.
-  faucet: { url: "https://gonka.gg/faucet", amount: "0.01 GNK / 24h" },
+  // What the app asks people to send before setting up, in ngonka (0.01 GNK):
+  // the permissions grant costs about a tenth of it, and the registration, when
+  // the network does not do it, less. scripts/check-chain.js dry-runs the grant
+  // against the live chain daily and goes red if it ever costs more. (The
+  // community faucet was dropped in October 2026: it paid 0.01 GNK into a
+  // browser wallet of its own, often did not pay at all, and a node needs more
+  // than that for its fees anyway.)
+  setupNgonka: 10000000,
 
   // Where the app says it was opened (src/services/usage.js), which is how the
   // website's Impact page counts computers. Empty means nothing is ever sent;
@@ -312,6 +320,10 @@ const overridable = {
     quickstart: "https://gonka.ai/docs/host/quickstart/",
     // The guide's own part on what a host pays from v0.2.16, and how much to keep.
     fees: "https://gonka.ai/docs/host/quickstart/#fund-account-fees",
+    // Getting GNK: Gonka's bridge turns WGNK on Ethereum into GNK, in the browser
+    // on its dashboard; its wallet guide shows sending GNK from Keplr or Tangem.
+    bridge: "https://gonka.ai/docs/cross-chain-transfers/ethereum-bridge/dashboard/",
+    walletGuide: "https://gonka.ai/docs/wallet/wallet-and-transfer-guide/",
     keyManagement: "https://gonka.ai/host/key-management/",
     multiModelPoc: "https://gonka.ai/docs/host/multi_model_poc/",
     collateral: "https://gonka.ai/host/collateral/",

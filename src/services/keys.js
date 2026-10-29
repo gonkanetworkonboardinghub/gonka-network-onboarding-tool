@@ -158,6 +158,44 @@ const seedBase = (seedApiUrl) => String(seedApiUrl).replace(/\/+$/, "");
  */
 const GNOT_MEMO = `Set up with GNOT v${app.getVersion()}`;
 
+/** The cold→warm fee allowance as the chain's REST answers it, or null when there is none. */
+async function fetchAllowance(seed, cold, warm) {
+  const res = await fetch(`${seed}/chain-api/cosmos/feegrant/v1beta1/allowance/${cold}/${warm}`, { signal: AbortSignal.timeout(10000) });
+  if (res.ok) { const j = await res.json(); return (j && j.allowance && j.allowance.allowance) || null; }
+  // None is answered as HTTP 500 {"code":13,"message":"fee-grant not found: not found"}.
+  const body = await res.text().catch(() => "");
+  if (/not found/i.test(body)) return null;
+  throw new Error(`HTTP ${res.status}`);
+}
+
+/**
+ * Whether an existing allowance has to be replaced, as Gonka's v0.2.17
+ * grant-ml-ops-permissions decides it: from v0.2.17 the node's paid PoC
+ * commits spend the allowance, and the chain rejects a second
+ * MsgGrantAllowance, so a low or expiring one is revoked and granted again in
+ * the same tx. A larger or unlimited limit and a later or absent expiration
+ * are kept; allowance types other than BasicAllowance are left alone.
+ * `minNgonka` is the remaining limit below which it counts as low.
+ */
+function allowanceRefresh(existing, expiration, defaultNgonka, minNgonka = defaultNgonka) {
+  if (!existing || existing["@type"] !== "/cosmos.feegrant.v1beta1.BasicAllowance") {
+    return { refresh: false, spendLimit: String(defaultNgonka), expiration };
+  }
+  const limits = existing.spend_limit || [];
+  let spendLimit = String(defaultNgonka), low = false;
+  if (!limits.length) spendLimit = null;   // unlimited
+  else {
+    const have = BigInt((limits.find((c) => c.denom === wallet.DENOM) || {}).amount || 0);
+    low = have < BigInt(minNgonka);
+    if (have >= BigInt(defaultNgonka)) spendLimit = String(have);
+  }
+  let exp = expiration, expiring = false;
+  if (!existing.expiration) exp = null;
+  else if (new Date(existing.expiration) > expiration) exp = new Date(existing.expiration);
+  else expiring = true;
+  return { refresh: low || expiring, low, expiring, spendLimit, expiration: exp };
+}
+
 /**
  * Grant the node's ML-operational (warm) key its permissions plus a fee
  * allowance — what `inferenced tx inference grant-ml-ops-permissions` sends,
@@ -167,10 +205,17 @@ async function grantMlOps({ keyName, passphrase, warmAddress, seedApiUrl, grante
   const k = K.get();
   const seed = seedBase(seedApiUrl);
   const perms = k.mlOpsPermissions || [];
+  const allowanceMsgs = (cold, existing, r) => [
+    ...(existing ? [wallet.Msg.revokeAllowance(cold, warmAddress)] : []),
+    wallet.Msg.grantAllowance(cold, warmAddress, r.spendLimit ? [{ denom: wallet.DENOM, amount: r.spendLimit }] : [], r.expiration)
+  ];
   // Re-runs must not pay twice. The grant bundle costs ~0.0065 GNK in gas —
-  // more than half a faucet claim — and blindly re-granting drained a wallet
+  // more than half the 0.01 GNK people send to set up — and blindly re-granting drained a wallet
   // to "insufficient funds" on its second launch. Skip when every permission
-  // this version needs is already on-chain for this granter→grantee pair.
+  // this version needs is already on-chain for this granter→grantee pair —
+  // unless the fee allowance has run low (from v0.2.17 PoC commits spend it)
+  // or ends before the permissions do; then only the allowance is renewed.
+  let allowanceOnly = null;
   if (granterAddress) {
     try {
       const url = `${seed}/chain-api/cosmos/authz/v1beta1/grants/granter/${granterAddress}?pagination.limit=200`;
@@ -181,41 +226,66 @@ async function grantMlOps({ keyName, passphrase, warmAddress, seedApiUrl, grante
         const have = new Set(existing.map((g) => g.authorization && g.authorization.msg));
         const missing = perms.filter((p) => !have.has(p));
         if (existing.length && !missing.length) {
-          onData && onData(`Permissions already granted on-chain (${existing.length} grants to this node) — skipped, no gas spent.\n`);
-          return { ok: true, skipped: true, output: "already granted" };
-        }
-        if (existing.length) onData && onData(`${missing.length} permission(s) this version needs are missing — granting again.\n`);
+          let allowance, r;
+          try {
+            allowance = await fetchAllowance(seed, granterAddress, warmAddress);
+            // The earliest grant end, so the allowance lasts as long as the permissions.
+            const ends = existing.map((g) => g.expiration && new Date(g.expiration)).filter((d) => d && !isNaN(d));
+            const grantsEnd = ends.length ? new Date(Math.min(...ends)) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            // Below half, not below the default as when the full tx goes anyway:
+            // PoC commits spend it all the time, and each renewal costs gas.
+            r = allowanceRefresh(allowance, grantsEnd, k.mlOpsFeeAllowanceNgonka, BigInt(k.mlOpsFeeAllowanceNgonka) / 2n);
+          } catch (e) {
+            onData && onData(`Warning: could not check existing feegrant allowance: ${e.message}\n`);
+          }
+          if (!r || (allowance && !r.refresh)) {
+            onData && onData(`Permissions already granted on-chain (${existing.length} grants to this node) — skipped, no gas spent.\n`);
+            return { ok: true, skipped: true, output: "already granted" };
+          }
+          allowanceOnly = { allowance, r };
+          onData && onData(!allowance
+            ? "Permissions already granted, but the node's fee allowance is gone — granting a new one.\n"
+            : `Permissions already granted, but the node's fee allowance ${r.low ? "is running low" : "ends before the permissions do"} — renewing it.\n`);
+        } else if (existing.length) onData && onData(`${missing.length} permission(s) this version needs are missing — granting again.\n`);
       }
     } catch (_) { /* can't check — fall through and send the tx */ }
   }
 
   const key = unlock(keyName, passphrase);
   const cold = key.address;
-  const expiration = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);   // the CLI's default: one year
-  const messages = perms.map((typeUrl) => wallet.Msg.grant(cold, warmAddress, typeUrl, expiration));
-
-  // The chain rejects a duplicate fee allowance ("fee allowance already
-  // exists"), so only include it when there isn't one — as the CLI does.
-  let hasAllowance = false;
-  try {
-    const res = await fetch(`${seed}/chain-api/cosmos/feegrant/v1beta1/allowance/${cold}/${warmAddress}`, { signal: AbortSignal.timeout(10000) });
-    if (res.ok) { const j = await res.json(); hasAllowance = !!(j && j.allowance); }
-  } catch (e) {
-    onData && onData(`Warning: could not check existing feegrant allowance: ${e.message}\n`);
-  }
-  if (!hasAllowance) {
-    messages.push(wallet.Msg.grantAllowance(cold, warmAddress, [{ denom: wallet.DENOM, amount: String(k.mlOpsFeeAllowanceNgonka) }], expiration));
-    onData && onData("Including new feegrant allowance from cold to warm in this transaction.\n");
+  let messages;
+  if (allowanceOnly) {
+    messages = allowanceMsgs(cold, allowanceOnly.allowance, allowanceOnly.r);
   } else {
-    onData && onData("Existing feegrant allowance from cold to warm detected; skipping it.\n");
+    const expiration = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);   // the CLI's default: one year
+    messages = perms.map((typeUrl) => wallet.Msg.grant(cold, warmAddress, typeUrl, expiration));
+
+    // The chain rejects a duplicate fee allowance ("fee allowance already
+    // exists"). As the v0.2.17 CLI does: grant one when there is none, keep a
+    // valid one, and revoke and grant again in this tx one that is low or ends
+    // before these permissions.
+    let existing = null, checked = true;
+    try { existing = await fetchAllowance(seed, cold, warmAddress); }
+    catch (e) { checked = false; onData && onData(`Warning: could not check existing feegrant allowance: ${e.message}\n`); }
+    const r = allowanceRefresh(existing, expiration, k.mlOpsFeeAllowanceNgonka);
+    if (checked && (!existing || r.refresh)) {
+      messages.push(...allowanceMsgs(cold, existing, r));
+      onData && onData(existing ? "Refreshing the feegrant allowance from cold to warm in this transaction.\n"
+        : "Including new feegrant allowance from cold to warm in this transaction.\n");
+    } else if (checked) {
+      onData && onData("Existing feegrant allowance from cold to warm is valid; skipping it.\n");
+    } else {
+      // Can't tell, so grant as before; the chain rejects it if one already exists.
+      messages.push(...allowanceMsgs(cold, null, r));
+    }
   }
 
   // This tx bundles 17 authz grants plus a feegrant allowance, so it's sized
   // by simulation, with 20% headroom. At the chain's price from v0.2.16
   // (1 ngonka per gas) that is about 1,020,000 ngonka — a tenth of the
-  // 10,000,000 (0.01 GNK) one faucet claim gives. scripts/check-chain.js
-  // dry-runs it against the live chain daily and goes red if it ever stops
-  // fitting inside a claim.
+  // 10,000,000 (0.01 GNK) people are asked to send to set up (knowledge.js
+  // setupNgonka). scripts/check-chain.js dry-runs it against the live chain
+  // daily and goes red if it ever costs more.
   const r = await wallet.signAndBroadcast({
     seed, priv: key.priv, messages, gasAdjustment: 1.2, gasPrice: k.gasPriceNgonka, memo: GNOT_MEMO, onData
   });

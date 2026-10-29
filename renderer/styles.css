@@ -563,6 +563,21 @@ button:disabled:hover { border-color: var(--line-strong); background: transparen
   margin: 14px 0;
 }
 
+/* the first step's "No SSH key yet?": in plain sight, with its own button */
+.ssh-early { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--wash); font-size: 13px; line-height: 1.55; }
+
+/* the wallet step's live watch on the address: a pulsing dot, the balance, when it last looked */
+.fund-watch {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 14px 0 4px; padding: 10px 14px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--wash); font-size: 13px;
+}
+.watch-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; flex: none; }
+.watch-text { flex: 1 1 auto; }
+.watch-when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fund-steps { margin: 10px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; }
+.fund-steps li + li { margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .watch-dot { animation: none; } }
+
 /* deploy task list */
 .task { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
 .task:last-child { border-bottom: none; }
