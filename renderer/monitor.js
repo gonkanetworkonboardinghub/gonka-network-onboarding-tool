@@ -636,7 +636,7 @@ function monNetworkHtml() {
       <input type="text" id="mon-filter" class="mon-search" placeholder="${esc(t("Find a host by address, name or model"))}" value="${esc(MON.hostFilter)}" spellcheck="false">
       ${rows.length ? monHostRows(rows) : `<p class="small">${esc(t("No host matches."))}</p>`}
     </div>`;
-  return head + tiles + monUnderReported(o) + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + runs + hosts;
+  return head + tiles + monUnderReported(o) + `<div class="mon-two mon-two-top">${paid}${supply}</div>` + charts + monUsageCards(o) + runs + hosts;
 }
 
 /**
@@ -770,6 +770,42 @@ function monGpusCard(o) {
       <p>${esc(t("The network keeps only each host's latest hardware report, so the past comes from Gonkascan's record, which it has kept every epoch. GNOT measures each new epoch itself, and the two agree."))}
         <a href="#" data-open="https://gonkascan.com">gonkascan.com</a></p>`)}
   </div>`;
+}
+
+/* The network's total weight, and what users paid for AI, epoch by epoch
+   (usage.json, scripts/usage-snapshot.js). Weight is what the machines proved
+   they can compute, so it does not depend on what hosts report. An AI answer
+   costs its tokens, in and out, times the per-token price, so what users paid
+   turns into tokens wherever that price was recorded. */
+function monUsageCards(o) {
+  const use = o.usage || [];
+  const notYet = `<p class="small">${esc(t("Not collected yet. It fills in over the next few hours."))}</p>`;
+  const weight = use.filter((u) => u.weight > 0);
+  const wHead = `<h3>${esc(t("Total weight, epoch by epoch"))}</h3>`;
+  const wLast = weight[weight.length - 1];
+  const wCard = !weight.length ? `<div class="card">${wHead}${notYet}</div>` : `<div class="card">${wHead}
+    ${monPlot("weight", { label: t("Total weight, epoch by epoch"), kind: "line", fmt: (v) => monShortNum(v),
+      points: weight.map((u) => ({ y: u.weight, x: monDay(u.at) || String(u.epoch), tip: [t("Total weight {n}", { n: monNum(u.weight) }), monEpochWhen(u)] })) })}
+    <p class="small">${esc(t("{a} then, {b} in epoch {n}.", { a: monShortNum(weight[0].weight), b: monShortNum(wLast.weight), n: wLast.epoch }))}</p>
+    ${more("What is weight?", `<p>${esc(t("What the network's machines proved they can compute in the epoch's Proof of Compute, added up. Rewards are shared out by it, and unlike the GPU count it does not depend on what hosts report."))}</p>`)}
+  </div>`;
+  const ai = use.filter((u) => u.paid != null && u.hosts > 0 && u.epoch < o.epoch.index);
+  const aHead = `<h3>${esc(t("What users paid for AI, epoch by epoch"))}</h3>`;
+  const aLast = ai[ai.length - 1];
+  const tokens = (u) => (u.tokens != null ? t("about {n} tokens", { n: monShortNum(u.tokens) }) : t("tokens unknown: the price was not recorded then"));
+  // One epoch is a figure, not a line: the chain keeps these results only until the next epoch ends, so the line starts at epoch 439.
+  const aBig = ai.length === 1 ? `<div class="mon-paid-main"><b>${esc(aLast.tokens != null ? t("about {n} tokens", { n: monShortNum(aLast.tokens) }) : monGnkShort(aLast.paid))}</b><span>${esc(monEpochWhen(aLast))}</span></div>` : "";
+  const aCard = !ai.length ? `<div class="card">${aHead}${notYet}</div>` : `<div class="card">${aHead}
+    ${aBig || monPlot("ai", { label: t("What users paid for AI, epoch by epoch"), kind: "line", unit: "GNK", fmt: (v) => monShortNum(v),
+      points: ai.map((u) => ({ y: u.paid / MON_NGONKA, x: monDay(u.at) || String(u.epoch), tip: [t("{gnk} paid for AI", { gnk: monGnkShort(u.paid) }), tokens(u), monEpochWhen(u)] })) })}
+    <p class="small">${esc(aLast.tokens != null
+      ? t("Epoch {n}: about {tokens} tokens of AI, {gnk} paid.", { n: aLast.epoch, tokens: monShortNum(aLast.tokens), gnk: monGnkShort(aLast.paid) })
+      : t("Epoch {n}: {gnk} paid for AI.", { n: aLast.epoch, gnk: monGnkShort(aLast.paid) }))}</p>
+    ${more("What does this count?", `
+      <p>${esc(t("What users paid the hosts for AI answers in each epoch, read from the chain host by host. An answer costs its tokens, in and out, times the price per token, so wherever that price was recorded the tokens follow from it."))}</p>
+      <p>${esc(t("The network's AI runs through devshards. The chain keeps each epoch's devshard results only until the next epoch ends, so GNOT reads every epoch as it closes, and the line starts at epoch 439 (October 2026). It grows by one point each epoch."))}</p>`)}
+  </div>`;
+  return `<div class="mon-two">${wCard}${aCard}</div>`;
 }
 
 /* ---- every host -------------------------------------------------------- */

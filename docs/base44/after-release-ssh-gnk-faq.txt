@@ -1,0 +1,75 @@
+PROMPT FOR BASE44 — getting GNK, an SSH key before you rent, and the FAQ
+(attach 02-welcome-needs.png and 06-wallet.png from the folder
+"register-walkthrough-pictures-v3", then paste everything below and publish.
+Paste this only after the next GNOT release is out.)
+
+1. REGISTER A NODE (/register-a-node)
+   a. A short note box between step 2 ("See exactly what your server needs")
+      and step 3, in the site's info style, with a key icon:
+      Title: "Your provider asks for an SSH key?"
+      Text: "Most providers ask for one while you rent the server. No SSH key
+      yet? GNOT makes it for you before you rent: open Gonka Host Setup, press
+      "Create an SSH key" on the first step, copy it, and paste it into your
+      provider's SSH key box. GNOT then uses it by itself when it connects."
+   b. Step 2's picture: use the attached 02-welcome-needs.png instead of the
+      old one, and add to its caption: "No SSH key yet? "Create an SSH key"
+      makes one right there, ready for your provider's form."
+   c. Step 4 ("Connect"), new caption: "Paste the SSH command your provider
+      shows, or fill in the address, user and key. The key made on the first
+      step is already chosen."
+   d. Step 6 ("Your wallet"): use the attached 06-wallet.png instead of the
+      old one, and this caption: "GNOT creates your wallet on your own
+      computer. Its 24 recovery words are shown once: write them on paper and
+      never share them. Then send it a little GNK: 0.01 GNK is plenty to set
+      up, and the node's network fees come from it too, a little each epoch
+      (Gonka's guide suggests starting with 10 GNK, which lasts a long time).
+      GNOT watches the wallet live and sees the GNK arrive by itself; "How do I
+      get GNK?" shows the ways."
+   e. Step 9 ("Review and write the configuration"), in its caption, "Both
+      settings files can be opened and read first" becomes "Both settings
+      files can be opened, read and changed first".
+   The lightbox keeps going through all 14 pictures in order.
+
+2. GET A NODE (/get-a-node)
+   - In "What your server needs", the item "Root login over SSH — GNOT
+     connects with it from your computer" becomes "Root login over SSH — GNOT
+     connects with it from your computer. No SSH key yet? GNOT makes one on
+     its first step, ready to paste into your provider's form."
+   - In the Spheron card's "Before you rent at Spheron" list, add a fifth
+     line: "No SSH key? Create one in GNOT first, then paste it into Spheron"
+
+3. FAQ (/faq)
+   a. "What does it cost?" — new answer:
+      "GNOT itself costs nothing to use. What you pay for is the GPU server
+      you rent and the Gonka network's own fees. Setting up takes about 0.001
+      GNK. Since Gonka's upgrade of 8 October 2026 (v0.2.16) a node also pays
+      a small network fee for every Proof of Compute it takes part in, out of
+      its wallet: in Gonka's own example about 0.04 GNK an epoch, more for a
+      bigger node. Gonka's guide suggests starting with 10 GNK, which lasts a
+      long time, and GNOT's Verify step reads from your server what your node
+      will need."
+   b. In WHAT YOU NEED, after "Can I rent a spot or interruptible server to
+      save money?", a new question:
+      Q: "How do I get GNK?"
+      A: "Your node's wallet holds native GNK, on the Gonka network; GNOT shows
+      its address. If you already hold GNK in a Gonka wallet such as Keplr or
+      Tangem, send it there. If you hold WGNK on Ethereum (the traded form, on
+      Uniswap), Gonka's bridge on its own dashboard turns it into GNK in about
+      15–20 minutes, paid out to the gonka1 address of your Ethereum wallet;
+      from there, send it to your node's wallet. The only official WGNK is
+      contract 0x972a7a92d92796a98801a8818bcf91f1648f2f68. Start with a small
+      amount: transfers cannot be undone."
+      Under it, two links: "Gonka's wallet guide"
+      (https://gonka.ai/docs/wallet/wallet-and-transfer-guide/) and "Gonka's
+      bridge guide" (https://gonka.ai/docs/cross-chain-transfers/ethereum-bridge/dashboard/),
+      both opening in a new tab.
+   c. In WHAT YOU NEED, after the new one:
+      Q: "What is an SSH key, and do I need one?"
+      A: "It is how GNOT logs in to your rented server from your computer.
+      Most providers ask for one while you rent. If you don't have one, GNOT
+      makes it for you before you rent: open Gonka Host Setup, press "Create
+      an SSH key" on the first step, and paste it into your provider's SSH key
+      box. The private half never leaves your computer."
+
+Add the new words to every language the site offers. Change nothing else on
+the site.

@@ -35,7 +35,7 @@ const k = K.get();
 const knowledge = {
   seedNodes: k.seedNodes,
   api: { latestEpoch: k.api.latestEpoch, epochParticipants: k.api.epochParticipants, inferenceParams: k.api.inferenceParams },
-  epochsUrl: k.epochsUrl, networkUrl: k.networkUrl, capacityUrl: k.capacityUrl, governanceUrl: k.governanceUrl
+  epochsUrl: k.epochsUrl, networkUrl: k.networkUrl, capacityUrl: k.capacityUrl, usageUrl: k.usageUrl, governanceUrl: k.governanceUrl
 };
 const monitorSrc = fs.readFileSync(path.join(__dirname, "..", "src", "services", "monitor.js"), "utf8").trim();
 

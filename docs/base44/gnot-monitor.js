@@ -32,6 +32,7 @@ const KNOWLEDGE = {
   "epochsUrl": "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/epochs.json",
   "networkUrl": "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/network.json",
   "capacityUrl": "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/capacity.json",
+  "usageUrl": "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/usage.json",
   "governanceUrl": "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/governance.json"
 };
 
@@ -568,6 +569,19 @@ async function hardwareSetups() {
  * minutes; null when it cannot be had.
  */
 let capFile = { at: 0, data: null };
+/** The network's total weight and what users paid for AI, each epoch (scripts/usage-snapshot.js), kept ten minutes. */
+let useFile = { at: 0, data: null };
+async function usageFile() {
+  const url = K.get().usageUrl;
+  if (!url) return null;
+  if (useFile.data && Date.now() - useFile.at < 10 * 60 * 1000) return useFile.data;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) useFile = { at: Date.now(), data: await res.json() };
+  } catch (_) { /* keep whatever was read before */ }
+  return useFile.data;
+}
+
 async function capacityFile() {
   const url = K.get().capacityUrl;
   if (!url) return null;
@@ -622,7 +636,7 @@ async function epochPayout(seeds, e, rows) {
  * paid out, what exists, and how all of it moved over the recent epochs.
  */
 async function networkOverview(seeds, { epochs = 180 } = {}) {
-  const [now, mem, file, kept, cap] = await Promise.all([epochNow(seeds), members(seeds), networkFile(), epochArchive(), capacityFile()]);
+  const [now, mem, file, kept, cap, use] = await Promise.all([epochNow(seeds), members(seeds), networkFile(), epochArchive(), capacityFile(), usageFile()]);
   const byEpoch = kept || {};
   const totalWeight = mem.hosts.reduce((a, h) => a + h.weight, 0);
   const finished = Object.keys(byEpoch).map(Number).filter((e) => e < mem.epoch).sort((a, b) => a - b);
@@ -685,7 +699,20 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     // measured by GNOT's data job while the epoch was on, or else Gonkascan's record.
     capacity: ((cap && cap.epochs) || []).filter((c) => c.e > now.index - epochs && (c.g != null || c.gs != null)).map((c) => ({
       epoch: c.e, ...epochWhen(c.e, now), gpus: c.g != null ? c.g : c.gs, kinds: c.k || {}, measured: c.g != null
-    }))
+    })),
+    // The network's total weight, and what users paid for AI (ngonka), epoch by
+    // epoch (oldest first). An answer costs its tokens, in and out, times the
+    // per-token price, so the tokens follow wherever that price was seen and
+    // stayed one number while the epoch was on.
+    usage: ((use && use.epochs) || []).filter((u) => u.e > now.index - epochs).map((u) => {
+      const price = u.p && u.p[0] === u.p[1] && u.p[0] > 0 ? u.p[0] : null;
+      return {
+        epoch: u.e, ...epochWhen(u.e, now),
+        weight: u.w > 0 ? u.w : null,
+        paid: u.paid != null ? u.paid : null, hosts: u.hosts != null ? u.hosts : null,
+        price, tokens: u.paid != null && price ? Math.round(u.paid / price) : null
+      };
+    })
   };
 }
 
