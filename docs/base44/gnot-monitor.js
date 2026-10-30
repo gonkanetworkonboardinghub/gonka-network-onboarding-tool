@@ -253,9 +253,21 @@ async function members(seeds) {
     nodes: (p.ml_nodes || []).flatMap((g) => (g.ml_nodes || [])).map((n) => ({ id: n.node_id, pocWeight: num(n.poc_weight) })),
     votingPower: (p.voting_powers || []).reduce((a, v) => a + num(v.voting_power), 0)
   }));
-  const ex = await soft(ask(seeds, `${INF}/inference/excluded_participants/${epoch}`));
+  const [ex, group] = await Promise.all([
+    soft(ask(seeds, `${INF}/inference/excluded_participants/${epoch}`)),
+    soft(ask(seeds, `${INF}/inference/current_epoch_group_data`))
+  ]);
   const excluded = ((ex && ex.items) || []).map((x) => ({ address: x.address, reason: x.reason || "", height: num(x.exclusion_block_height) }));
-  return { epoch, hosts, excluded };
+  // Each model's weight rate this epoch (Gonka's dynamic coefficient, vote
+  // #115): a machine counts what it proved times its model's rate. The
+  // network moves the rates every epoch so each model gets its target share
+  // of the weight (a third each in October 2026).
+  const rates = {};
+  for (const c of ((group && group.epoch_group_data && group.epoch_group_data.confirmation_weight_scales) || [])) {
+    const e = c.effective_coefficient;
+    if (c.model_id && e && e.value !== undefined) rates[c.model_id] = num(e.value) * Math.pow(10, num(e.exponent));
+  }
+  return { epoch, hosts, excluded, rates };
 }
 
 /**
@@ -422,7 +434,11 @@ function summarise({ address, now, mem, hist, raw }) {
     id: n.local_id, status: n.status || "", models: n.models || [], version: n.version || "",
     gpus: (n.hardware || []).map((g) => ({ type: String(g.type || "").split("|")[0].trim(), memory: (String(g.type || "").split("|")[1] || "").trim(), count: num(g.count) })),
     pocWeight: me ? ((me.nodes.find((x) => x.id === n.local_id) || {}).pocWeight || 0) : 0
-  }));
+  })).map((n) => {
+    // What counts for the epoch: what it proved times its model's rate.
+    const rate = n.models.length && mem.rates ? mem.rates[n.models[0]] : undefined;
+    return { ...n, rate: rate != null ? rate : null, counts: rate != null && n.pocWeight ? Math.floor(n.pocWeight * rate) : null };
+  });
   const gpuCount = nodes.reduce((a, n) => a + n.gpus.reduce((b, g) => b + g.count, 0), 0);
   const gpuKinds = {};
   for (const n of nodes) for (const g of n.gpus) gpuKinds[g.type] = (gpuKinds[g.type] || 0) + g.count;
@@ -583,6 +599,33 @@ async function usageFile() {
     if (res.ok) useFile = { at: Date.now(), data: await res.json() };
   } catch (_) { /* keep whatever was read before */ }
   return useFile.data;
+}
+
+/**
+ * What hosts paid in network fees over about the last epoch (fees.json, from
+ * scripts/fees-snapshot.js), summed up for Host Setup's fee card: the hosts
+ * with under 1% of the network's weight — one 8-GPU server or less — and the
+ * biggest payment of all, in ngonka. Kept ten minutes; null when unknown.
+ */
+let feeFile = { at: 0, data: null };
+async function typicalFees() {
+  const url = K.get().feesUrl;
+  if (!url) return null;
+  if (!feeFile.data || Date.now() - feeFile.at > 10 * 60 * 1000) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) feeFile = { at: Date.now(), data: await res.json() };
+    } catch (_) { /* keep whatever was read before */ }
+  }
+  const f = feeFile.data;
+  const paid = ((f && f.hosts) || []).filter((h) => h.fees != null);
+  if (!paid.length) return null;
+  const small = paid.filter((h) => h.share < 0.01).map((h) => h.fees).sort((a, b) => a - b);
+  return {
+    asOf: f.asOf, hours: f.hours, hosts: paid.length,
+    small: small.length ? { hosts: small.length, low: small[0], high: small[small.length - 1], typical: median(small) } : null,
+    most: Math.max(...paid.map((h) => h.fees))
+  };
 }
 
 async function capacityFile() {
@@ -936,7 +979,7 @@ function saveNodes(dir, nodes) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, summarise,
+  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
