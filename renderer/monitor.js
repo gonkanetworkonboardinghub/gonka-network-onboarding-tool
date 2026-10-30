@@ -1362,17 +1362,23 @@ function monNodeHtml(d) {
     <div class="mon-tiles">
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Weight this epoch"))}${tip(TIPS.weight)}</div>
         <div class="mon-tile-num">${st.inEpoch ? esc(monNum(st.weight)) : "—"}</div>
-        <div class="mon-tile-sub">${st.inEpoch ? esc(t("{place} hosts · {share} of the network", { place: monPlace(st.place), share: monPct(st.share, 2) })) : "&nbsp;"}</div></div>
+        <div class="mon-tile-sub">${st.inEpoch ? esc(t("{place} hosts · {share} of the network", { place: monPlace(st.place), share: monPct(st.share, 2) })) : "&nbsp;"}</div>
+        ${(() => {
+          // A new node counts part of what its machines proved while it builds its reputation.
+          const proved = d.hardware.nodes.reduce((a, n) => a + (n.pocWeight || 0), 0);
+          return st.inEpoch && st.epochsCompleted < 10 && proved > st.weight * 1.15
+            ? `<div class="mon-tile-sub">${esc(t("New node: {pct} of the {w} it proved counts for now", { pct: monPct(st.weight / proved, 0), w: monNum(proved) }))}</div>` : "";
+        })()}</div>
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Last epoch's reward"))}${tip(TIPS.lastReward)}</div>
         <div class="mon-tile-num">${last ? esc(monGnk(last.reward)) : "—"}</div>
-        <div class="mon-tile-sub">${last ? esc([monUsd(last.reward), t("epoch {n}", { n: last.epoch }), monPlace(last.rewardPlace)].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
+        <div class="mon-tile-sub">${last ? esc([monUsd(last.reward), t("epoch {n}", { n: last.epoch }), monPlace(last.rewardPlace)].filter(Boolean).join(" · ")) : st.inEpoch ? esc(t("its first epoch is still running")) : "&nbsp;"}</div></div>
       ${d.now.estimate ? `
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("This epoch, estimated"))}${tip(TIPS.estimate)}</div>
         <div class="mon-tile-num">${esc(monGnk(d.now.estimate))}</div>
         <div class="mon-tile-sub">${esc([monUsd(d.now.estimate), t("the network's own estimate")].filter(Boolean).join(" · "))}</div></div>` : `
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}${tip(TIPS.nodeGpus)}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
-        <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t("{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
+        <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t(d.hardware.nodes.length === 1 ? "{n} working · 1 machine" : "{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}${tip(TIPS.onItsWay)}</div>
         <div class="mon-tile-num">${esc(monGnkShort(d.money.vesting.total))}</div>
         <div class="mon-tile-sub">${d.money.vesting.total > 0 && d.money.vesting.epochs ? esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs })].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
@@ -1409,6 +1415,9 @@ function monAttentionCard(d) {
     </div>`;
 }
 
+/** About when the current epoch ends: the next Proof of Compute. */
+const monEpochEnds = (d) => monWhenFull(new Date(Date.now() + (d.epoch.secondsToNextPoc || 0) * 1000).toISOString());
+
 /* Rewards, one bar an epoch. An epoch the node sat out leaves a gap with a
    mark on the line, so a missing bar is never mistaken for a missing reading. */
 function monRewardsCard(d) {
@@ -1418,6 +1427,12 @@ function monRewardsCard(d) {
   const tot = d.totals;
   if (tot.unknown === tot.of) {
     return `<div class="card"><h3>${esc(t("Rewards, epoch by epoch"))}</h3><p class="small">${esc(t("The record of past epochs could not be downloaded just now. Try Refresh in a moment."))}</p></div>`;
+  }
+  if (!tot.epochs) {
+    const st = d.standing;
+    return `<div class="card"><h3>${esc(t("Rewards, epoch by epoch"))}</h3><p class="small">${esc(st.inEpoch
+      ? t("No rewards yet. Its first epoch, {n}, ends at the next Proof of Compute, {when}. Its reward is settled then and released a slice at a time.", { n: d.epoch.index, when: monEpochEnds(d) })
+      : t("No rewards in the last {n} epochs.", { n: tot.of }))}</p></div>`;
   }
   const plot = monPlot("rewards", { label: t("Rewards, epoch by epoch"), kind: lines.length > 48 ? "line" : "bars", unit: "GNK", fmt: (v) => monShortNum(v),
     points: lines.map((l) => ({
@@ -1438,7 +1453,9 @@ function monRewardsCard(d) {
    that epoch. Worse is only called worse when it is clearly so. */
 function monWorkCard(d) {
   const l = d.last;
-  if (!l) return `<div class="card"><h3>${esc(t("How well it worked"))}</h3><p class="small">${esc(t("No finished epoch to show yet. This fills in after the node's first full epoch."))}</p></div>`;
+  if (!l) return `<div class="card"><h3>${esc(t("How well it worked"))}</h3><p class="small">${esc(d.standing.inEpoch
+    ? t("Its first epoch, {n}, is still running. When it ends at the next Proof of Compute, {when}, this shows how the node did.", { n: d.epoch.index, when: monEpochEnds(d) })
+    : t("No finished epoch to show yet. This fills in after the node's first full epoch."))}</p></div>`;
   const row = (label, mine, typical, count, help) => {
     const worse = typical !== null && mine > typical * 1.5 && mine - typical > 0.01;
     const better = typical !== null && mine < typical;
@@ -1524,10 +1541,10 @@ function monHardwareCard(d) {
   return `
     <div class="card">
       <h3>${esc(t("Hardware the network sees"))}</h3>
-      <p class="small">${esc(t("{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
+      <p class="small">${esc(t(h.nodes.length === 1 ? "{working} of 1 machine working · {gpus}" : "{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
       ${h.underReported ? `<div class="warn-banner">${esc(t("Its weight equals about {n} H100s, but it reports {g} GPUs: it runs far more than it reports. Hosts report their own hardware, and the network does not check it.", { n: monNum(h.h100 || 0), g: monNum(h.gpuCount) }))}</div>` : h.h100 ? `<p class="small">${esc(t("Its weight equals about {n} H100s.", { n: monNum(h.h100) }))}</p>` : ""}
       <div class="mon-table">
-        <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Weight"))}</span></div>
+        <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Weight"))}${tip(TIPS.machineWeight)}</span></div>
         ${h.nodes.map((n) => {
           const ok = /INFERENCE|POC|POW/i.test(n.status);
           return `<div class="mon-row">
