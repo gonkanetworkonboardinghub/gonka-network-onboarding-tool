@@ -451,15 +451,47 @@ function attention(v) {
     if (clearlyMore(l.missedShare, l.typicalMissedShare)) add("warn", "missed", { epoch: l.epoch, mine: l.missedShare, typical: l.typicalMissedShare });
     if (l.validated + l.invalidated > 0 && clearlyMore(l.invalidShare, l.typicalInvalidShare)) add("warn", "judged-wrong", { epoch: l.epoch, mine: l.invalidShare, typical: l.typicalInvalidShare });
   }
+  // AI work through devshards: clearly more missed or wrong answers per session than the middle host.
+  const w = v.work;
+  const wellAbove = (mine, typical) => mine !== null && typical !== null && mine > typical * 3 && mine - typical > 2;
+  if (w && w.mine.sessions >= 5) {
+    if (wellAbove(w.missedPer, w.typical.missedPer)) add("warn", "ds-missed", { epoch: w.epoch, missed: w.mine.missed, sessions: w.mine.sessions, mine: w.missedPer, typical: w.typical.missedPer });
+    if (wellAbove(w.invalidPer, w.typical.invalidPer)) add("warn", "ds-wrong", { epoch: w.epoch, invalid: w.mine.invalid, sessions: w.mine.sessions, mine: w.invalidPer, typical: w.typical.invalidPer });
+  }
   const rank = { bad: 0, warn: 1 };
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
+/**
+ * How a host's AI work went in the newest epoch the data job has its devshard
+ * results for (usage.json h: the chain keeps them only until the next epoch
+ * ends): AI sessions served, answers missed and judged wrong, and what users
+ * paid it, beside the middle host of that epoch, per session so a small host
+ * and a big one compare fairly. null when there are none for this address.
+ */
+function devshardWork(use, address, current) {
+  const eps = ((use && use.epochs) || []).filter((u) => u.h && u.h[address]).sort((a, b) => b.e - a.e);
+  const u = eps[0];
+  if (!u) return null;
+  const one = (a) => ({ missed: a[0], invalid: a[1], paid: a[2], sessions: a[5] });
+  const all = Object.values(u.h).map(one).filter((x) => x.sessions > 0);
+  const per = (x, k) => x[k] / x.sessions;
+  const mine = one(u.h[address]);
+  return {
+    epoch: u.e, hosts: all.length, mine,
+    missedPer: mine.sessions ? per(mine, "missed") : null, invalidPer: mine.sessions ? per(mine, "invalid") : null,
+    typical: { sessions: median(all.map((x) => x.sessions)), missedPer: median(all.map((x) => per(x, "missed"))), invalidPer: median(all.map((x) => per(x, "invalid"))), paid: median(all.map((x) => x.paid)) },
+    // The chain adds results as the epoch's AI sessions close, through the next epoch.
+    settling: u.e >= current - 1
+  };
+}
+
 /** The whole picture for one address. */
 async function overview(seeds, address, { epochs = 30 } = {}) {
-  const [now, mem, raw, file] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile()]);
+  const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const hist = await history(seeds, mem.epoch || now.index, epochs);
   const view = summarise({ address, now, mem, hist, raw });
+  view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight
   // takes (scripts/network-snapshot.js): hosts report their own hardware.
@@ -612,10 +644,17 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
   const files = (file && file.hosts) || {};
   // An epoch with no request counts for anyone: "missed" is unknown, not 0%.
   const lastRecorded = lastRows.some((r) => r.requests + r.missed > 0);
+  // AI work through devshards in the newest epoch the data job has results for:
+  // each host's missed and wrong answers in its AI sessions, and the middle host's rate.
+  const wu = ((use && use.epochs) || []).filter((u) => u.h).sort((a, b) => b.e - a.e)[0] || null;
+  const wRows = wu ? Object.values(wu.h).filter((a) => a[5] > 0) : [];
+  const typicalMissedPer = wRows.length ? median(wRows.map((a) => a[0] / a[5])) : null;
   const hosts = mem.hosts.map((h) => {
     const g = files[h.address] || null;
     const last = lastRows.find((r) => r.address === h.address) || null;
+    const ds = wu && wu.h[h.address];
     return {
+      work: ds ? { epoch: wu.e, missed: ds[0], invalid: ds[1], sessions: ds[5], missedPer: ds[5] ? ds[0] / ds[5] : null, typicalMissedPer } : null,
       address: h.address,
       weight: h.weight,
       share: share(h.weight, totalWeight),

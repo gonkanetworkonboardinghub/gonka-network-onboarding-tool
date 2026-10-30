@@ -425,6 +425,8 @@ function monTicks(max) {
 }
 /** "Oct 3" under the chart; the full date and time, with its zone, in the readout. */
 const monDay = (iso) => (iso ? new Date(iso).toLocaleDateString(monLang(), { month: "short", day: "numeric" }) : "");
+/** A figure per session: one decimal under ten, whole above. */
+const monPer = (x) => Number(x).toLocaleString(monLang(), { maximumFractionDigits: x < 10 ? 1 : 0 });
 const monRate = (r) => "×" + Number(r).toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monWhenFull = (iso) => (iso ? new Date(iso).toLocaleString(monLang(), { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "");
 /** "Epoch 435 · began Oct 23, 2026, 3:12 PM EDT"; "about" when it is worked out rather than recorded. */
@@ -811,7 +813,14 @@ function monHostRows(rows) {
           <span class="r">${esc(monNum(h.weight))}</span>
           <span class="mon-share"><i style="width:${Math.max(2, Math.round(h.share / topShare * 100))}%"></i><b>${esc(monPct(h.share))}</b></span>
           <span class="r">${h.lastReward === null ? "—" : esc(monGnkShort(h.lastReward))}</span>
-          <span class="r ${h.missedShare !== null && h.missedShare > 0.05 ? "mon-bad" : ""}">${h.missedShare === null ? "—" : esc(monPct(h.missedShare))}</span>
+          ${(() => {
+            // The share of requests when the network recorded them; otherwise its AI sessions' missed answers, per session.
+            if (h.missedShare !== null) return `<span class="r ${h.missedShare > 0.05 ? "mon-bad" : ""}">${esc(monPct(h.missedShare))}</span>`;
+            const w = h.work;
+            if (!w || w.missedPer === null) return `<span class="r">—</span>`;
+            const bad = w.typicalMissedPer !== null && w.missedPer > w.typicalMissedPer * 3 && w.missedPer - w.typicalMissedPer > 2;
+            return `<span class="r ${bad ? "mon-bad" : ""}" title="${esc(t("{missed} missed in {sessions} AI sessions, epoch {n}", { missed: monNum(w.missed), sessions: monNum(w.sessions), n: w.epoch }))}">${esc(monPer(w.missedPer))}</span>`;
+          })()}
         </button>`;
       }).join("")}
     </div>`;
@@ -1410,6 +1419,8 @@ function monAttentionCard(d) {
       case "no-reward": return t("It took part in epoch {n} but was paid nothing for it.", { n: a.epoch });
       case "missed": return t("In epoch {n} it missed {mine} of its requests. A typical host missed {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
       case "judged-wrong": return t("In epoch {n}, {mine} of its checked answers were judged wrong. For a typical host it was {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
+      case "ds-missed": return t("In epoch {n} it missed {missed} answers in {sessions} AI sessions, about {mine} a session. A typical host missed about {typical}.", { n: a.epoch, missed: monNum(a.missed), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
+      case "ds-wrong": return t("In epoch {n}, {invalid} of its answers were judged wrong in {sessions} AI sessions, about {mine} a session. For a typical host it was about {typical}.", { n: a.epoch, invalid: monNum(a.invalid), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
       default: return a.code;
     }
   };
@@ -1458,33 +1469,45 @@ function monRewardsCard(d) {
 /* How well it worked, set beside a typical host: the middle one of all hosts
    that epoch. Worse is only called worse when it is clearly so. */
 function monWorkCard(d) {
-  const l = d.last;
-  if (!l) return `<div class="card"><h3>${esc(t("How well it worked"))}</h3><p class="small">${esc(d.standing.inEpoch
-    ? t("Its first epoch, {n}, is still running. When it ends at the next Proof of Compute, {when}, this shows how the node did.", { n: d.epoch.index, when: monEpochEnds(d) })
-    : t("No finished epoch to show yet. This fills in after the node's first full epoch."))}</p></div>`;
-  const row = (label, mine, typical, count, help) => {
-    const worse = typical !== null && mine > typical * 1.5 && mine - typical > 0.01;
+  const l = d.last, w = d.work;
+  // Mine beside the middle host: a bar each, and in words which side it is on.
+  const row = (label, mine, typical, count, help, fmt, slack) => {
+    const worse = typical !== null && mine > typical * 1.5 && mine - typical > slack;
     const better = typical !== null && mine < typical;
     const top = Math.max(mine, typical || 0, 0.0001);
     const word = typical === null ? "" : worse ? t("more than a typical host") : better ? t("less than a typical host") : t("about the same as a typical host");
     return `
       <div class="mon-compare">
-        <div class="mon-compare-top"><span>${esc(label)}${help ? tip(help) : ""}</span><b class="${worse ? "bad" : ""}">${esc(monPct(mine))}</b></div>
+        <div class="mon-compare-top"><span>${esc(label)}${help ? tip(help) : ""}</span><b class="${worse ? "bad" : ""}">${esc(fmt(mine))}</b></div>
         <div class="mon-compare-bars">
           <div class="mon-cbar ${worse ? "bad" : ""}"><i style="width:${Math.max(1, Math.round(mine / top * 100))}%"></i><span>${esc(t("this node"))} · ${esc(count)}</span></div>
-          ${typical === null ? "" : `<div class="mon-cbar typ"><i style="width:${Math.max(1, Math.round(typical / top * 100))}%"></i><span>${esc(t("a typical host"))} · ${esc(monPct(typical))}</span></div>`}
+          ${typical === null ? "" : `<div class="mon-cbar typ"><i style="width:${Math.max(1, Math.round(typical / top * 100))}%"></i><span>${esc(t("a typical host"))} · ${esc(fmt(typical))}</span></div>`}
         </div>
         ${word ? `<div class="small">${esc(word)}</div>` : ""}
       </div>`;
   };
+  // Its AI work through devshards: what the chain recorded as its sessions closed.
+  if (w && w.mine.sessions > 0) {
+    return `
+    <div class="card">
+      <h3>${esc(t("How well it worked in epoch {n}", { n: w.epoch }))}</h3>
+      <div class="mon-kv"><span>${esc(t("AI sessions it served"))}${tip(TIPS.sessions)}</span> <b>${esc(monNum(w.mine.sessions))}</b></div>
+      ${row(t("Answers missed, per session"), w.missedPer, w.typical.missedPer, t("{n} missed", { n: monNum(w.mine.missed) }), TIPS.dsMissed, monPer, 0.5)}
+      ${row(t("Answers judged wrong, per session"), w.invalidPer, w.typical.invalidPer, t("{n} judged wrong", { n: monNum(w.mine.invalid) }), TIPS.dsWrong, monPer, 0.2)}
+      <div class="mon-kv"><span>${esc(t("Users paid for its AI answers"))}${tip(TIPS.dsPaid)}</span> <b>${esc(monGnk(w.mine.paid))}</b></div>
+      <p class="small">${esc(t("A typical host is the middle one of the {hosts} that served AI sessions in that epoch.", { hosts: w.hosts }))}${w.settling ? " " + esc(t("Its sessions are still closing, so these figures can still grow for a while.")) : ""}</p>
+    </div>`;
+  }
+  if (!l || l.requestsRecorded === false) return `<div class="card"><h3>${esc(t("How well it worked"))}</h3><p class="small">${esc(!l && d.standing.inEpoch
+    ? t("Its first epoch, {n}, is still running. When it ends at the next Proof of Compute, {when}, this shows how the node did.", { n: d.epoch.index, when: monEpochEnds(d) })
+    : l ? t("Its results for epoch {n} are being collected and show here within the hour.", { n: l.epoch })
+      : t("No finished epoch to show yet. This fills in after the node's first full epoch."))}</p></div>`;
   return `
     <div class="card">
       <h3>${esc(t("How well it worked in epoch {n}", { n: l.epoch }))}</h3>
-      ${l.requestsRecorded === false
-        ? `<p class="small">${esc(t("The network recorded no request counts for any host in epoch {n}, so there is nothing to compare for it.", { n: l.epoch }))}</p>`
-        : `<div class="mon-kv"><span>${esc(t("Requests answered"))}${tip(TIPS.requests)}</span> <b>${esc(monNum(l.requests))}</b></div>
-      ${row(t("Requests it missed"), l.missedShare, l.typicalMissedShare, t("{n} missed", { n: monNum(l.missed) }), TIPS.missed)}`}
-      ${l.validated + l.invalidated > 0 ? row(t("Answers judged wrong"), l.invalidShare, l.typicalInvalidShare, t("{n} of {of} checked", { n: monNum(l.invalidated), of: monNum(l.validated + l.invalidated) }), TIPS.invalid) : ""}
+      <div class="mon-kv"><span>${esc(t("Requests answered"))}${tip(TIPS.requests)}</span> <b>${esc(monNum(l.requests))}</b></div>
+      ${row(t("Requests it missed"), l.missedShare, l.typicalMissedShare, t("{n} missed", { n: monNum(l.missed) }), TIPS.missed, monPct, 0.01)}
+      ${l.validated + l.invalidated > 0 ? row(t("Answers judged wrong"), l.invalidShare, l.typicalInvalidShare, t("{n} of {of} checked", { n: monNum(l.invalidated), of: monNum(l.validated + l.invalidated) }), TIPS.invalid, monPct, 0.01) : ""}
       <p class="small">${esc(t("A typical host is the middle one of the {hosts} that took part in that epoch.", { hosts: l.hosts }))}</p>
     </div>`;
 }

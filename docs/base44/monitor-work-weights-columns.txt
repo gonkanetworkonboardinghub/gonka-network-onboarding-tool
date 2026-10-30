@@ -1,14 +1,24 @@
-PROMPT FOR BASE44 — weights explained by each model's rate, a Weight column for every host, and no crowded columns
+PROMPT FOR BASE44 — how well each host worked, weights explained by each model's rate, and uncrowded columns
 (no pictures; paste everything below and publish)
 
 1. REPLACE THE WHOLE CODE of the backend function gnot-monitor with EXACTLY the
    code below, unchanged — not rewritten, not shortened, not split, not
    reformatted. It is generated from the app's own code. It answers exactly as
-   before, with one addition: in a node's answer (view "node"), each machine
-   in hardware.nodes now also has rate (its model's weight rate this epoch,
-   such as 0.3024) and counts (what the machine counts for in the epoch: what
-   it proved times that rate, rounded down). A node's machines' counts add up
-   to its weight.
+   before, with these additions:
+   - In a node's answer (view "node"):
+     • each machine in hardware.nodes has rate (its model's weight rate this
+       epoch, such as 0.3024) and counts (what it proved times that rate,
+       rounded down); a node's machines' counts add up to its weight.
+     • work: how its AI work went in the newest finished epoch the chain has
+       results for, or null: { epoch, hosts, settling, mine: { sessions,
+       missed, invalid, paid }, missedPer, invalidPer, typical: { sessions,
+       missedPer, invalidPer, paid } } — "per" is per AI session; "typical" is
+       the middle host of that epoch; paid is in ngonka.
+     • attention can now also hold "ds-missed" { epoch, missed, sessions,
+       mine, typical } and "ds-wrong" { epoch, invalid, sessions, mine,
+       typical }.
+   - In the network's answer: each host has work: { epoch, missed, invalid,
+     sessions, missedPer, typicalMissedPer }, or null.
 
 ----- code for gnot-monitor (start) -----
 // gnot-monitor — the data behind the website's Monitor/Vote pages.
@@ -549,15 +559,47 @@ function attention(v) {
     if (clearlyMore(l.missedShare, l.typicalMissedShare)) add("warn", "missed", { epoch: l.epoch, mine: l.missedShare, typical: l.typicalMissedShare });
     if (l.validated + l.invalidated > 0 && clearlyMore(l.invalidShare, l.typicalInvalidShare)) add("warn", "judged-wrong", { epoch: l.epoch, mine: l.invalidShare, typical: l.typicalInvalidShare });
   }
+  // AI work through devshards: clearly more missed or wrong answers per session than the middle host.
+  const w = v.work;
+  const wellAbove = (mine, typical) => mine !== null && typical !== null && mine > typical * 3 && mine - typical > 2;
+  if (w && w.mine.sessions >= 5) {
+    if (wellAbove(w.missedPer, w.typical.missedPer)) add("warn", "ds-missed", { epoch: w.epoch, missed: w.mine.missed, sessions: w.mine.sessions, mine: w.missedPer, typical: w.typical.missedPer });
+    if (wellAbove(w.invalidPer, w.typical.invalidPer)) add("warn", "ds-wrong", { epoch: w.epoch, invalid: w.mine.invalid, sessions: w.mine.sessions, mine: w.invalidPer, typical: w.typical.invalidPer });
+  }
   const rank = { bad: 0, warn: 1 };
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
+/**
+ * How a host's AI work went in the newest epoch the data job has its devshard
+ * results for (usage.json h: the chain keeps them only until the next epoch
+ * ends): AI sessions served, answers missed and judged wrong, and what users
+ * paid it, beside the middle host of that epoch, per session so a small host
+ * and a big one compare fairly. null when there are none for this address.
+ */
+function devshardWork(use, address, current) {
+  const eps = ((use && use.epochs) || []).filter((u) => u.h && u.h[address]).sort((a, b) => b.e - a.e);
+  const u = eps[0];
+  if (!u) return null;
+  const one = (a) => ({ missed: a[0], invalid: a[1], paid: a[2], sessions: a[5] });
+  const all = Object.values(u.h).map(one).filter((x) => x.sessions > 0);
+  const per = (x, k) => x[k] / x.sessions;
+  const mine = one(u.h[address]);
+  return {
+    epoch: u.e, hosts: all.length, mine,
+    missedPer: mine.sessions ? per(mine, "missed") : null, invalidPer: mine.sessions ? per(mine, "invalid") : null,
+    typical: { sessions: median(all.map((x) => x.sessions)), missedPer: median(all.map((x) => per(x, "missed"))), invalidPer: median(all.map((x) => per(x, "invalid"))), paid: median(all.map((x) => x.paid)) },
+    // The chain adds results as the epoch's AI sessions close, through the next epoch.
+    settling: u.e >= current - 1
+  };
+}
+
 /** The whole picture for one address. */
 async function overview(seeds, address, { epochs = 30 } = {}) {
-  const [now, mem, raw, file] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile()]);
+  const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const hist = await history(seeds, mem.epoch || now.index, epochs);
   const view = summarise({ address, now, mem, hist, raw });
+  view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight
   // takes (scripts/network-snapshot.js): hosts report their own hardware.
@@ -710,10 +752,17 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
   const files = (file && file.hosts) || {};
   // An epoch with no request counts for anyone: "missed" is unknown, not 0%.
   const lastRecorded = lastRows.some((r) => r.requests + r.missed > 0);
+  // AI work through devshards in the newest epoch the data job has results for:
+  // each host's missed and wrong answers in its AI sessions, and the middle host's rate.
+  const wu = ((use && use.epochs) || []).filter((u) => u.h).sort((a, b) => b.e - a.e)[0] || null;
+  const wRows = wu ? Object.values(wu.h).filter((a) => a[5] > 0) : [];
+  const typicalMissedPer = wRows.length ? median(wRows.map((a) => a[0] / a[5])) : null;
   const hosts = mem.hosts.map((h) => {
     const g = files[h.address] || null;
     const last = lastRows.find((r) => r.address === h.address) || null;
+    const ds = wu && wu.h[h.address];
     return {
+      work: ds ? { epoch: wu.e, missed: ds[0], invalid: ds[1], sessions: ds[5], missedPer: ds[5] ? ds[0] / ds[5] : null, typicalMissedPer } : null,
       address: h.address,
       weight: h.weight,
       share: share(h.weight, totalWeight),
@@ -1120,48 +1169,93 @@ Deno.serve(async (req) => {
 });
 ----- code for gnot-monitor (end) -----
 
-2. A NODE'S PAGE (/monitor/node/…) — WHY THE WEIGHTS DIFFER
-   a. "WEIGHT THIS EPOCH" figure at the top: REMOVE the line that starts with
-      "New node:" (it was wrong). Instead, when the node is in the epoch and
-      the sum of hardware.nodes[].pocWeight differs from standing.weight by
-      more than 5%, show this second small line:
-      - when all its machines run one model: "{w} proved, {rate} for {model}
-        this epoch" — {w} = that sum with thousands separators, {rate} = the
-        machines' rate as "×0.30" (two decimals), {model} = the model's short
-        name (MiniMax-M2.7).
-      - when they run more than one model: "{w} proved, times each model's
-        rate this epoch".
+2. A NODE'S PAGE (/monitor/node/…) — "HOW WELL IT WORKED"
+   a. When work is present and work.mine.sessions is above 0, the card is:
+      Title "How well it worked in epoch {work.epoch}", then:
+      - a line "AI sessions it served" with work.mine.sessions on the right;
+      - "Answers missed, per session" with missedPer on the right (one
+        decimal under 10, whole numbers above), and the two bars the card
+        already uses: "this node · {mine.missed} missed" and "a typical host ·
+        {typical.missedPer}", with under them "more than a typical host" (red,
+        when missedPer is over 1.5 × the typical and more than 0.5 above it),
+        "less than a typical host" or "about the same as a typical host";
+      - "Answers judged wrong, per session" the same way, with "this node ·
+        {mine.invalid} judged wrong" (more than typical when over 1.5 × and
+        more than 0.2 above);
+      - a line "Users paid for its AI answers" with mine.paid in GNK
+        (÷ 1,000,000,000, as "71.14 GNK");
+      - small: "A typical host is the middle one of the {work.hosts} that
+        served AI sessions in that epoch." and, when work.settling is true,
+        "Its sessions are still closing, so these figures can still grow for a
+        while."
+   b. When there is no such work: keep the current card, except that the
+      line "The network recorded no request counts for any host in epoch
+      {n}, so there is nothing to compare for it." becomes "Its results for
+      epoch {n} are being collected and show here within the hour."
+   c. "Things worth a look" sentences for the new codes:
+      - ds-missed: "In epoch {epoch} it missed {missed} answers in {sessions}
+        AI sessions, about {mine} a session. A typical host missed about
+        {typical}."
+      - ds-wrong: "In epoch {epoch}, {invalid} of its answers were judged
+        wrong in {sessions} AI sessions, about {mine} a session. For a typical
+        host it was about {typical}."
+   d. Small "i"s, with these words:
+      - "AI sessions it served": "The AI sessions this node served in that
+        epoch. Users' AI requests reach hosts through these sessions, each
+        shared by a few hosts."
+      - "Answers missed, per session": "Answers this node did not give in
+        time, per session it served, as the chain recorded them when its
+        sessions closed. A host that misses many more than others is paid
+        less, or nothing, for the epoch."
+      - "Answers judged wrong, per session": "Answers other hosts checked and
+        found wrong, per session. Wrong answers cost a host its reward and can
+        cost part of its collateral."
+      - "Users paid for its AI answers": "What users were charged for this
+        node's AI answers in that epoch, as the chain recorded it."
+
+3. A NODE'S PAGE — WHY THE WEIGHTS DIFFER
+   a. "WEIGHT THIS EPOCH" figure: REMOVE the line that starts with "New
+      node:" (it was wrong). Instead, when the node is in the epoch and the sum
+      of hardware.nodes[].pocWeight differs from standing.weight by more than
+      5%, show a second small line: when all its machines run one model, "{w}
+      proved, {rate} for {model} this epoch" ({w} = that sum with thousands
+      separators, {rate} = the machines' rate as "×0.30", {model} = the
+      model's short name); when they run more than one, "{w} proved, times
+      each model's rate this epoch".
    b. "Hardware the network sees", the machine table: the column "Weight"
-      becomes "Proved", and a new last column "Counts" shows counts for each
-      machine (with thousands separators, "—" when missing). Pointing at a
-      Counts figure shows "×0.30, MiniMax-M2.7's rate this epoch".
-      The "i" on "Proved" says: "What this machine proved in Proof of Compute,
-      before its model's rate."
-      Give "Counts" an "i" like the others, saying: "What this machine counts
-      for in the epoch: what it proved times its model's rate. Each model has
-      its own rate, which the network adjusts every epoch so each model gets
-      its share of the weight. These add up to the node's weight."
+      becomes "Proved", and a new last column "Counts" shows each machine's
+      counts ("—" when missing); pointing at it shows "×0.30, MiniMax-M2.7's
+      rate this epoch". The "i" on "Proved": "What this machine proved in Proof
+      of Compute, before its model's rate." An "i" on "Counts": "What this
+      machine counts for in the epoch: what it proved times its model's rate.
+      Each model has its own rate, which the network adjusts every epoch so
+      each model gets its share of the weight. These add up to the node's
+      weight."
 
-3. THE NETWORK (/monitor/network), "Every host":
-   a. A new column "Weight", right before "Share of the network", with each
-      host's weight (hosts[].weight) right-aligned with thousands separators,
-      and an "i" saying: "What the host's machines proved this epoch, each
-      times its model's rate. The epoch's reward is shared out by it."
-   b. Nothing may run into the next column. At about 1000px wide the list of
-      models now runs over the share column: let the models take up to two
-      lines, then end with "…", with the whole list shown when pointing at
-      it. Column names may take two lines instead of being cut off. A host's
-      flags ("reports too few GPUs", "left out") go on their own line under
-      its address.
+4. THE NETWORK (/monitor/network), "Every host":
+   a. A new column "Weight", right before "Share of the network": each host's
+      weight, right-aligned with thousands separators, with an "i": "What the
+      host's machines proved this epoch, each times its model's rate. The
+      epoch's reward is shared out by it."
+   b. "Missed": when a host's missedShare is null and it has work, show
+      work.missedPer (one decimal under 10, whole above) instead of "—", red
+      when it is over 3 × typicalMissedPer and more than 2 above it; pointing
+      at it shows "{missed} missed in {sessions} AI sessions, epoch {epoch}".
+      Its "i" now says: "Answers the host missed in the last finished epoch,
+      per AI session it served, as the chain recorded them when its sessions
+      closed. Hosts that miss many more than others are paid less."
+   c. Nothing may run into the next column: the models take up to two lines,
+      then "…", with the whole list shown when pointing at it; column names
+      may take two lines instead of being cut off; a host's flags ("reports
+      too few GPUs", "left out") go on their own line under its address.
 
-4. MINE OR BUY (/mine-or-buy):
-   a. The rigs table: the "†" after a rig (such as "8× B300 †") runs into the
-      model name beside it. Keep at least 12px between every column, and the
-      "†" stays right after the rig's name, inside its own column.
-   b. The provider table (a provider opened, such as Spheron): the column
-      names touch each other ("GNK A DAY ⓘRENT BELOW ⓘCHEAPEST DEDICATED"). Keep
-      at least 16px between columns; a column name may take two lines; its
-      "i" always stays right after the last word, never alone on a line.
+5. MINE OR BUY (/mine-or-buy):
+   a. The rigs table: the "†" after a rig runs into the model name beside it.
+      Keep at least 12px between columns; the "†" stays inside the rig's
+      column, right after its name.
+   b. The provider table (a provider opened): the column names touch each
+      other. Keep at least 16px between columns; a column name may take two
+      lines; its "i" stays right after the last word.
 
 Add the new words to every language the site offers. Change nothing else on
 the site.

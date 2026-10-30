@@ -97,12 +97,17 @@ async function getJson(url, height) {
     // The biggest host first: no results there means none to read, for one question.
     const first = await getJson(`${seed}${INF}/devshard_host_epoch_stats/${e}/${g.members[0]}`);
     if (!(first && first.found)) return null;
+    // Each host's own results too, for its page's "how well it worked":
+    // [missed, judged wrong, paid (ngonka), checks asked, checks done, AI sessions].
+    const one = (st) => [Number(st.missed) || 0, Number(st.invalid) || 0, Number(st.cost) || 0,
+      Number(st.required_validations) || 0, Number(st.completed_validations) || 0, Number(st.escrow_count) || 0];
+    const h = { [g.members[0]]: one(first.stats) };
     let paid = Number(first.stats.cost) || 0, hosts = 1;
     for (const a of g.members.slice(1)) {
       const j = await getJson(`${seed}${INF}/devshard_host_epoch_stats/${e}/${a}`);
-      if (j && j.found && j.stats) { paid += Number(j.stats.cost) || 0; hosts++; }
+      if (j && j.found && j.stats) { paid += Number(j.stats.cost) || 0; hosts++; h[a] = one(j.stats); }
     }
-    return { paid, hosts };
+    return { paid, hosts, h };
   }
 
   /** Add the per-token prices (now, or at a past block) to an epoch's [lowest, highest]. */
@@ -153,13 +158,16 @@ async function getJson(url, height) {
   }
 
   const epochs = Object.values(have).filter((x) => x.e >= first && x.e <= current).sort((a, b) => a.e - b.e);
+  // Hosts' own results are kept for the last 30 epochs only: enough for a node's page, and the file stays small.
+  for (const x of epochs) if (x.h && x.e < current - 30) delete x.h;
   if (!epochs.length) throw new Error("nothing could be read");
   const out = {
     asOf: new Date().toISOString(),
     epoch: current,
     method: "w: epoch_group_data total_weight. paid: the sum over the epoch's hosts of devshard_host_epoch_stats cost, in ngonka " +
       "((input + output tokens) x per-token price, devshard/state/machine.go), read while the chain still keeps it (until the next epoch ends). " +
-      "p: all_model_per_token_prices while the epoch was on, [lowest, highest]. paid is what hosts were charged, not tokens: unfinished answers are charged their whole reservation.",
+      "p: all_model_per_token_prices while the epoch was on, [lowest, highest]. paid is what hosts were charged, not tokens: unfinished answers are charged their whole reservation. " +
+      "h: each host's devshard_host_epoch_stats as [missed, invalid, cost, required_validations, completed_validations, escrow_count], last 30 epochs.",
     from: epochs[0].e, to: epochs[epochs.length - 1].e,
     epochs
   };

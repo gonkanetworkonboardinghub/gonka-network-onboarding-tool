@@ -385,7 +385,11 @@ const TIPS = {
   invalid: "Answers other hosts checked and found wrong. Wrong answers cost a host its reward and can cost part of its collateral.",
   share: "This host's weight as a part of all the weight in the epoch: the share of the epoch's reward it is paid.",
   lastEpochPaid: "What the host was paid for the last finished epoch.",
-  missedShare: "The share of requests the host did not answer in time in the last finished epoch.",
+  missedShare: "Answers the host missed in the last finished epoch, per AI session it served, as the chain recorded them when its sessions closed. Hosts that miss many more than others are paid less.",
+  sessions: "The AI sessions this node served in that epoch. Users' AI requests reach hosts through these sessions, each shared by a few hosts.",
+  dsMissed: "Answers this node did not give in time, per session it served, as the chain recorded them when its sessions closed. A host that misses many more than others is paid less, or nothing, for the epoch.",
+  dsWrong: "Answers other hosts checked and found wrong, per session. Wrong answers cost a host its reward and can cost part of its collateral.",
+  dsPaid: "What users were charged for this node's AI answers in that epoch, as the chain recorded it.",
   voteWeight: "A vote counts by weight: each host votes with the weight it proved in Proof of Compute.",
   voteShare: "This choice's part of all the weight that voted.",
   machineWeight: "What this machine proved in Proof of Compute, before its model's rate.",
@@ -2452,10 +2456,10 @@ RENDER.verify = () => {
       <p class="small">${t("Your wallet address is your identity everywhere on Gonka. On every dashboard and list, this is the name to look for:")}</p>
       ${copyLine(S.wallet.address || "—", "v-addr")}
       <div class="btn-row" style="margin-top:6px">
-        <button id="b-dash-gg">${t("gonka.gg dashboard")}</button>
+        <button id="b-dash-own">${t("Your node in Monitor/Vote")}</button>
         <button id="b-dash-orig">${t("original network dashboard")}</button>
       </div>
-      ${more("Which dashboard?", `<p>${t("Both dashboards list every participant — search for your address there. gonka.gg is community-run and usually the quickest to update; the original dashboard is the network's own.")}</p>`)}
+      ${more("Where can I follow it?", `<p>${t("Monitor/Vote, in this app, follows your node from here on: its weight, rewards, how well it worked each epoch and its GNK. The network's own dashboard lists every participant; search for your address there.")}</p>`)}
     </div>
     <div class="card" id="v-card">${loadingHtml(t("Checking…"))}</div>
     <div class="card" id="fee-card">${loadingHtml(t("Checking…"))}</div>
@@ -2480,7 +2484,7 @@ RENDER.verify = () => {
   $("#b-next").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(); go(12); };
   $("#b-re").onclick = check;
   wireCopy();
-  $("#b-dash-gg").onclick = () => api("openExternal", { url: S.K.docs.communityDashboard });
+  $("#b-dash-own").onclick = () => showMonitor(S.wallet.address);
   $("#b-dash-orig").onclick = () => api("openExternal", { url: (S.seed || S.K.seedNodes[0]) + "/dashboard/gonka/validator" });
   check();
 

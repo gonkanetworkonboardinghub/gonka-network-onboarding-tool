@@ -317,7 +317,6 @@ const overridable = {
   docs: {
     // Community-run explorer/dashboard (same site as the faucet) — usually the
     // fastest to update; participants list is the page people check for "am I in".
-    communityDashboard: "https://gonka.gg/network/participants",
     // The publisher's site, The Gonka Network Onboarding Hub (GNOH).
     website: "https://thegonkanetworkonboardinghub.com",
     // This app's own code, public so anyone can read what it does — and check

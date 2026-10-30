@@ -146,7 +146,7 @@ async function scan(base, action, from, to) {
   const out = {
     asOf: new Date().toISOString(),
     marker: "Set up with GNOT",
-    explorer: "https://gonka.gg/transactions/",
+    explorer: "http://node2.gonka.ai:8000/dashboard/gonka/tx/",
     scannedToHeight: head,
     currentEpoch: epochIndex,
     totals: {
