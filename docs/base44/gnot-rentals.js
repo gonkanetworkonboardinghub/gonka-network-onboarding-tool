@@ -975,8 +975,12 @@ function cudaAtLeast(a, b) {
 function newestCuda(images) {
   let best = null;
   for (const name of images) {
-    const m = /CUDA\s*(\d+\.\d+)/i.exec(name);
-    if (m && (!best || cudaAtLeast(m[1], best))) best = m[1];
+    // "CUDA 13.0" and "CUDA 13" alike: Spheron names its B300 images
+    // "Ubuntu 24.04 (CUDA 13)", which a version with a dot never matched.
+    const m = /CUDA\s*(\d+)(?:\.(\d+))?/i.exec(name);
+    if (!m) continue;
+    const v = `${m[1]}.${m[2] || "0"}`;
+    if (!best || cudaAtLeast(v, best)) best = v;
   }
   return best;
 }
