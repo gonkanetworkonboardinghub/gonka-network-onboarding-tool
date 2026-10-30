@@ -165,11 +165,57 @@ function go(i) {
   // re-run every step it had already completed.
   S.furthest = Math.max(S.furthest || 0, S.step);
   renderRail();
+  // Looking back at a step that is done: it shows what was done, and nothing
+  // on the server runs again unless asked for (revisitGuard).
+  S.revisitOf = doneSteps.has(S.step) && S.furthest > S.step ? S.step : null;
   RENDER[STEPS[S.step].id]();
+  if (S.revisitOf === S.step) revisitGuard(S.step);
   $("#stage").scrollTop = 0;
   saveSession();
 }
+
+/* The buttons that change the server, by step. Pressed while looking back at
+   a finished step, they ask first; Continue moves on without doing them. */
+const REDO = { review: "#b-write", weights: "#b-dl", deploy: "#b-run", collateral: "#b-dep" };
+function revisitGuard(i) {
+  const id = STEPS[i].id;
+  const note = document.createElement("div");
+  note.className = "info-banner revisit-note";
+  note.innerHTML = `<b>${esc(t("This step is done."))}</b> ${esc(t("You are looking back at it. Nothing here runs on your server again unless you press a button that does it, and GNOT asks you first."))}`;
+  const lede = $("#stage .lede");
+  if (lede) lede.after(note); else $("#stage").prepend(note);
+  const redo = REDO[id] && $(REDO[id]);
+  if (redo) redo.classList.remove("primary");
+  // A way on that does nothing: the step's own Continue, or one made for it.
+  let next = $("#b-next") || (id === "weights" ? $("#b-skip") : null);
+  if (!next && redo) {
+    next = document.createElement("button");
+    next.id = "b-next";
+    redo.after(next);
+  }
+  if (next) {
+    next.textContent = t("Continue");
+    next.disabled = false; next.hidden = false; next.style.display = "";
+    next.classList.add("primary");
+    if (!next.onclick) next.onclick = () => go(i + 1);
+  }
+}
+// Capture: runs before the button's own handler, and can stop it.
+document.addEventListener("click", (e) => {
+  if (S.revisitOf == null || S.revisitOf !== S.step) return;
+  const sel = REDO[STEPS[S.step].id];
+  const b = sel && e.target && e.target.closest ? e.target.closest(sel) : null;
+  if (!b) return;
+  if (!confirm(t("This step is already done, and your node may already be running. Doing it again changes things on your server. Do it again?"))) {
+    e.preventDefault(); e.stopImmediatePropagation();
+  }
+}, true);
 function markDone(i = S.step) { doneSteps.add(i); errorSteps.delete(i); renderRail(); }
+/** Verify's Continue: open once the node is ready (or this was already passed). */
+function verifyOpen() {
+  const v = STEPS.findIndex((s) => s.id === "verify");
+  return !!S.verifyReady || doneSteps.has(v);
+}
 
 /**
  * Jump to a resumed step, making sure the server facts exist first.
@@ -1750,7 +1796,12 @@ RENDER.model = () => {
     try {
       setBusy(true, "Preparing repository…");
       $("#model-card").innerHTML = loadingHtml(t("Fetching the Gonka repository and the live model list…"));
-      if (!S.repoReady) { await api("clone"); S.repoReady = true; }
+      // Fetch Gonka's repository only on the way through. Looking back at
+      // this step after it is done must not touch the server: updating the
+      // repository resets the files GNOT wrote and edited there.
+      const pastIt = [...doneSteps].some((d) => d >= STEPS.findIndex((st) => st.id === "model"));
+      if (!S.repoReady && !pastIt) { await api("clone"); }
+      S.repoReady = true;
       const files = await api("listNodeConfigs");
       S.nodeConfigFiles = files;
       if (!S.seed) S.seed = await api("seed");
@@ -2409,7 +2460,8 @@ RENDER.verify = () => {
       <button id="b-back">Back</button>
       <button id="b-re">Check again</button>
       <span class="spacer"></span>
-      <button class="primary" id="b-next">Continue</button>
+      <span class="small" id="verify-gate"${verifyOpen() ? " hidden" : ""}>${esc(t("Continue opens once your node is ready: caught up, registered, and its GPUs and model ready."))}</span>
+      <button class="primary" id="b-next"${verifyOpen() ? "" : " disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } go(10); };
   $("#b-next").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(); go(12); };
@@ -2628,6 +2680,11 @@ RENDER.verify = () => {
             s5 = row("waiting", t("Earning"),
               t("Not yet. Your node joins the active set after a completed Proof of Compute round — that list is finalised about 20 minutes after the round ends, so this can take a while to turn green."));
           }
+          // Finished ("your node is live") only opens once it truly is ready, or already earning.
+          S.verifyReady = earning || !!(synced && S.registeredVisible && ml && ml.gpuTotal > 0 && ml.gpuReady === ml.gpuTotal && ml.weightsReady);
+          S.verifyEarning = earning;
+          if ($("#b-next")) $("#b-next").disabled = !verifyOpen();
+          if ($("#verify-gate")) $("#verify-gate").hidden = verifyOpen();
         } catch (_) { /* never block the meter on these probes */ }
 
         el.innerHTML = s1 + s2 + s3 + s4 + s5;
@@ -2919,9 +2976,11 @@ RENDER.collateral = () => {
 RENDER.done = () => {
   window.gonka.allowClose && window.gonka.allowClose();  // setup finished — no close-confirm needed
   S.setupFinished = true;
+  // "Live" only once the node is in the epoch; until then it is ready and waiting for its round.
   stage(`
-    ${header("Complete", "Your node is live", `
-      Registration is done, permissions are granted, and your services are running.`)}
+    ${S.verifyEarning
+      ? header("Complete", "Your node is live", "Registration is done, permissions are granted, and your services are running.")
+      : header("Complete", "Your node is ready", "Registration is done, permissions are granted, and your services are running. It joins the network at the next Proof of Compute — the countdown at the top — and is live once it has passed it.")}
     <div class="card after-setup">
       <h3>${esc(t("Your node is in My nodes"))}</h3>
       <p class="small">${esc(t("It is in Gonka Host Monitor/Vote, linked to your wallet. Open it any time from the home screen to see how it is doing, vote with it, use a command line on its server, or shut it down safely."))}</p>
@@ -2952,6 +3011,12 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
       <button id="b-again">Set up another node</button>
     </div>`);
   $("#b-back").onclick = () => go(11);
+  // Opened again later: is it in the epoch by now? Then it says so.
+  if (!S.verifyEarning && S.wallet.address) {
+    api("epochParticipants", { seed: S.seed || S.K.seedNodes[0] }).then((list) => {
+      if (STEPS[S.step].id === "done" && JSON.stringify(list || "").includes(S.wallet.address)) { S.verifyEarning = true; RENDER.done(); }
+    }).catch(() => {});
+  }
   // The node goes into My nodes by itself, as yours: its wallet's name and
   // how to reach its server. Never a password or a passphrase.
   const added = addToMyNodes();

@@ -27,12 +27,16 @@ async function cloneRepo(driver, onData) {
   // tracked files are modified ("local changes would be overwritten").
   // Deliberately no `git clean` — that would delete the untracked config.env
   // holding the user's keyring password.
+  // A node already running from this repository is left exactly as it is:
+  // the reset would put back the compose files GNOT locked down and the
+  // node-config.json it wrote, ready to take effect at the next restart.
   const r = await driver.exec(
-    `if [ -d gonka/.git ]; then cd gonka && git fetch --depth 1 origin ${shq(ref)} && git reset --hard && git checkout -f FETCH_HEAD && echo UPDATED; ` +
+    `if [ -d gonka/.git ] && (cd ${JOIN()} 2>/dev/null && docker compose -f docker-compose.yml ps --status running --services 2>/dev/null | grep -qx node); then cd gonka && echo KEPT; ` +
+    `elif [ -d gonka/.git ]; then cd gonka && git fetch --depth 1 origin ${shq(ref)} && git reset --hard && git checkout -f FETCH_HEAD && echo UPDATED; ` +
     `else rm -rf gonka && git clone --depth 1 --branch ${shq(ref)} ${shq(k.repo.url)} && cd gonka && echo CLONED; fi && ` +
     `git --no-pager log -1 --oneline`,
     { onData, timeoutMs: 300000 });
-  if (!/CLONED|UPDATED/.test(r.stdout)) throw new Error("Couldn't get the Gonka repository:\n" + (r.stderr || r.stdout).slice(-600));
+  if (!/CLONED|UPDATED|KEPT/.test(r.stdout)) throw new Error("Couldn't get the Gonka repository:\n" + (r.stderr || r.stdout).slice(-600));
 
   const cp = await driver.exec(
     `cd ${JOIN()} && [ -f config.env ] || cp config.env.template config.env; echo OK`);
