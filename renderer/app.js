@@ -195,6 +195,22 @@ async function goResumed(target) {
 }
 function markError(i = S.step) { errorSteps.add(i); renderRail(); }
 
+/**
+ * While a saved setup is being picked up: the two things GNOT asks for again
+ * (it never saves either), which one is now, and the step it then goes back to.
+ * `active` is 1 on Connect and 2 on the wallet.
+ */
+function resumeGuide(active) {
+  if (!S.resumeTo) return "";
+  const label = (STEPS[S.resumeTo] && t(STEPS[S.resumeTo].label)) || "";
+  const item = (n, text) => `<li class="${n < active ? "done" : n === active ? "now" : ""}">${esc(text)}</li>`;
+  return `<div class="card resume-guide">
+      <b>${esc(t("Picking up where you left off"))}</b>
+      <ol>${item(1, t("Connect to your server again"))}${item(2, t("Unlock your wallet with its passphrase"))}${item(3, t("Back to \"{step}\"", { step: label }))}</ol>
+      <p class="small">${esc(t("GNOT never saves your server's password or your wallet's passphrase, so these two are asked for again. Everything else is filled in."))}</p>
+    </div>`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Session memory — survive closing the app mid-setup.                 */
 /* Passphrases, SSH passwords and mnemonics are NEVER written to disk;  */
@@ -283,13 +299,90 @@ function header(eyebrow, title, lede) {
 function more(summary, body, { open = false, id = "" } = {}) {
   return `<details class="more"${open ? " open" : ""}${id ? ` id="${id}"` : ""}><summary>${esc(t(summary))}</summary><div class="more-body">${body}</div></details>`;
 }
-/** Figures as tiles: [{ label (English), value (HTML), sub (text), on }]. */
+/**
+ * A small "i" beside a label or a figure that says what it is: shown while the
+ * pointer is over it or it has the keyboard's focus, and kept open by a click
+ * or a tap, since phones have no hover. `text` is English, translated here.
+ * A span, not a button, so it can sit inside a tile that is itself a button.
+ */
+function tip(text, vars) {
+  return `<span class="tip" role="button" tabindex="0" data-tip="${esc(t(text, vars))}" aria-label="${esc(t("What is this?"))}">i</span>`;
+}
+/** What the "i"s say, in English; one place, so a figure is explained the same way wherever it shows. */
+const TIPS = {
+  rig: "The GPUs in one server, and how many copies of the model it runs at once. GNOT can set up every rig shown here.",
+  model: "The AI model the server runs for the Gonka network. The network pays hosts for serving the models it needs.",
+  gnkDay: "What a typical server like this was paid per day in the last finished epoch, measured from the chain: its share of that epoch's reward, by the work it proved.",
+  worth: "That GNK a day at today's price, the middle of 4 markets.",
+  rentBelow: "The most this server can cost per hour and still pay for itself, at today's GNK price.",
+  cheapest: "The lowest price {provider} lists right now for a dedicated server with everything a node needs: enough memory and disk, and a system image with the right CUDA.",
+  eachDay: "What is left each day: what the server earns, minus what the provider charges for it.",
+  hosts: "Hosts run the network's nodes and are paid for the work they prove. One host can run many machines.",
+  gpusReported: "Every GPU the hosts report on the machines that did work in this epoch. Hosts report their own hardware, and the network does not check it.",
+  weight: "What this node proved it can compute in this epoch's Proof of Compute. Each epoch's reward is shared out by weight.",
+  lastReward: "What the network paid this node for the last finished epoch. It is released a slice at a time over the next 180 epochs.",
+  estimate: "The network's own estimate of what this node earns in the current epoch, if it keeps working as it has.",
+  nodeGpus: "The GPUs this node reports, and how many of its machines are working now.",
+  onItsWay: "Rewards this node has already earned that are not released yet. Each epoch's reward is paid out in 180 slices, one per epoch.",
+  requests: "The AI requests users sent to this node in that epoch that it answered.",
+  missed: "Requests this node did not answer in time. A host that misses too many is paid less, or nothing, for the epoch.",
+  invalid: "Answers other hosts checked and found wrong. Wrong answers cost a host its reward and can cost part of its collateral.",
+  share: "This host's weight as a part of all the weight in the epoch: the share of the epoch's reward it is paid.",
+  lastEpochPaid: "What the host was paid for the last finished epoch.",
+  missedShare: "The share of requests the host did not answer in time in the last finished epoch.",
+  voteWeight: "A vote counts by weight: each host votes with the weight it proved in Proof of Compute.",
+  voteShare: "This choice's part of all the weight that voted.",
+  epochNeed: "The node's own upper estimate of the fees it may pay this epoch: a small fee for each Proof of Compute and hardware report.",
+  canSpend: "What the node can spend on fees: your wallet's balance, capped by what is left of the fee allowance you gave it.",
+  toSetUp: "The network fees for setting up: the node's permissions, and its registration if the network does not do it."
+};
+(function wireTips() {
+  let pop = null, owner = null, pinned = false;
+  const hide = () => { if (pop) pop.remove(); pop = null; owner = null; pinned = false; };
+  const show = (b) => {
+    if (owner === b) return;
+    hide();
+    owner = b;
+    pop = document.createElement("div");
+    pop.className = "tip-pop";
+    pop.setAttribute("role", "tooltip");
+    pop.textContent = b.dataset.tip;
+    document.body.appendChild(pop);
+    // Under the "i" when there is room, above it when there is not, and never off the window.
+    const r = b.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+    const y = r.bottom + 8 + h > window.innerHeight - 8 ? r.top - h - 8 : r.bottom + 8;
+    pop.style.left = `${x}px`;
+    pop.style.top = `${Math.max(8, y)}px`;
+  };
+  const tipOf = (e) => (e.target && e.target.closest ? e.target.closest(".tip") : null);
+  document.addEventListener("mouseover", (e) => { const b = tipOf(e); if (b && !pinned) show(b); });
+  document.addEventListener("mouseout", (e) => { const b = tipOf(e); if (b && b === owner && !pinned) hide(); });
+  // Capture, so a tip inside a clickable row or tile explains and does not also open it.
+  document.addEventListener("click", (e) => {
+    const b = tipOf(e);
+    if (!b) { if (pinned) hide(); return; }
+    e.preventDefault(); e.stopPropagation();
+    if (owner === b && pinned) { hide(); return; }
+    show(b); pinned = true;
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { hide(); return; }
+    const b = tipOf(e);
+    if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); if (owner === b && pinned) hide(); else { show(b); pinned = true; } }
+  }, true);
+  document.addEventListener("focusin", (e) => { const b = tipOf(e); if (b && !pinned) show(b); });
+  document.addEventListener("focusout", (e) => { if (e.target === owner && !pinned) hide(); });
+  document.addEventListener("scroll", hide, true);
+  window.addEventListener("resize", hide);
+})();
+/** Figures as tiles: [{ label (English), value (HTML), sub (text), tip (English), on }]. */
 function tiles(list) {
   // A long value (an address, a file name) is set smaller, so it fits the tile.
   const long = (v) => String(v).replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/gi, "x").length > 16;
   return `<div class="need-grid">${list.filter(Boolean).map((x) => `
     <div class="need${x.on ? " picked" : ""}">
-      <div class="need-label">${esc(t(x.label))}</div>
+      <div class="need-label">${esc(t(x.label))}${x.tip ? tip(x.tip) : ""}</div>
       <div class="need-value${long(x.value) ? " long" : ""}"><span dir="ltr">${x.value}</span></div>
       ${x.sub ? `<div class="need-sub">${esc(x.sub)}</div>` : ""}
     </div>`).join("")}</div>`;
@@ -624,7 +717,8 @@ RENDER.welcome = () => {
     bar.className = "card resume-bar";
     bar.innerHTML = `
       <h3>${esc(t("Continue your previous setup?"))}</h3>
-      <p class="small">${t("You were on \"{step}\" ({when}). Your server keeps running on its own — the wizard can restore your answers and take you back to reconnect. You'll re-enter your passphrase, since it's never saved.", { step: esc(label), when: esc(when) })}</p>
+      <p class="small">${esc(t("You were on \"{step}\" ({when}). Your server keeps running on its own.", { step: label, when }))}</p>
+      <p class="small">${esc(t("To pick up there, GNOT asks for two things again, because it never saves them: you connect to your server again, and you unlock your wallet with its passphrase. Everything else is filled in."))}</p>
       <div class="btn-row">
         <button class="primary" id="b-resume">${esc(t("Continue where I left off"))}</button>
         <button id="b-fresh">${esc(t("Start over"))}</button>
@@ -883,6 +977,7 @@ RENDER.connect = () => {
       ${header("Step 3", "Use this computer as the server", `
         The wizard will run its checks and commands directly on this machine.
         ${S.platform === "win32" ? "You're on Windows, so everything runs inside WSL2 (Ubuntu)." : ""}`)}
+      ${resumeGuide(1)}
       <div class="btn-row">
         <button id="b-back">Back</button>
         <button class="primary" id="b-conn">Check this machine</button>
@@ -910,6 +1005,7 @@ RENDER.connect = () => {
   stage(`
     ${header("Step 3", "Connect to your server", `
       Enter the SSH details your provider gave you when the server started. The connection stays inside this app.`)}
+    ${resumeGuide(1)}
     <div class="card">
       <label class="field" style="max-width:640px"><span class="lbl">${esc(t("Or paste the SSH command your provider shows — the fields below fill in automatically"))}</span>
         <input type="text" id="f-sshcmd" class="mono" placeholder="ssh -i key root@203.0.113.10"></label>
@@ -1217,6 +1313,9 @@ RENDER.scan = () => {
 RENDER.wallet = () => {
   const w = S.wallet;
   if (w.address && w.confirmed) return walletDone();
+  // Picking up a saved setup: the wallet is known, only its passphrase is
+  // missing, so ask for exactly that instead of "create or restore".
+  if (S.resumeTo && w.address && w.name && !S.walletPickOther) return walletUnlock();
 
   stage(`
     ${header("Step 5", "Your Gonka wallet (Account Key)", `
@@ -1335,6 +1434,45 @@ RENDER.wallet = () => {
     };
   }
 
+  function walletUnlock() {
+    stage(`
+      ${header("Step 5", "Unlock your wallet", "Your wallet is on this computer, locked with the passphrase you chose for it. Type it to carry on.")}
+      ${resumeGuide(2)}
+      <div class="card">
+        <h3>${esc(t("Your wallet address"))}</h3>
+        ${copyLine(w.address, "w-addr")}
+        <label class="field" style="margin-top:14px"><span class="lbl">${esc(t("Enter your passphrase (the one you set when this key was created)"))}</span>
+          <input type="password" id="f-unlock" autocomplete="current-password"></label>
+        <div class="btn-row"><button class="primary" id="b-unlock">${esc(t("Unlock and continue"))}</button></div>
+        <p class="small"><a href="#" id="b-other-wallet">${esc(t("Use a different wallet"))}</a></p>
+      </div>
+      <div class="btn-row"><button id="b-back">Back</button></div>`);
+    wireCopy();
+    $("#b-back").onclick = () => go(3);
+    $("#b-other-wallet").onclick = (e) => { e.preventDefault(); S.walletPickOther = true; RENDER.wallet(); };
+    const unlock = async () => {
+      const p = $("#f-unlock").value;
+      if (!p) return alert(t("Enter your passphrase."));
+      try {
+        setBusy(true, t("Unlocking your wallet…"));
+        await api("ensureCli");
+        const r = await api("keyShow", { name: w.name, passphrase: p });
+        if (r.address !== w.address) return alert(t("That opens a different wallet ({addr}). Check the passphrase, or use a different wallet.", { addr: r.address }));
+        w.passphrase = p; w.pubkey = extractPubkey(r.pubkey); w.confirmed = true;
+        markDone();
+        toast(t("Wallet unlocked"));
+        // Both things are back: go straight to where the setup was left.
+        const target = S.resumeTo && S.resumeTo > 5 ? S.resumeTo : 5;
+        S.resumeTo = null; S.walletPickOther = false;
+        goResumed(target);
+      } catch (e) { alert(e.message); }
+      finally { setBusy(false); }
+    };
+    $("#b-unlock").onclick = unlock;
+    $("#f-unlock").onkeydown = (e) => { if (e.key === "Enter") unlock(); };
+    $("#f-unlock").focus();
+  }
+
   function extractPubkey(pk) {
     // CLI returns a JSON string like {"@type":"...","key":"Au+a..."} — Gonka wants the key value.
     try { const j = typeof pk === "string" ? JSON.parse(pk) : pk; return j.key || pk; } catch (_) { return pk; }
@@ -1447,7 +1585,7 @@ RENDER.wallet = () => {
       <div class="card">
         <h3>${esc(t("Fund this wallet"))}</h3>
         ${tiles([
-          { label: "To set up", value: "≈ 0.001 GNK", sub: t("send {n} to be safe", { n: gnk(setupNeed) }) },
+          { label: "To set up", value: "≈ 0.001 GNK", sub: t("send {n} to be safe", { n: gnk(setupNeed) }), tip: TIPS.toSetUp },
           { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("Gonka's suggested start for the fees of each Proof of Compute; it lasts a long time") }
         ])}
         <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
@@ -2374,12 +2512,38 @@ RENDER.verify = () => {
             e = eta(sn.total - sn.chunk, (sn.chunk - lastSample.chunk) / ((now - lastSample.t) / 1000));
           }
           lastSample = { chunk: sn.chunk, t: now };
-          // The final piece writes the whole restored state to disk and can sit
-          // at ~99% for many minutes — say so, or it reads as a freeze.
+          // The final pieces write the whole restored state to disk: no
+          // percentage moves for many minutes, which reads as a freeze. So it
+          // becomes its own stage, with a bar that keeps moving, how long it
+          // has been at it, and how much it has written so far, growing.
           const finishing = sn.chunk >= sn.total - 2;
-          s1 = row("active", t("Downloading the network snapshot"),
-            bar(pct) + `<span class="mono">${pct.toFixed(1)}% · ${t("piece")} ${sn.chunk.toLocaleString()} / ${sn.total.toLocaleString()}${e}</span>` +
-            (finishing ? `<br>${t("Saving the last piece — this one writes the whole snapshot to disk and can take several minutes. It hasn't stalled.")}` : ""));
+          if (!finishing) {
+            S.snapWrite = null;
+            s1 = row("active", t("Downloading the network snapshot"),
+              bar(pct) + `<span class="mono">${pct.toFixed(1)}% · ${t("piece")} ${sn.chunk.toLocaleString()} / ${sn.total.toLocaleString()}${e}</span>`);
+          } else {
+            const w = S.snapWrite || (S.snapWrite = { since: now, bytes: null, t: null, rate: null });
+            if (sn.writtenBytes) {
+              if (w.bytes != null && sn.writtenBytes > w.bytes && now > w.t) w.rate = (sn.writtenBytes - w.bytes) / ((now - w.t) / 1000);
+              w.bytes = sn.writtenBytes; w.t = now;
+            }
+            const gb = (b) => (b / 1e9).toLocaleString(window.I18N.lang(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+            const mins = Math.max(1, Math.round((now - w.since) / 60000));
+            const facts = [
+              w.bytes ? t("{gb} GB written so far", { gb: gb(w.bytes) }) : null,
+              w.rate ? t("about {mb} MB a second", { mb: Math.round(w.rate / 1e6).toLocaleString(window.I18N.lang()) }) : null,
+              t(mins === 1 ? "working on it for 1 minute" : "working on it for {n} minutes", { n: mins })
+            ].filter(Boolean).join(" · ");
+            s1 = row("active", t("Writing the network's state to disk"),
+              `<div class="bar-busy" aria-hidden="true"><i></i></div>` +
+              `<span class="mono">${esc(facts)}</span>` +
+              `<div class="snap-steps">
+                <span class="done">✓ ${esc(t("All {n} pieces downloaded", { n: sn.total.toLocaleString() }))}</span>
+                <span class="now">● ${esc(t("Writing them into the node's database"))}</span>
+                <span>○ ${esc(t("Then it starts following new blocks"))}</span>
+              </div>` +
+              `<div>${esc(t("This last part shows no percentage and usually takes 10 to 30 minutes. It moves on by itself; there is nothing to do."))}</div>`);
+          }
         } else if (inSnapshot) {
           s1 = row("active", t("Looking for a network snapshot"), t("Your node is starting up and finding peers."));
         } else {
@@ -2599,8 +2763,8 @@ RENDER.verify = () => {
       <h3>${esc(t("Fees your node pays"))}</h3>
       ${tiles([
         { label: "In your wallet now", value: bal === null ? "—" : esc(gnk(bal)) },
-        fb ? { label: "This epoch may need", value: esc(gnk(fb.budget)), sub: fb.known ? "" : t("a first guess") } : null,
-        fb ? { label: "Your node can spend", value: esc(gnk(fb.spendable)) } : null
+        fb ? { label: "This epoch may need", value: esc(gnk(fb.budget)), sub: fb.known ? "" : t("a first guess"), tip: TIPS.epochNeed } : null,
+        fb ? { label: "Your node can spend", value: esc(gnk(fb.spendable)), tip: TIPS.canSpend } : null
       ])}
       <div style="margin-top:12px">${verdict}</div>
       ${fb && !fb.known ? `<p class="small">${t("The node's figure is a first guess until it has taken part in a Proof of Compute.")}</p>` : ""}
@@ -2809,7 +2973,7 @@ function applyChrome() {
   document.documentElement.dir = window.I18N.lang() === "ar" ? "rtl" : "ltr";
   $("#t-sub").textContent = t("from zero to earning node");
   $("#t-needhelp").textContent = t("Need help?");
-  $("#link-home").textContent = t("← All tools");
+  $("#link-home").innerHTML = `<span aria-hidden="true">←</span> ${esc(t("All tools"))}`;
   if (!S.consoleBusy) $("#console-title").textContent = t("Activity log");
   renderVersionLine();
 }
@@ -3050,19 +3214,27 @@ function renderRent() {
   }
   const lacks = (s) => s.map((x) => ({ memory: t("too little memory"), disk: t("too little disk"), driver: t("no image with CUDA {min} or newer", { min: (S.K && S.K.requirements.cudaMin) || "12.9" }) })[x] || x).join(", ");
   const small = (s) => `<span class="per-gpu">${esc(s)}</span>`;
+  // One row per server size: the model it earns most with, what that mines a
+  // day and is worth, the most it may cost, what the provider asks now, and
+  // what is left each day — so a "short by" or "ahead by" can be read through.
+  const dim = (s) => `<span class="dim">${esc(s)}</span>`;
   const rows = p.rows.map((row) => {
     const top = row.runs[0];
     const o = row.best;
-    const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(o.cuda ? `${o.region} · CUDA ${o.cuda}` : o.region)
-      : row.cheapest ? `<span class="dim">${esc(t("None with what a node needs"))}</span>`
+    const rig = `${row.gpuCount}× ${esc(row.gpuClass)}` + (top.copies > 1 ? small(t("{n} copies at once", { n: top.copies })) : "");
+    // The model it earns most with; a server that can run others says how many.
+    const model = `<span class="nowrap">${esc(shortModel(top.model))}</span>` + (row.runs.length > 1 ? small(t("best of {n} models", { n: row.runs.length })) : "");
+    const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(o.region) + (o.cuda ? small(`CUDA ${o.cuda}`) : "")
+      : row.cheapest ? dim(t("None with what a node needs"))
           + small(t("cheapest: {price}, {lacks}", { price: fmtUsd(row.cheapest.pricePerHour) + "/h", lacks: lacks(row.cheapest.short) }))
-      : `<span class="dim">${esc(t("No dedicated offer now"))}</span>`;
-    const under = top.breakEvenPerHour == null ? `<span class="dim">${esc(t("not measured"))}</span>`
-      : esc(fmtUsd(top.breakEvenPerHour)) + "/h" + small(shortModel(top.model) + (top.copies > 1 ? " · " + t("{n} copies at once", { n: top.copies }) : ""));
+      : dim(t("No dedicated offer now"));
+    // What it mines a day, and under it what that is worth.
+    const gnk = top.gnkPerDay == null ? dim(t("not measured")) : esc(fmtGnk(top.gnkPerDay)) + (top.usdPerDay == null ? "" : small("≈ " + fmtUsd(top.usdPerDay)));
+    const under = top.breakEvenPerHour == null ? "—" : esc(fmtUsd(top.breakEvenPerHour)) + "/h";
     const day = row.gapPerDay == null ? "—"
-      : `<b class="${row.gapPerDay >= 0 ? "ahead" : "behind"}">${esc(row.gapPerDay >= 0
-        ? t("Ahead by {usd} a day", { usd: fmtUsd(row.gapPerDay) }) : t("Short by {usd} a day", { usd: fmtUsd(-row.gapPerDay) }))}</b>`;
-    return `<tr><td class="mono">${row.gpuCount}× ${esc(row.gpuClass)}</td><td class="num">${offer}</td><td class="num">${under}</td><td class="num">${day}</td></tr>`;
+      : `<b class="${row.gapPerDay >= 0 ? "ahead" : "behind"}">${esc((row.gapPerDay >= 0 ? "+" : "−") + fmtUsd(Math.abs(row.gapPerDay)))}</b>`
+        + small(row.gapPerDay >= 0 ? t("left each day") : t("short each day"));
+    return `<tr><td class="mono">${rig}</td><td>${model}</td><td class="num">${gnk}</td><td class="num">${under}</td><td class="num">${offer}</td><td class="num">${day}</td></tr>`;
   }).join("");
   box.innerHTML = `
     <div class="rent-head">
@@ -3074,8 +3246,11 @@ function renderRent() {
     <div class="rent-check">${esc(t("Before you rent, check the price and the server's details on {provider}'s own site: prices and what is on offer change by the minute.", { provider: p.name }))}</div>
     <table class="earn-table earn-rent-table">
       <thead><tr>
-        <th>${esc(t("Rig"))}</th><th class="num">${esc(t("Cheapest dedicated"))}</th>
-        <th class="num">${esc(t("Pays for itself under"))}</th><th class="num">${esc(t("Each day"))}</th>
+        <th>${esc(t("Rig"))}${tip(TIPS.rig)}</th><th>${esc(t("Model"))}${tip(TIPS.model)}</th>
+        <th class="num">${esc(t("GNK a day"))}${tip(TIPS.gnkDay)}</th>
+        <th class="num">${esc(t("Rent below"))}${tip(TIPS.rentBelow)}</th>
+        <th class="num">${esc(t("Cheapest dedicated"))}${tip(TIPS.cheapest, { provider: p.name })}</th>
+        <th class="num">${esc(t("Each day"))}${tip(TIPS.eachDay)}</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -3167,10 +3342,10 @@ function renderEarnBody(d) {
       <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
-        <th>${esc(t("Rig"))}</th><th>${esc(t("Model"))}</th>
-        <th class="num" title="${esc(t("Machines on the network running exactly this rig and model right now, as their hosts report them."))}">${esc(t("Machines now"))}</th>
-        <th class="num">${esc(t("GNK a day"))}</th><th class="num">${esc(t("Worth"))}</th>
-        <th class="num">${esc(t("Rent below"))}</th>
+        <th>${esc(t("Rig"))}${tip(TIPS.rig)}</th><th>${esc(t("Model"))}${tip(TIPS.model)}</th>
+        <th class="num">${esc(t("Machines now"))}${tip("Machines on the network running exactly this rig and model right now, as their hosts report them.")}</th>
+        <th class="num">${esc(t("GNK a day"))}${tip(TIPS.gnkDay)}</th><th class="num">${esc(t("Worth"))}${tip(TIPS.worth)}</th>
+        <th class="num">${esc(t("Rent below"))}${tip(TIPS.rentBelow)}</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>

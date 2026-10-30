@@ -95,8 +95,8 @@ const monAt = (seconds) => new Date(Date.now() + seconds * 1000).toLocaleString(
 const monPriceSources = () => (MON.priceSources && MON.priceSources.length
   ? `<div class="mon-tile-kinds">${MON.priceSources.map((s) => `<span>${esc(s.name)} <b>$${esc(Number(s.usd).toLocaleString(monLang(), { minimumFractionDigits: 3, maximumFractionDigits: 3 }))}</b></span>`).join("")}</div>`
   : "");
-const monTile = (label, num, sub) => `
-  <div class="mon-tile"><div class="mon-tile-label">${esc(label)}</div>
+const monTile = (label, num, sub, help) => `
+  <div class="mon-tile"><div class="mon-tile-label">${esc(label)}${help ? tip(help) : ""}</div>
     <div class="mon-tile-num">${esc(num)}</div>
     <div class="mon-tile-sub">${sub ? esc(sub) : "&nbsp;"}</div></div>`;
 
@@ -663,8 +663,8 @@ function monNetworkTop(o) {
         <div class="mon-tile-num">${MON.price ? esc("$" + MON.price.toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : "—"}</div>
         <div class="mon-tile-sub">${MON.priceSources && MON.priceSources.length ? esc(t("the middle of {n} markets", { n: MON.priceSources.length })) : "&nbsp;"}</div>
         ${monPriceSources()}</div>
-      ${monTile(t("Hosts"), monNum(o.hosts.length), t("in epoch {n}", { n: o.epoch.index }))}
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs hosts report, epoch {n}", { n: o.epoch.index }))}</div>
+      ${monTile(t("Hosts"), monNum(o.hosts.length), t("in epoch {n}", { n: o.epoch.index }), TIPS.hosts)}
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs hosts report, epoch {n}", { n: o.epoch.index }))}${tip(TIPS.gpusReported)}</div>
         <div class="mon-tile-num">${g ? esc(monNum(g.total)) : "—"}</div>
         <div class="mon-tile-sub">${g ? esc(t("{n} working", { n: monNum(g.working) })) : "&nbsp;"}</div>
         ${g && g.h100 ? `<div class="mon-tile-h100">${esc(t("All the weight equals about {n} H100s", { n: monNum(g.h100.equivalent) }))}</div>` : ""}
@@ -798,7 +798,7 @@ function monHostRows(rows) {
   const topShare = Math.max(0.0001, ...rows.map((h) => h.share));
   return `
     <div class="mon-table mon-hosts-table">
-      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}</span><span>${esc(t("Models"))}</span><span>${esc(t("Share of the network"))}</span><span class="r">${esc(t("Last epoch"))}</span><span class="r">${esc(t("Missed"))}</span></div>
+      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}</span><span>${esc(t("Models"))}</span><span>${esc(t("Share of the network"))}${tip(TIPS.share)}</span><span class="r">${esc(t("Last epoch"))}${tip(TIPS.lastEpochPaid)}</span><span class="r">${esc(t("Missed"))}${tip(TIPS.missedShare)}</span></div>
       ${rows.map((h) => {
         const mine = MON.nodes.find((n) => n.address === h.address);
         return `
@@ -1360,25 +1360,26 @@ function monNodeHtml(d) {
   // ---- four figures across the top ----
   const tiles = `
     <div class="mon-tiles">
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Weight this epoch"))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Weight this epoch"))}${tip(TIPS.weight)}</div>
         <div class="mon-tile-num">${st.inEpoch ? esc(monNum(st.weight)) : "—"}</div>
         <div class="mon-tile-sub">${st.inEpoch ? esc(t("{place} hosts · {share} of the network", { place: monPlace(st.place), share: monPct(st.share, 2) })) : "&nbsp;"}</div></div>
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Last epoch's reward"))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Last epoch's reward"))}${tip(TIPS.lastReward)}</div>
         <div class="mon-tile-num">${last ? esc(monGnk(last.reward)) : "—"}</div>
         <div class="mon-tile-sub">${last ? esc([monUsd(last.reward), t("epoch {n}", { n: last.epoch }), monPlace(last.rewardPlace)].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
       ${d.now.estimate ? `
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("This epoch, estimated"))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("This epoch, estimated"))}${tip(TIPS.estimate)}</div>
         <div class="mon-tile-num">${esc(monGnk(d.now.estimate))}</div>
         <div class="mon-tile-sub">${esc([monUsd(d.now.estimate), t("the network's own estimate")].filter(Boolean).join(" · "))}</div></div>` : `
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}${tip(TIPS.nodeGpus)}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
         <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t("{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
-      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}</div>
+      <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}${tip(TIPS.onItsWay)}</div>
         <div class="mon-tile-num">${esc(monGnkShort(d.money.vesting.total))}</div>
-        <div class="mon-tile-sub">${esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs || 0 })].filter(Boolean).join(" · "))}</div></div>
+        <div class="mon-tile-sub">${d.money.vesting.total > 0 && d.money.vesting.epochs ? esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs })].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
     </div>`;
 
-  return verdict + monAttentionCard(d) + tiles + monRewardsCard(d) + `<div class="mon-two">${monWorkCard(d)}${monMoneyCard(d)}</div>` + monHardwareCard(d) + monPocCard(d);
+  // Its GNK comes first after the figures: for most people it is the reason to look.
+  return verdict + monAttentionCard(d) + tiles + `<div class="mon-two">${monMoneyCard(d)}${monWorkCard(d)}</div>` + monRewardsCard(d) + monHardwareCard(d) + monPocCard(d);
 }
 
 /* What deserves a look, in plain sentences. The codes and figures come from
@@ -1438,14 +1439,14 @@ function monRewardsCard(d) {
 function monWorkCard(d) {
   const l = d.last;
   if (!l) return `<div class="card"><h3>${esc(t("How well it worked"))}</h3><p class="small">${esc(t("No finished epoch to show yet. This fills in after the node's first full epoch."))}</p></div>`;
-  const row = (label, mine, typical, count) => {
+  const row = (label, mine, typical, count, help) => {
     const worse = typical !== null && mine > typical * 1.5 && mine - typical > 0.01;
     const better = typical !== null && mine < typical;
     const top = Math.max(mine, typical || 0, 0.0001);
     const word = typical === null ? "" : worse ? t("more than a typical host") : better ? t("less than a typical host") : t("about the same as a typical host");
     return `
       <div class="mon-compare">
-        <div class="mon-compare-top"><span>${esc(label)}</span><b class="${worse ? "bad" : ""}">${esc(monPct(mine))}</b></div>
+        <div class="mon-compare-top"><span>${esc(label)}${help ? tip(help) : ""}</span><b class="${worse ? "bad" : ""}">${esc(monPct(mine))}</b></div>
         <div class="mon-compare-bars">
           <div class="mon-cbar ${worse ? "bad" : ""}"><i style="width:${Math.max(1, Math.round(mine / top * 100))}%"></i><span>${esc(t("this node"))} · ${esc(count)}</span></div>
           ${typical === null ? "" : `<div class="mon-cbar typ"><i style="width:${Math.max(1, Math.round(typical / top * 100))}%"></i><span>${esc(t("a typical host"))} · ${esc(monPct(typical))}</span></div>`}
@@ -1456,51 +1457,63 @@ function monWorkCard(d) {
   return `
     <div class="card">
       <h3>${esc(t("How well it worked in epoch {n}", { n: l.epoch }))}</h3>
-      <div class="mon-kv">${esc(t("Requests answered"))} <b>${esc(monNum(l.requests))}</b></div>
-      ${row(t("Requests it missed"), l.missedShare, l.typicalMissedShare, t("{n} missed", { n: monNum(l.missed) }))}
-      ${l.validated + l.invalidated > 0 ? row(t("Answers judged wrong"), l.invalidShare, l.typicalInvalidShare, t("{n} of {of} checked", { n: monNum(l.invalidated), of: monNum(l.validated + l.invalidated) })) : ""}
+      ${l.requestsRecorded === false
+        ? `<p class="small">${esc(t("The network recorded no request counts for any host in epoch {n}, so there is nothing to compare for it.", { n: l.epoch }))}</p>`
+        : `<div class="mon-kv"><span>${esc(t("Requests answered"))}${tip(TIPS.requests)}</span> <b>${esc(monNum(l.requests))}</b></div>
+      ${row(t("Requests it missed"), l.missedShare, l.typicalMissedShare, t("{n} missed", { n: monNum(l.missed) }), TIPS.missed)}`}
+      ${l.validated + l.invalidated > 0 ? row(t("Answers judged wrong"), l.invalidShare, l.typicalInvalidShare, t("{n} of {of} checked", { n: monNum(l.invalidated), of: monNum(l.validated + l.invalidated) }), TIPS.invalid) : ""}
       <p class="small">${esc(t("A typical host is the middle one of the {hosts} that took part in that epoch.", { hosts: l.hosts }))}</p>
     </div>`;
 }
 
-/* The node's GNK, in plain words: what its wallet holds, what is still on its
-   way, what it may spend on fees, and what it has locked as collateral. Each
-   part is one figure with one sentence saying what it means. */
+/* The node's GNK, in plain words: all of it at the top, then one bar split
+   into what its wallet holds now and what is still on its way, each with what
+   it means and when the rest arrives; fees and collateral as two small
+   figures under it, explained by their "i". */
 function monMoneyCard(d) {
   const m = d.money, v = m.vesting;
-  const stream = v.next;
-  const part = (title, figure, sub, text, extra = "") => `
-    <div class="mon-gnk-part">
-      <div class="mon-gnk-top"><span>${esc(title)}</span><b>${figure}</b>${sub ? `<em>${esc(sub)}</em>` : ""}</div>
-      <p>${esc(text)}</p>${extra}
+  const stream = v.next || [];
+  const total = m.balance + v.total;
+  // Slice n arrives about n-1 epochs after the next Proof of Compute.
+  const when = (i) => new Date(Date.now() + (d.epoch.secondsToNextPoc + i * d.epoch.hours * 3600) * 1000).toISOString();
+  const nowPct = total > 0 ? Math.min(100, Math.max(m.balance > 0 ? 1.5 : 0, (m.balance / total) * 100)) : 0;
+  const key = (cls, label, help, figure, usd, text) => `
+    <div class="mon-gnk-key">
+      <span class="mon-gnk-swatch ${cls}" aria-hidden="true"></span>
+      <div class="mon-gnk-key-body">
+        <div class="mon-gnk-top"><span>${esc(label)}${tip(help)}</span><b>${esc(figure)}</b>${usd ? `<em>${esc(usd)}</em>` : ""}</div>
+        <p>${esc(text)}</p>
+      </div>
     </div>`;
-  let chart = "";
-  if (stream.length) {
-    // Slice n arrives about n-1 epochs after the next Proof of Compute.
-    const when = (i) => new Date(Date.now() + (d.epoch.secondsToNextPoc + i * d.epoch.hours * 3600) * 1000).toISOString();
-    chart = monPlot("vesting", { label: t("GNK arriving each epoch"), kind: stream.length > 48 ? "line" : "bars", unit: "GNK", height: 140, fmt: (x) => monShortNum(x),
-      points: stream.map((a, i) => ({ y: a / MON_NGONKA, x: monDay(when(i)),
-        tip: [monGnk(a), t(i === 0 ? "In 1 epoch, about {when}" : "In {n} epochs, about {when}", { n: i + 1, when: monWhenFull(when(i)) })] })) });
-  }
-  const wallet = part(t("In its wallet"), esc(monGnk(m.balance)), monUsd(m.balance),
-    t("Rewards land here as they unlock, and the node's network fees are paid from it."),
-    m.paidElsewhere ? `<p class="small">${esc(t("Its rewards are paid to another address, {who}, which holds {gnk}.", { who: monShort(m.recipient), gnk: monGnk(m.recipientBalance) }))}</p>` : "");
-  const coming = v.epochs
-    ? part(t("Still on its way"), esc(monGnk(v.total)), monUsd(v.total),
-        t("Each epoch's reward is paid a slice at a time over the next {n} epochs, about six months. About {now} arrives each epoch now.", { n: v.epochs, now: monGnk(stream[0] || 0) }),
-        chart ? `<div class="mon-gnk-chart"><span class="small">${esc(t("GNK arriving each epoch"))}</span>${chart}</div>` : "")
-    : part(t("Still on its way"), esc(monGnk(0)), "", t("Nothing is waiting to be released."));
+  const mini = (label, help, figure, sub) => `
+    <div class="mon-gnk-mini"><span>${esc(label)}${tip(help)}</span><b>${esc(figure)}</b><em>${sub ? esc(sub) : "&nbsp;"}</em></div>`;
+
+  const wallet = key("now", t("In its wallet"), "Rewards land here as they unlock, and the node's network fees are paid from it.",
+    monGnk(m.balance), monUsd(m.balance), t("Ready to use now."));
+  const coming = stream.length && v.total > 0
+    ? key("later", t("Still on its way"), TIPS.onItsWay, monGnk(v.total), monUsd(v.total),
+        t("About {gnk} arrives each epoch ({usd}), and an epoch is about {hours} hours. The last of it arrives around {date}.", {
+          // `next` holds only the next 60 slices; `epochs` counts them all.
+          gnk: monGnk(stream[0] || 0), usd: monUsd(stream[0] || 0) || "—", hours: Math.round(d.epoch.hours), date: monDate(when(Math.max(stream.length, v.epochs) - 1)) }))
+    : key("later", t("Still on its way"), TIPS.onItsWay, monGnk(0), "", t("Nothing is waiting to be released."));
+  const elsewhere = m.paidElsewhere ? `<p class="small">${esc(t("Its rewards are paid to another address, {who}, which holds {gnk}.", { who: monShort(m.recipient), gnk: monGnk(m.recipientBalance) }))}</p>` : "";
   const fees = m.allowance
-    ? part(t("Left for fees"), m.allowance.limited ? esc(monGnk(m.allowance.left)) : esc(t("no limit")), m.allowance.expires ? t("until {date}", { date: monDate(m.allowance.expires) }) : "",
-        t("Since Gonka v0.2.16 the node pays a small fee for each Proof of Compute, from its wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."))
-    : (d.standing.known ? `<div class="warn-banner">${esc(t("No fee allowance was found for this wallet. Since Gonka v0.2.16 a node needs one to pay its fees, or it is left out of the epoch."))}</div>` : "");
+    ? mini(t("Left for fees"), "Since Gonka v0.2.16 the node pays a small fee for each Proof of Compute, from its wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it.",
+        m.allowance.limited ? monGnk(m.allowance.left) : t("no limit"), m.allowance.expires ? t("until {date}", { date: monDate(m.allowance.expires) }) : "")
+    : "";
   const unbonding = m.unbonding.reduce((a, u) => a + u.amount, 0);
-  const collateral = part(t("Collateral"), esc(monGnk(m.collateral)), unbonding ? t("{gnk} being withdrawn", { gnk: monGnk(unbonding) }) : "",
-    t("GNK the host has locked in the node's name. The network counts more of a node's weight when it has collateral. It can be withdrawn later, and part of it is taken if the node does bad work or is down too long."));
+  const collateral = mini(t("Collateral"), "GNK the host has locked in the node's name. The network counts more of a node's weight when it has collateral. It can be withdrawn later, and part of it is taken if the node does bad work or is down too long.",
+    monGnk(m.collateral), unbonding ? t("{gnk} being withdrawn", { gnk: monGnk(unbonding) }) : t("locked in the node's name"));
+  const noAllowance = !m.allowance && d.standing.known
+    ? `<div class="warn-banner">${esc(t("No fee allowance was found for this wallet. Since Gonka v0.2.16 a node needs one to pay its fees, or it is left out of the epoch."))}</div>` : "";
   return `
     <div class="card mon-gnk">
       <h3>${esc(t("Its GNK"))}</h3>
-      ${wallet}${coming}${fees}${collateral}
+      <div class="mon-gnk-total"><b>${esc(monGnk(total))}</b><span>${esc([monUsd(total), t("in its wallet or on its way")].filter(Boolean).join(" · "))}</span></div>
+      <div class="mon-gnk-bar" role="img" aria-label="${esc(t("{a} in its wallet, {b} still on its way", { a: monGnk(m.balance), b: monGnk(v.total) }))}"><i style="width:${nowPct.toFixed(1)}%"></i></div>
+      ${wallet}${coming}${elsewhere}
+      <div class="mon-gnk-minis">${fees}${collateral}</div>
+      ${noAllowance}
     </div>`;
 }
 
@@ -1707,7 +1720,7 @@ function monVotesHtml() {
         <div class="mon-prop-more">
           ${cast > 0 ? `
             <div class="mon-w-table">
-              <div class="mon-w-row mon-w-head"><span>${esc(t("Vote"))}</span><b>${esc(t("Weight"))}</b><span>${esc(t("Share of the votes"))}</span></div>
+              <div class="mon-w-row mon-w-head"><span>${esc(t("Vote"))}</span><b>${esc(t("Weight"))}${tip(TIPS.voteWeight)}</b><span>${esc(t("Share of the votes"))}${tip(TIPS.voteShare)}</span></div>
               ${weightRow("yes", t("Yes"), p.tally.yes)}
               ${weightRow("no", t("No"), p.tally.no)}
               ${weightRow("veto", t("No, with veto"), p.tally.veto)}

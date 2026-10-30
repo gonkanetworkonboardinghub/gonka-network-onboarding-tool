@@ -386,6 +386,9 @@ function epochLine(epoch, rows, address) {
     epoch, took: true, hosts: rows.length,
     reward: mine.rewarded, work: mine.earned, claimed: mine.claimed,
     requests: mine.requests, missed: mine.missed, validated: mine.validated, invalidated: mine.invalidated,
+    // Some epochs carry no request counts for any host at all (434, 438 and
+    // 440 in October 2026): not recorded, which is not the same as none answered.
+    requestsRecorded: rows.some((r) => r.requests + r.missed > 0),
     missedShare: missedShare(mine), invalidShare: invalidShare(mine),
     rewardShare: share(mine.rewarded, total),
     rewardPlace: place(rows, "rewarded", address),
@@ -649,6 +652,8 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
 
   // Everyone in the current epoch, with what they run and how they did last epoch.
   const files = (file && file.hosts) || {};
+  // An epoch with no request counts for anyone: "missed" is unknown, not 0%.
+  const lastRecorded = lastRows.some((r) => r.requests + r.missed > 0);
   const hosts = mem.hosts.map((h) => {
     const g = files[h.address] || null;
     const last = lastRows.find((r) => r.address === h.address) || null;
@@ -664,7 +669,7 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
       underReported: !!(g && g.underReported),
       h100: g && g.h100 != null ? g.h100 : null,
       lastReward: last ? last.rewarded : null,
-      missedShare: last ? missedShare(last) : null,
+      missedShare: last && lastRecorded ? missedShare(last) : null,
       invalidShare: last && last.validated + last.invalidated > 0 ? invalidShare(last) : null
     };
   }).sort((a, b) => b.weight - a.weight);

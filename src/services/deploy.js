@@ -706,6 +706,16 @@ async function nodeSyncStatus(driver) {
         total: parseInt(s[3], 10),
         atHeight: parseInt(s[2], 10)
       };
+      // The last pieces write the whole restored state to disk, with no log
+      // line for many minutes. How much the chain's data folder holds, read
+      // each time, is what shows that it is still working.
+      if (out.snapshot.chunk >= out.snapshot.total - 2) {
+        const du = await driver.exec(
+          `cd ${JOIN()} && D=.inference/data/; (sudo -n timeout 20 du -sb "$D" 2>/dev/null || timeout 20 du -sb "$D" 2>/dev/null) | tail -1 | cut -f1`,
+          { timeoutMs: 30000 });
+        const bytes = parseInt(du.stdout.trim(), 10);
+        if (bytes > 0) out.snapshot.writtenBytes = bytes;
+      }
     }
   }
   return out;

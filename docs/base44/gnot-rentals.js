@@ -1034,16 +1034,18 @@ function shortOf(o) {
  * it can run, from the earnings figures (`earnings` is earnings.estimate()).
  */
 function compare(earnings, offers) {
-  // Per GPU kind and model: the setup's GPU count and what each GPU may cost per hour.
+  // Per GPU kind and model: the setup's GPU count, and per GPU what it mines a
+  // day, what that is worth and what it may cost per hour.
+  const perGpu = (v, n) => (v != null ? v / n : null);
   const setups = new Map();
   for (const c of earnings.configs || []) {
     if (c.deployable === false || !(c.copies <= 1)) continue;
     setups.set(`${c.gpuClass}|${c.model}`, { gpuClass: c.gpuClass, model: c.model, per: c.gpuCount,
-      perGpuHour: c.breakEvenPerHour != null ? c.breakEvenPerHour / c.gpuCount : null });
+      perGpuHour: perGpu(c.breakEvenPerHour, c.gpuCount), perGpuGnk: perGpu(c.gnkPerDay, c.gpuCount), perGpuUsd: perGpu(c.usdPerDay, c.gpuCount) });
   }
   for (const c of earnings.noHosts || []) {
     if (c.copies > 1 || setups.has(`${c.gpuClass}|${c.model}`)) continue;
-    setups.set(`${c.gpuClass}|${c.model}`, { gpuClass: c.gpuClass, model: c.model, per: c.gpuCount, perGpuHour: null });
+    setups.set(`${c.gpuClass}|${c.model}`, { gpuClass: c.gpuClass, model: c.model, per: c.gpuCount, perGpuHour: null, perGpuGnk: null, perGpuUsd: null });
   }
   // The servers worth a row: each setup's own size and a whole 8-GPU server,
   // plus any size on offer that is a whole multiple of a setup's.
@@ -1058,7 +1060,8 @@ function compare(earnings, offers) {
   const rows = [];
   for (const [gpu, counts] of sizes) for (const n of counts) {
     const runs = [...setups.values()].filter((s) => s.gpuClass === gpu && n % s.per === 0)
-      .map((s) => ({ model: s.model, copies: n / s.per, breakEvenPerHour: s.perGpuHour != null ? s.perGpuHour * n : null }))
+      .map((s) => ({ model: s.model, copies: n / s.per, breakEvenPerHour: s.perGpuHour != null ? s.perGpuHour * n : null,
+        gnkPerDay: s.perGpuGnk != null ? s.perGpuGnk * n : null, usdPerDay: s.perGpuUsd != null ? s.perGpuUsd * n : null }))
       .sort((a, b) => (b.breakEvenPerHour || 0) - (a.breakEvenPerHour || 0));
     if (!runs.length) continue;
     const here = offers.filter((o) => o.gpu === gpu && o.gpus === n).map((o) => ({ ...o, short: shortOf(o) }))

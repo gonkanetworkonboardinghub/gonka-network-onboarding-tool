@@ -1,0 +1,60 @@
+PROMPT FOR BASE44 — a small "i" that explains the figures, and no loading circle on the FAQ
+(no pictures; paste everything below and publish)
+
+1. A SMALL "i" BESIDE FIGURES AND COLUMN NAMES
+   A small round "i" (about 15px, a thin grey circle with an italic serif
+   "i", in the label's grey) right after the label it explains. Pointing at it
+   (mouse) or giving it keyboard focus shows a small dark box under it (above
+   it when there is no room), at most 300px wide, with the explanation in
+   normal-case 13px text; it never goes off the screen. A tap (phones) or a
+   click keeps it open; a tap or click anywhere else, Escape, or scrolling
+   closes it. Clicking the "i" never also triggers the row, tile or link it
+   sits in. It is a button for screen readers, named "What is this?". The
+   "i" never takes the uppercase or letter-spacing of the label beside it.
+   Put one beside each of these, with exactly these words:
+
+   MINE OR BUY — both tables (the rigs table and the provider table):
+   - Rig: "The GPUs in one server, and how many copies of the model it runs at once. GNOT can set up every rig shown here."
+   - Model: "The AI model the server runs for the Gonka network. The network pays hosts for serving the models it needs."
+   - Machines now: "Machines on the network running exactly this rig and model right now, as their hosts report them."
+   - GNK a day: "What a typical server like this was paid per day in the last finished epoch, measured from the chain: its share of that epoch's reward, by the work it proved."
+   - Worth: "That GNK a day at today's price, the middle of 4 markets."
+   - Rent below: "The most this server can cost per hour and still pay for itself, at today's GNK price."
+   - Cheapest dedicated: "The lowest price {provider} lists right now for a dedicated server with everything a node needs: enough memory and disk, and a system image with the right CUDA." ({provider} = the provider's name)
+   - Each day: "What is left each day: what the server earns, minus what the provider charges for it."
+
+   MONITOR/VOTE — THE NETWORK:
+   - the "Hosts" figure: "Hosts run the network's nodes and are paid for the work they prove. One host can run many machines."
+   - the "GPUs hosts report" figure: "Every GPU the hosts report on the machines that did work in this epoch. Hosts report their own hardware, and the network does not check it."
+   - the hosts list, "Share of the network": "This host's weight as a part of all the weight in the epoch: the share of the epoch's reward it is paid."
+   - "Last epoch": "What the host was paid for the last finished epoch."
+   - "Missed": "The share of requests the host did not answer in time in the last finished epoch."
+
+   MONITOR/VOTE — A NODE'S PAGE:
+   - "Weight this epoch": "What this node proved it can compute in this epoch's Proof of Compute. Each epoch's reward is shared out by weight."
+   - "Last epoch's reward": "What the network paid this node for the last finished epoch. It is released a slice at a time over the next 180 epochs."
+   - "This epoch, estimated": "The network's own estimate of what this node earns in the current epoch, if it keeps working as it has."
+   - "GPUs": "The GPUs this node reports, and how many of its machines are working now."
+   - "Still on its way" (the figure at the top, and the row in Its GNK): "Rewards this node has already earned that are not released yet. Each epoch's reward is paid out in 180 slices, one per epoch."
+   - Its GNK, "In its wallet": "Rewards land here as they unlock, and the node's network fees are paid from it."
+   - Its GNK, "Left for fees": "Since Gonka v0.2.16 the node pays a small fee for each Proof of Compute, from its wallet, up to this allowance. When it runs out it has to be renewed; sending more GNK does not raise it."
+   - Its GNK, "Collateral": "GNK the host has locked in the node's name. The network counts more of a node's weight when it has collateral. It can be withdrawn later, and part of it is taken if the node does bad work or is down too long."
+   - How well it worked, "Requests answered": "The AI requests users sent to this node in that epoch that it answered."
+   - "Requests it missed": "Requests this node did not answer in time. A host that misses too many is paid less, or nothing, for the epoch."
+   - "Answers judged wrong": "Answers other hosts checked and found wrong. Wrong answers cost a host its reward and can cost part of its collateral."
+
+   MONITOR/VOTE — VOTES, in an opened proposal's table:
+   - "Weight": "A vote counts by weight: each host votes with the weight it proved in Proof of Compute."
+   - "Share of the votes": "This choice's part of all the weight that voted."
+
+2. NO LOADING CIRCLE ON THE FAQ
+   Opening the FAQ (/faq) shows a loading circle for a moment before the
+   questions appear. The questions and answers are fixed text: show them at
+   once, with no loading circle and no blank moment. If any part of the page
+   is read from somewhere (a live figure inside an answer), the page still
+   shows immediately and only that part fills in when it arrives. The same
+   for every other page whose content is fixed text: no loading circle
+   before it.
+
+Add the new words to every language the site offers (translate the
+explanations too). Change nothing else on the site.
