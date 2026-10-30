@@ -1162,7 +1162,16 @@ button.mon-tile-link:hover { border-color: var(--line-strong); background: var(-
 
 /* everyone on the network */
 .mon-search { width: 100%; margin-bottom: 12px; }
-.mon-hosts-table .mon-row { grid-template-columns: 30px minmax(0, 1.6fr) 54px minmax(0, 1.3fr) minmax(0, 1.4fr) 96px 64px; }
+.mon-hosts-table .mon-row { grid-template-columns: 30px minmax(0, 1.5fr) 54px minmax(0, 1.3fr) 76px minmax(0, 1.2fr) 96px 72px; }
+/* Every host: column names may take two lines rather than be cut off; the
+   host's flags sit on their own line under its address; the models take up
+   to two lines (all of them on hover). */
+.mon-hosts-table .mon-row-head span { white-space: normal; overflow: visible; line-height: 1.3; }
+.mon-hosts-table .mon-host-cell { white-space: normal; }
+.mon-hosts-table .mon-host-cell .mon-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.mon-hosts-table .mon-host-cell .mon-flag { margin-left: 0; }
+.mon-hosts-table .mon-models-cell { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+.mon-hw-table .mon-row { grid-template-columns: 100px 120px minmax(0, 1.4fr) minmax(0, 1fr) 96px 96px; }
 .mon-row-link { width: 100%; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
 .mon-row-link:hover { background: var(--wash-strong); }
 .mon-rank { color: var(--muted); font-variant-numeric: tabular-nums; }

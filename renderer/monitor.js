@@ -425,6 +425,7 @@ function monTicks(max) {
 }
 /** "Oct 3" under the chart; the full date and time, with its zone, in the readout. */
 const monDay = (iso) => (iso ? new Date(iso).toLocaleDateString(monLang(), { month: "short", day: "numeric" }) : "");
+const monRate = (r) => "×" + Number(r).toLocaleString(monLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monWhenFull = (iso) => (iso ? new Date(iso).toLocaleString(monLang(), { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "");
 /** "Epoch 435 · began Oct 23, 2026, 3:12 PM EDT"; "about" when it is worked out rather than recorded. */
 const monEpochWhen = (p) => (p.at
@@ -798,15 +799,16 @@ function monHostRows(rows) {
   const topShare = Math.max(0.0001, ...rows.map((h) => h.share));
   return `
     <div class="mon-table mon-hosts-table">
-      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}</span><span>${esc(t("Models"))}</span><span>${esc(t("Share of the network"))}${tip(TIPS.share)}</span><span class="r">${esc(t("Last epoch"))}${tip(TIPS.lastEpochPaid)}</span><span class="r">${esc(t("Missed"))}${tip(TIPS.missedShare)}</span></div>
+      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}</span><span>${esc(t("Models"))}</span><span class="r">${esc(t("Weight"))}${tip(TIPS.hostWeight)}</span><span>${esc(t("Share of the network"))}${tip(TIPS.share)}</span><span class="r">${esc(t("Last epoch"))}${tip(TIPS.lastEpochPaid)}</span><span class="r">${esc(t("Missed"))}${tip(TIPS.missedShare)}</span></div>
       ${rows.map((h) => {
         const mine = MON.nodes.find((n) => n.address === h.address);
         return `
         <button class="mon-row mon-row-link" data-go-node="${esc(h.address)}">
           <span class="mon-rank">${esc(String(MON.overview.hosts.indexOf(h) + 1))}</span>
-          <span class="mono">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded ? ` <i class="mon-flag">${esc(t("left out"))}</i>` : ""}${h.underReported ? ` <i class="mon-flag soft" title="${esc(t("Its weight equals about {n} H100s, far more than the GPUs it reports.", { n: monNum(h.h100 || 0) }))}">${esc(t("reports too few GPUs"))}</i>` : ""}</span>
+          <span class="mono mon-host-cell">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded || h.underReported ? `<span class="mon-flags">${h.excluded ? `<i class="mon-flag">${esc(t("left out"))}</i>` : ""}${h.underReported ? `<i class="mon-flag soft" title="${esc(t("Its weight equals about {n} H100s, far more than the GPUs it reports.", { n: monNum(h.h100 || 0) }))}">${esc(t("reports too few GPUs"))}</i>` : ""}</span>` : ""}</span>
           <span class="r">${h.gpus === null ? "—" : esc(monNum(h.gpus))}</span>
-          <span class="mon-muted">${esc(h.models.map(monModel).join(", "))}</span>
+          <span class="mon-muted mon-models-cell" title="${esc(h.models.map(monModel).join(", "))}">${esc(h.models.map(monModel).join(", "))}</span>
+          <span class="r">${esc(monNum(h.weight))}</span>
           <span class="mon-share"><i style="width:${Math.max(2, Math.round(h.share / topShare * 100))}%"></i><b>${esc(monPct(h.share))}</b></span>
           <span class="r">${h.lastReward === null ? "—" : esc(monGnkShort(h.lastReward))}</span>
           <span class="r ${h.missedShare !== null && h.missedShare > 0.05 ? "mon-bad" : ""}">${h.missedShare === null ? "—" : esc(monPct(h.missedShare))}</span>
@@ -1364,10 +1366,14 @@ function monNodeHtml(d) {
         <div class="mon-tile-num">${st.inEpoch ? esc(monNum(st.weight)) : "—"}</div>
         <div class="mon-tile-sub">${st.inEpoch ? esc(t("{place} hosts · {share} of the network", { place: monPlace(st.place), share: monPct(st.share, 2) })) : "&nbsp;"}</div>
         ${(() => {
-          // A new node counts part of what its machines proved while it builds its reputation.
+          // What its machines proved, times their model's rate this epoch (vote #115).
           const proved = d.hardware.nodes.reduce((a, n) => a + (n.pocWeight || 0), 0);
-          return st.inEpoch && st.epochsCompleted < 10 && proved > st.weight * 1.15
-            ? `<div class="mon-tile-sub">${esc(t("New node: {pct} of the {w} it proved counts for now", { pct: monPct(st.weight / proved, 0), w: monNum(proved) }))}</div>` : "";
+          const rated = d.hardware.nodes.filter((n) => n.rate != null && n.pocWeight);
+          const models = [...new Set(rated.map((n) => n.models[0]))];
+          if (!st.inEpoch || !proved || !rated.length || Math.abs(proved - st.weight) / proved < 0.05) return "";
+          return `<div class="mon-tile-sub">${esc(models.length === 1
+            ? t("{w} proved, {rate} for {model} this epoch", { w: monNum(proved), rate: monRate(rated[0].rate), model: monModel(models[0]) })
+            : t("{w} proved, times each model's rate this epoch", { w: monNum(proved) }))}</div>`;
         })()}</div>
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Last epoch's reward"))}${tip(TIPS.lastReward)}</div>
         <div class="mon-tile-num">${last ? esc(monGnk(last.reward)) : "—"}</div>
@@ -1543,8 +1549,8 @@ function monHardwareCard(d) {
       <h3>${esc(t("Hardware the network sees"))}</h3>
       <p class="small">${esc(t(h.nodes.length === 1 ? "{working} of 1 machine working · {gpus}" : "{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
       ${h.underReported ? `<div class="warn-banner">${esc(t("Its weight equals about {n} H100s, but it reports {g} GPUs: it runs far more than it reports. Hosts report their own hardware, and the network does not check it.", { n: monNum(h.h100 || 0), g: monNum(h.gpuCount) }))}</div>` : h.h100 ? `<p class="small">${esc(t("Its weight equals about {n} H100s.", { n: monNum(h.h100) }))}</p>` : ""}
-      <div class="mon-table">
-        <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Weight"))}${tip(TIPS.machineWeight)}</span></div>
+      <div class="mon-table mon-hw-table">
+        <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Proved"))}${tip(TIPS.machineWeight)}</span><span class="r">${esc(t("Counts"))}${tip(TIPS.machineCounts)}</span></div>
         ${h.nodes.map((n) => {
           const ok = /INFERENCE|POC|POW/i.test(n.status);
           return `<div class="mon-row">
@@ -1553,6 +1559,7 @@ function monHardwareCard(d) {
             <span>${esc(n.gpus.map((g) => `${g.count}× ${g.type}${g.memory ? " (" + g.memory + ")" : ""}`).join(", ") || "—")}</span>
             <span>${esc(n.models.map(monModel).join(", ") || "—")}</span>
             <span class="r">${n.pocWeight ? esc(monNum(n.pocWeight)) : "—"}</span>
+            <span class="r" title="${n.rate != null ? esc(t("{rate}, {model}'s rate this epoch", { rate: monRate(n.rate), model: monModel(n.models[0]) })) : ""}">${n.counts != null ? esc(monNum(n.counts)) : "—"}</span>
           </div>`;
         }).join("")}
       </div>

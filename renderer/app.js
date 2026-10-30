@@ -388,7 +388,9 @@ const TIPS = {
   missedShare: "The share of requests the host did not answer in time in the last finished epoch.",
   voteWeight: "A vote counts by weight: each host votes with the weight it proved in Proof of Compute.",
   voteShare: "This choice's part of all the weight that voted.",
-  machineWeight: "What this machine proved in Proof of Compute. The node's weight for the epoch can be lower: a new node counts only part of it while it builds its reputation over its first epochs.",
+  machineWeight: "What this machine proved in Proof of Compute, before its model's rate.",
+  machineCounts: "What this machine counts for in the epoch: what it proved times its model's rate. Each model has its own rate, which the network adjusts every epoch so each model gets its share of the weight. These add up to the node's weight.",
+  hostWeight: "What the host's machines proved this epoch, each times its model's rate. The epoch's reward is shared out by it.",
   epochNeed: "The node's own upper estimate of the fees it may pay this epoch: a small fee for each Proof of Compute and hardware report.",
   canSpend: "What the node can spend on fees: your wallet's balance, capped by what is left of the fee allowance you gave it.",
   toSetUp: "The network fees for setting up: the node's permissions, and its registration if the network does not do it."
