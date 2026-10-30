@@ -1,0 +1,43 @@
+PROMPT FOR BASE44 — a node's page in its first epoch, and "1 machine"
+(no pictures; paste everything below and publish)
+
+On a node's page (/monitor/node/…), a node in its first epoch shows empty
+figures. Change these, using the node answer as it is (no new code needed):
+
+1. "REWARDS, EPOCH BY EPOCH": when totals.epochs is 0 (it was paid for none
+   of the epochs shown), show no chart, only this line:
+   - if standing.inEpoch is true: "No rewards yet. Its first epoch, {n}, ends
+     at the next Proof of Compute, {when}. Its reward is settled then and
+     released a slice at a time."
+   - otherwise: "No rewards in the last {n} epochs." ({n} = totals.of)
+   {n} is the current epoch's number (epoch.index) and {when} is the date and
+   time of the next Proof of Compute, as in the bar at the top
+   ("Oct 31, 2026, 12:46 PM EDT").
+
+2. "HOW WELL IT WORKED", when there is no finished epoch (last is missing)
+   and standing.inEpoch is true: "Its first epoch, {n}, is still running.
+   When it ends at the next Proof of Compute, {when}, this shows how the node
+   did." (same {n} and {when}). Otherwise keep the current line.
+
+3. "LAST EPOCH'S REWARD" figure at the top: when there is no last epoch and
+   standing.inEpoch is true, the small line under the "—" says "its first
+   epoch is still running".
+
+4. "WEIGHT THIS EPOCH" figure at the top: add a second small line when the
+   node is in the epoch, standing.epochsCompleted is below 10, and the sum of
+   hardware.nodes[].pocWeight is more than 1.15 × standing.weight:
+   "New node: {pct} of the {w} it proved counts for now" — {pct} =
+   standing.weight ÷ that sum, as a whole percent; {w} = that sum with
+   thousands separators. (A new node counts only part of its weight while it
+   builds its reputation.)
+
+5. "1 machine", not "1 machines": in the GPUs figure ("8 working · 1
+   machine") and in "Hardware the network sees" ("1 of 1 machine working").
+
+6. In "Hardware the network sees", give the table's "Weight" column a small
+   "i" like the others, with: "What this machine proved in Proof of Compute.
+   The node's weight for the epoch can be lower: a new node counts only part
+   of it while it builds its reputation over its first epochs."
+
+Add the new words to every language the site offers. Change nothing else on
+the site.
