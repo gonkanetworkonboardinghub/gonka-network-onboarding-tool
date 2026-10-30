@@ -1,14 +1,14 @@
 {
-  "asOf": "2026-10-30T14:31:57.356Z",
+  "asOf": "2026-10-30T19:43:00.174Z",
   "marker": "Set up with GNOT",
   "explorer": "https://gonka.gg/transactions/",
-  "scannedToHeight": 6812094,
-  "currentEpoch": 441,
+  "scannedToHeight": 6815549,
+  "currentEpoch": 442,
   "totals": {
     "nodesEver": 2,
-    "activeNow": 0,
-    "gpusNow": 0,
-    "gnkMinedAllEpochs": 0
+    "activeNow": 1,
+    "gpusNow": 8,
+    "gnkMinedAllEpochs": 189.19409802566457
   },
   "nodes": [
     {
@@ -39,13 +39,13 @@
         "kind": "MsgSubmitNewParticipant"
       },
       "txCount": 3,
-      "activeNow": false,
-      "weight": 0,
+      "activeNow": true,
+      "weight": 1235,
       "gpus": 8,
       "gpuTypes": {
         "A100": 8
       },
-      "gnkPerDay": 0
+      "gnkPerDay": 196.36473590480847
     }
   ],
   "epochs": [
@@ -342,6 +342,13 @@
       "gpus": 0,
       "weight": 0,
       "gnk": 0
+    },
+    {
+      "epoch": 442,
+      "activeNodes": 1,
+      "gpus": 8,
+      "weight": 1235,
+      "gnk": 189.19409802566457
     }
   ]
 }
