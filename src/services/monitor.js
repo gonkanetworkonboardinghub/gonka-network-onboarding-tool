@@ -500,6 +500,33 @@ async function usageFile() {
   return useFile.data;
 }
 
+/**
+ * What hosts paid in network fees over about the last epoch (fees.json, from
+ * scripts/fees-snapshot.js), summed up for Host Setup's fee card: the hosts
+ * with under 1% of the network's weight — one 8-GPU server or less — and the
+ * biggest payment of all, in ngonka. Kept ten minutes; null when unknown.
+ */
+let feeFile = { at: 0, data: null };
+async function typicalFees() {
+  const url = K.get().feesUrl;
+  if (!url) return null;
+  if (!feeFile.data || Date.now() - feeFile.at > 10 * 60 * 1000) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) feeFile = { at: Date.now(), data: await res.json() };
+    } catch (_) { /* keep whatever was read before */ }
+  }
+  const f = feeFile.data;
+  const paid = ((f && f.hosts) || []).filter((h) => h.fees != null);
+  if (!paid.length) return null;
+  const small = paid.filter((h) => h.share < 0.01).map((h) => h.fees).sort((a, b) => a - b);
+  return {
+    asOf: f.asOf, hours: f.hours, hosts: paid.length,
+    small: small.length ? { hosts: small.length, low: small[0], high: small[small.length - 1], typical: median(small) } : null,
+    most: Math.max(...paid.map((h) => h.fees))
+  };
+}
+
 async function capacityFile() {
   const url = K.get().capacityUrl;
   if (!url) return null;
@@ -851,7 +878,7 @@ function saveNodes(dir, nodes) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, summarise,
+  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,

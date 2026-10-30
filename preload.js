@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("gonka", {
   monitorNetwork: call("monitor:network"),
   monitorNetworkOverview: call("monitor:networkOverview"),
   monitorHardwareSetups: call("monitor:hardwareSetups"),
+  typicalFees: call("monitor:typicalFees"),
   monitorOverview: call("monitor:overview"),
   monitorNodes: call("monitor:nodes"),
   monitorSaveNodes: call("monitor:saveNodes"),

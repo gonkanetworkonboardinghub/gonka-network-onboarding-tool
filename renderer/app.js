@@ -2739,25 +2739,36 @@ RENDER.verify = () => {
   async function fees() {
     const el = $("#fee-card");
     if (!el) return;
-    const start = (Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK;
-    let bal = null, fb = null;
+    let bal = null, fb = null, usual = null;
     try { bal = await api("balance", { seed: S.seed || S.K.seedNodes[0], address: S.wallet.address }); } catch (_) {}
     if (S.connected) { try { fb = await api("feeBudget"); } catch (_) {} }
+    try { usual = await api("typicalFees"); } catch (_) {}
     if (!$("#fee-card")) return;
+    // Until the node has its own figure, look again every minute.
+    clearTimeout(S.feePoll);
+    if (!fb || !fb.known) S.feePoll = setTimeout(() => { if ($("#fee-card")) fees(); }, 60000);
+
+    // What hosts paid last epoch, measured from the chain (scripts/fees-snapshot.js):
+    // the guide's 10 GNK is a lasting reserve, not one epoch's cost.
+    const s = usual && usual.small;
+    const lasts = (per) => (bal && per > 0 ? Math.floor(bal / per) : null);
+    const usualLine = s ? `<p class="small">${t("In the last epoch, hosts with under 1% of the network — one 8-GPU server or less — paid between {low} and {high} in fees, typically {typical}. The biggest host paid {most}.", {
+        low: `<b>${gnk(s.low)}</b>`, high: `<b>${gnk(s.high)}</b>`, typical: `<b>${gnk(s.typical)}</b>`, most: gnk(usual.most) })}${lasts(s.typical) ? " " + esc(t("At the typical rate, your wallet lasts about {n} epochs.", { n: lasts(s.typical).toLocaleString(window.I18N.lang()) })) : ""}</p>` : "";
 
     let verdict;
     if (fb && fb.covers) {
-      verdict = `<p><span class="pill ok">${esc(t("FEES COVERED"))}</span> <span class="small">${t("Your node says it can pay this epoch's fees: it may need up to {need} and can spend {have}.", { need: `<b>${gnk(fb.budget)}</b>`, have: `<b>${gnk(fb.spendable)}</b>` })}</span></p>`;
+      verdict = `<p><span class="pill ok">${esc(t("FEES COVERED"))}</span> <span class="small">${t("Your node estimates this epoch needs up to {need}, and it can spend {have}.", { need: `<b>${gnk(fb.budget)}</b>`, have: `<b>${gnk(fb.spendable)}</b>` })}${lasts(fb.budget) ? " " + esc(t("At that rate your wallet lasts at least {n} epochs.", { n: lasts(fb.budget).toLocaleString(window.I18N.lang()) })) : ""}</span></p>`;
     } else if (fb && bal !== null && bal >= fb.budget) {
       // The wallet has it, the node may not spend it: the allowance granted to
       // the node's own key is used up, and it cannot be topped up, only renewed.
       verdict = `<p><span class="pill err">${esc(t("ALLOWANCE USED UP"))}</span> <span class="small">${t("Your wallet has enough, but the allowance your node may spend from it is used up: it can spend {have} and this epoch may need {need}. Sending more GNK does not help. The allowance has to be renewed, as Gonka's guide describes under \"Refresh the feegrant\".", { have: `<b>${gnk(fb.spendable)}</b>`, need: `<b>${gnk(fb.budget)}</b>` })}</span></p>`;
     } else if (fb) {
       verdict = `<p><span class="pill err">${esc(t("NOT ENOUGH FOR FEES"))}</span> <span class="small">${t("Your node says it cannot pay this epoch's fees: it may need up to {need} and can spend {have}. Send at least {more} to the address above, or it will be left out of the epoch.", { need: `<b>${gnk(fb.budget)}</b>`, have: `<b>${gnk(fb.spendable)}</b>`, more: `<b>${gnk(Math.max(0, fb.budget - fb.spendable))}</b>` })}</span></p>`;
-    } else if (bal !== null && bal < start) {
-      verdict = `<p><span class="pill warn">${esc(t("LOW FOR FEES"))}</span> <span class="small">${t("Your node has not said yet what this epoch will cost. Gonka's guide suggests keeping about {start} in the wallet; it holds less than that.", { start: `<b>${gnk(start)}</b>` })}</span></p>`;
     } else {
-      verdict = `<p class="small">${t("Your node has not said yet what this epoch will cost. It can once it is running and has seen a Proof of Compute.")}</p>`;
+      // Still waiting for the node's own figure: say so plainly, and give what
+      // hosts paid meanwhile. Only a wallet below what small hosts paid is a warning.
+      verdict = `<p class="small">${loadingInline(t("Your node is working out what this epoch will cost."))} ${esc(t("It gives its estimate once it has caught up with the network; this card then shows it."))}</p>`
+        + (s && bal !== null && bal < s.high ? `<p><span class="pill warn">${esc(t("MAY BE LOW"))}</span> <span class="small">${esc(t("Your wallet holds less than some hosts of this size paid in the last epoch. Adding a little GNK is safer."))}</span></p>` : "");
     }
     el.innerHTML = `
       <h3>${esc(t("Fees your node pays"))}</h3>
@@ -2768,6 +2779,8 @@ RENDER.verify = () => {
       ])}
       <div style="margin-top:12px">${verdict}</div>
       ${fb && !fb.known ? `<p class="small">${t("The node's figure is a first guess until it has taken part in a Proof of Compute.")}</p>` : ""}
+      ${usualLine}
+      <p class="small">${esc(t("Gonka's guide suggests keeping about {start} in the wallet: a reserve that lasts a long time, not what one epoch costs.", { start: gnk((Number(S.K.feeStartGnk) || 10) * NGONKA_PER_GNK) }))}</p>
       ${S.K.docs.fees ? `<div class="btn-row" style="margin-top:8px"><button id="b-fees-guide">${esc(t("What Gonka's guide says about fees"))}</button></div>` : ""}
       ${more("Why does my node pay fees?", `<p>${t("Since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of the wallet above. A node that cannot pay stays registered but is left out of the epoch and earns nothing.")}</p>`)}`;
     if ($("#b-fees-guide")) $("#b-fees-guide").onclick = () => api("openExternal", { url: S.K.docs.fees });

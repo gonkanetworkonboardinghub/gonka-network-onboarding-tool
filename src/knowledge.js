@@ -119,6 +119,9 @@ const overridable = {
   // The network's total weight each epoch (scripts/usage-snapshot.js), for the
   // network page's weight chart.
   usageUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/usage.json",
+  // What each host paid in network fees over about the last epoch, by size
+  // (scripts/fees-snapshot.js), for Host Setup's fee card.
+  feesUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/fees.json",
 
   // API paths (relative to a node base URL)
   api: {
