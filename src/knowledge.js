@@ -355,6 +355,22 @@ async function loadRemoteManifest() {
   return merged;
 }
 
+/**
+ * The manifest's `app` section read again, for an app that has been open a
+ * while and looks for a release that came out since. Only the release
+ * channel: the rest of the knowledge stays as it was loaded at the start.
+ * Null when it cannot be read.
+ */
+async function fetchRemoteApp() {
+  if (!REMOTE_MANIFEST_URL) return null;
+  try {
+    const res = await fetch(REMOTE_MANIFEST_URL, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+    if (!res.ok) return null;
+    const remote = await res.json();
+    return remote && remote.app ? remote.app : null;
+  } catch (_) { return null; }
+}
+
 function deepMerge(base, over) {
   for (const k of Object.keys(over)) {
     if (over[k] && typeof over[k] === "object" && !Array.isArray(over[k]) &&
@@ -414,4 +430,4 @@ async function loadCompat() {
 
 function get() { return merged; }
 
-module.exports = { get, loadRemoteManifest, loadCompat, REMOTE_MANIFEST_URL };
+module.exports = { get, loadRemoteManifest, loadCompat, fetchRemoteApp, REMOTE_MANIFEST_URL };

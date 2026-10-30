@@ -7,10 +7,12 @@ contextBridge.exposeInMainWorld("gonka", {
   onUpdateProgress: (cb) => ipcRenderer.on("update:progress", (_e, payload) => cb(payload)),
   allowClose: () => ipcRenderer.send("app:allowClose"),
   setCloseGuard: (on) => ipcRenderer.send("app:closeGuard", !!on),
+  setRunning: (label) => ipcRenderer.send("app:busy", label || ""),
 
   knowledge: call("app:knowledge"),
   platform: call("app:platform"),
   updateState: call("app:updateState"),
+  updateCheck: call("app:updateCheck"),
   installUpdate: call("app:installUpdate"),
   openExternal: call("app:openExternal"),
   pickFile: call("app:pickFile"),

@@ -78,6 +78,9 @@ function evaluate(current, manifest, where = {}) {
     installer: info.installer || null,
     sha256: info.sha256 || null,
     notes: info.notes || "",
+    // A release that must reach open copies too, not just the next opening:
+    // the open app requires it as soon as nothing is running.
+    urgent: !!(manifest.urgent || info.urgent),
     state: "ok"
   };
   if (cmpVer(current, info.latest) < 0 || (info.minSupported && cmpVer(current, info.minSupported) < 0)) {

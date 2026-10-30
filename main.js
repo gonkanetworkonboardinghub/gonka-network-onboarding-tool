@@ -129,8 +129,26 @@ function createWindow() {
   // is still connected) and once a setup is finished.
   ipcMain.on("app:allowClose", () => { confirmClose = false; });
   ipcMain.on("app:closeGuard", (_e, on) => { confirmClose = !!on; });
+  // What is running right now, if anything (the renderer says): closing then
+  // would stop it partway, so the window asks to wait — whatever the screen.
+  let runningNow = "";
+  ipcMain.on("app:busy", (_e, label) => { runningNow = String(label || "").slice(0, 200); });
   win.on("close", (e) => {
-    if (!confirmClose || win.isDestroyed()) return;
+    if (win.isDestroyed()) return;
+    if (runningNow) {
+      const wait = dialog.showMessageBoxSync(win, {
+        type: "warning",
+        buttons: ["Wait", "Close anyway"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "Gonka Host Setup",
+        message: "GNOT is still working",
+        detail: `It is in the middle of: ${runningNow}\n\nClosing now stops it partway. Wait until it finishes, then close GNOT.`
+      });
+      if (wait === 0) { e.preventDefault(); return; }
+      return;
+    }
+    if (!confirmClose) return;
     const choice = dialog.showMessageBoxSync(win, {
       type: "question",
       buttons: ["Stay", "Close anyway"],
@@ -187,6 +205,20 @@ ipcMain.handle("app:updateState", wrap(async () => ({
   released: RELEASED,
   autoUpdate: updater.canSelfUpdate(updateState)
 })));
+
+// An open app looks again every hour (the renderer asks): a release that came
+// out since it started is announced while it runs, installed at the next
+// opening — or now, when nothing is running and the person says so.
+ipcMain.handle("app:updateCheck", wrap(async () => {
+  const remote = await K.fetchRemoteApp();
+  if (remote) {
+    try {
+      const u = updates.evaluate(VERSION, remote, { platform: process.platform, arch: process.arch });
+      if (u.checked) updateState = u;
+    } catch (_) { /* keep what was known */ }
+  }
+  return { ...updateState, current: VERSION, released: RELEASED, autoUpdate: updater.canSelfUpdate(updateState) };
+}));
 
 // Download the new version, verify it, start its installer (Windows) or the
 // bundle swap (macOS), and get out of the way. Either one waits for this

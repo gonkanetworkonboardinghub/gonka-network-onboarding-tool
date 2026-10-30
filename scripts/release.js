@@ -2,6 +2,7 @@
  * release.js — cut a new version, build it for Windows and macOS, stage the upload.
  *
  *   node scripts/release.js 1.1.0 --notes="What changed" --mac
+ *   node scripts/release.js 1.1.0 --notes="…" --mac --urgent   (open copies must update as soon as nothing runs)
  *   node scripts/release.js 1.1.0 --mac=path/to/zips  (Mac builds made elsewhere)
  *   (no --mac: Windows only; Mac users stay on their current release)
  *
@@ -49,6 +50,9 @@ const GH = (() => {
 const version = process.argv[2];
 const notes = (process.argv.find((a) => a.startsWith("--notes=")) || "").replace("--notes=", "");
 const macArg = process.argv.find((a) => a === "--mac" || a.startsWith("--mac="));
+// Urgent: copies that are open update as soon as nothing is running, not just at
+// their next opening. Only for a release an older version must not keep running with.
+const urgent = process.argv.includes("--urgent");
 
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
   console.error('Usage: node scripts/release.js <x.y.z> [--notes="..."] [--mac | --mac=<dir>]');
@@ -224,7 +228,8 @@ async function buildOnGitHub() {
       url: `${RELEASE_BASE}/releases/latest/download/${constName}`,
       installer: download(fileName),
       sha256,
-      notes: notes || ""
+      notes: notes || "",
+      ...(urgent ? { urgent: true } : {})
     }
   };
 

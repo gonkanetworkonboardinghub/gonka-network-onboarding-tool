@@ -112,10 +112,18 @@ function logLine(line, stream) {
   out.scrollTop = out.scrollHeight;
 }
 let busyTimer = null, busyStart = 0, busyLabel = "";
+/** Tell the window what is running, so closing it then asks to wait (main.js). */
+function reportRunning() {
+  let term = false;
+  try { term = TERM.busy; } catch (_) { /* the terminal is set up further down */ }
+  const label = S.consoleBusy ? (busyLabel || "a setup step") : term ? "a command on your server" : "";
+  if (window.gonka && window.gonka.setRunning) window.gonka.setRunning(label);
+}
 function setBusy(b, title) {
   S.consoleBusy = b;
   $("#console-dot").className = "dot" + (b ? " busy" : "");
   if (title) busyLabel = title;
+  reportRunning();
   const titleEl = $("#console-title");
   if (b) {
     if (!busyTimer) {
@@ -309,13 +317,15 @@ async function syncEpochBar() {
     if (!S.seed) S.seed = await api("seed");
     const p = await api("nextPoc", { seed: S.seed });
     pocState = { ...p, at: Date.now() };
+    if (!$("#epochbar")) return;
     $("#epochbar").style.display = "flex";
     renderEpochBar();
   } catch (_) { /* offline — keep whatever we had; bar stays hidden if never synced */ }
 }
 
 function renderEpochBar() {
-  if (!pocState) return;
+  // Not there behind the update screen, which replaces the whole window.
+  if (!pocState || !$("#epoch-fill")) return;
   const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
   const totalMs = pocState.totalBlocks * pocState.secPerBlock * 1000;
   const frac = totalMs > 0 ? Math.min(1, Math.max(0, 1 - remain / totalMs)) : 0;
@@ -3656,6 +3666,8 @@ function showHostSetup() {
   syncEpochBar();
   setInterval(renderEpochBar, 1000);
   setInterval(syncEpochBar, 120000);
+  // A release that comes out while the app is open (watchForUpdates).
+  setInterval(watchForUpdates, 60 * 60 * 1000);
 })();
 
 /* ------------------------------------------------------------------ */
@@ -3699,6 +3711,7 @@ function initTerminal() {
     // Echo it so the log reads like a transcript rather than loose output.
     logLine(`\n${TERM.cwd || "~"} $ ${cmd}\n`);
     TERM.busy = true;
+    reportRunning();
     input.disabled = true;
     try {
       const r = await api("termRun", { command: cmd });
@@ -3709,6 +3722,7 @@ function initTerminal() {
       logLine(err.message + "\n", "stderr");
     } finally {
       TERM.busy = false;
+      reportRunning();
       input.disabled = false;
       await refreshTermPrompt();
       input.focus();
@@ -3748,7 +3762,14 @@ async function checkForUpdate() {
   if (!u || !u.checked) return false;            // offline / no manifest: carry on
   const auto = !!u.autoUpdate;
 
-  if (u.state === "required") {
+  if (u.state === "required") { updateGate(u); return true; }   // stop the wizard from booting
+  return false;
+}
+
+/** The update screen: a version that is out of date goes no further. */
+function updateGate(u) {
+  const auto = !!u.autoUpdate;
+  {
     document.body.innerHTML = `
       <div style="height:100vh; display:flex; align-items:center; justify-content:center; padding:40px">
         <div style="max-width:560px">
@@ -3773,9 +3794,55 @@ async function checkForUpdate() {
     const upd = $("#u-auto");
     if (upd) upd.onclick = () => runUpdate(u, upd, $("#u-status"));
     $("#u-quit").onclick = () => { window.gonka.allowClose && window.gonka.allowClose(); window.close(); };
-    return true;                                  // stop the wizard from booting
   }
-  return false;
+}
+
+/* ---- A release that came out while the app is open --------------------
+   Looked for every hour. Normally a calm note: carry on until nothing is
+   running, close GNOT, and it updates at the next opening, where Host Setup
+   picks up the saved progress; or "Update now" while nothing runs. A release
+   marked urgent brings up the update screen as soon as nothing is running.
+   Nobody is cut off in the middle of anything, and an old version cannot be
+   opened again. */
+function appBusy() {
+  if (S.consoleBusy || TERM.busy) return true;
+  if (typeof MON === "undefined" || !MON) return false;
+  return !!((MON.srv && MON.srv.busy) || (MON.down && MON.down.busy) || (MON.link && MON.link.busy)
+    || (MON.ballot && (MON.ballot.stage === "checking" || MON.ballot.stage === "sending")));
+}
+async function watchForUpdates() {
+  let u;
+  try { u = await api("updateCheck"); } catch (_) { return; }
+  if (!u || !u.checked || u.state !== "required") return;
+  S.update = { ...(S.update || {}), ...u };
+  showUpdateNote(u);
+}
+function showUpdateNote(u) {
+  clearInterval(showUpdateNote.timer);
+  let el = $("#update-note");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "update-note";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  const paint = () => {
+    const busy = appBusy();
+    // Urgent: the update screen, the moment nothing is running.
+    if (u.urgent && !busy) { clearInterval(showUpdateNote.timer); saveSession(); updateGate(u); return; }
+    if (el.dataset.updating) return;
+    el.innerHTML = `
+      <b>${esc(t("Version {v} of GNOT is out", { v: u.latest }))}</b>
+      <p>${esc(u.urgent
+        ? t("This update is needed now. It starts as soon as nothing is running.")
+        : t("Carry on until nothing is running — finish the step you are in — then close GNOT. It updates when you open it again, and Host Setup brings you back to where you were."))}</p>
+      ${busy ? `<p class="small">${loadingInline(t("Something is running now. Let it finish first."))}</p>`
+        : u.autoUpdate && !u.urgent ? `<div class="btn-row"><button class="primary" id="update-now">${esc(t("Update now"))}</button></div><p class="small" id="update-status"></p>` : ""}`;
+    const b = $("#update-now");
+    if (b) b.onclick = () => { el.dataset.updating = "1"; saveSession(); runUpdate(u, b, $("#update-status")); };
+  };
+  paint();
+  showUpdateNote.timer = setInterval(paint, 3000);
 }
 
 async function runUpdate(u, trigger, status) {
