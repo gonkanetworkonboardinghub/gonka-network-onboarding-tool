@@ -317,6 +317,28 @@ function restoreOffered(keepSsh) {
   (prev.done || []).forEach((i) => doneSteps.add(i));
   renderRail();
 }
+/**
+ * A setup that got to the end but was saved without its wallet: a restart
+ * before 1.8.8 could wipe it (see saveSession). When this computer holds one
+ * wallet and the network knows it as a host, that is the setup's wallet and
+ * the setup is finished: both are put back, so it opens finished again.
+ */
+async function repairSession() {
+  const prev = loadSession();
+  if (!prev || resumePoint(prev) !== STEPS.length - 1 || (prev.wallet && prev.wallet.address)) return;
+  try {
+    const [names, addresses] = await Promise.all([api("keyNames"), api("keyAddresses")]);
+    if (names.length !== 1 || addresses.length !== 1) return;
+    // Never hold up the app's start for long: no answer in 8 seconds, no repair.
+    const v = await Promise.race([api("monitorOverview", { address: addresses[0], epochs: 7 }), new Promise((r) => setTimeout(() => r(null), 8000))]);
+    if (!v || !v.standing || !v.standing.known) return;
+    prev.wallet = { ...(prev.wallet || {}), name: names[0], address: addresses[0] };
+    prev.mode = prev.mode || "ssh";
+    prev.step = STEPS.length - 1;
+    prev.done = [...Array(STEPS.length - 1).keys()];
+    localStorage.setItem(SESSION_KEY, JSON.stringify(prev));
+  } catch (_) { /* left as it was */ }
+}
 /** Let the setup on offer go: a new one starts. */
 function forgetOffered() {
   S.sessionOffered = null;
@@ -3737,6 +3759,7 @@ function showHostSetup() {
 
   applyChrome();
   renderRail();
+  await repairSession();
   go(0);
   showHome();
 
