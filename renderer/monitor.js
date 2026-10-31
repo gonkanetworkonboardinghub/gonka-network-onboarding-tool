@@ -1325,9 +1325,18 @@ function monShutdownHtml(node) {
   else three = step("now", t("Collect its last reward"), esc(t("Epoch {n}'s reward, {amount}, has not been claimed. Claim it by hand, the way Gonka's guide does.", { n: r.epoch, amount: monGnk(r.amount) })),
     linked ? `<button class="primary" id="mon-down-claim" ${d.doing ? "disabled" : ""}>${esc(d.doing === "claim" ? t("Claiming…") : t("Claim it now"))}</button>` : needServer);
   // 4. Switch it off.
+  // Stopping before the steps above are done is allowed (money can run out
+  // mid-epoch): it gives up the reward still to come, and says so first.
   let four;
-  if (d.off) four = step("done", t("Switch it off"), esc(t("Every container on the server is stopped. The node is off.")));
-  else if (!s.ready) four = step("later", t("Switch it off"), esc(t("Once the steps above are done.")));
+  const provider = esc(t("Switching off stops the node, not the rental: to stop paying for the server, end it at your provider too."));
+  if (d.off) four = step("done", t("Switch it off"), esc(t("Every container on the server is stopped. The node is off.")) + `<br><span class="small">${provider}</span>`);
+  else if (!s.ready && linked && d.early) four = step("now", t("Switch it off"),
+    esc(s.inEpoch
+      ? t("Switching off now gives up epoch {n}'s reward: the node is paid for it only if it keeps working until the epoch ends. Rewards already claimed stay in your wallet.", { n: s.finish.epoch })
+      : t("Switching off now gives up the reward that is still to be claimed. Rewards already claimed stay in your wallet.")),
+    `<div class="btn-row"><button class="danger" id="mon-down-off-yes" ${d.doing ? "disabled" : ""}>${esc(d.doing === "off" ? t("Switching off…") : t("Yes, switch it off now"))}</button><button id="mon-down-early-no">${esc(t("Cancel"))}</button></div>`);
+  else if (!s.ready) four = step("later", t("Switch it off"), esc(t("Once the steps above are done.")),
+    linked ? `<button class="mon-quiet" id="mon-down-early">${esc(t("Switch off now anyway"))}</button>` : "");
   else if (!linked) four = step("now", t("Switch it off"), esc(t("Connect to your server first: this step runs there.")), needServer);
   else if (!d.confirm) four = step("now", t("Switch it off"), esc(t("Stops every container on the server.")), `<button class="primary" id="mon-down-off">${esc(t("Switch off the node"))}</button>`);
   else four = step("now", t("Switch it off"), esc(t("This stops the node for good: it earns nothing more until it is started and registered for an epoch again. Your wallet, its GNK and the server's files stay as they are.")),
@@ -1362,6 +1371,8 @@ function monWireShutdown(node) {
   if ($("#mon-down-off")) $("#mon-down-off").onclick = () => { d.confirm = true; monRenderMain(); };
   if ($("#mon-down-off-no")) $("#mon-down-off-no").onclick = () => { d.confirm = false; monRenderMain(); };
   if ($("#mon-down-off-yes")) $("#mon-down-off-yes").onclick = () => act("off", "mineSwitchOff");
+  if ($("#mon-down-early")) $("#mon-down-early").onclick = () => { d.early = true; monRenderMain(); };
+  if ($("#mon-down-early-no")) $("#mon-down-early-no").onclick = () => { d.early = false; monRenderMain(); };
 }
 
 /** Naming a node happens in the page: Electron has no prompt(). */
