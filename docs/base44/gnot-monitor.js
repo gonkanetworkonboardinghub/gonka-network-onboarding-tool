@@ -518,6 +518,24 @@ function summarise({ address, now, mem, hist, raw }) {
  * and more than one point above it, so ordinary noise never raises a flag.
  */
 const clearlyMore = (mine, typical) => typical !== null && typical !== undefined && mine > typical * 1.5 && mine - typical > 0.01;
+
+/**
+ * Where a host's answers missed (or judged wrong) per AI session sit beside the
+ * middle host's: "much-more" (twice or more: worth a look), "more" (a quarter
+ * more or over), "less" (a fifth less or under) or "same". slack keeps small
+ * figures from counting as a difference, and fewer than 5 sessions are never
+ * called much more. One rule for a node's card, the hosts list and what is
+ * worth a look, so they never disagree.
+ */
+const WORK_SLACK = { missed: 0.5, invalid: 0.2 };
+function beside(mine, typical, slack, sessions) {
+  if (mine === null || mine === undefined || typical === null || typical === undefined) return null;
+  if (mine - typical > slack && mine >= typical * 2) return sessions >= 5 ? "much-more" : "more";
+  if (mine - typical > slack && mine >= typical * 1.25) return "more";
+  if (typical - mine > slack && mine <= typical * 0.8) return "less";
+  return "same";
+}
+
 function attention(v) {
   const out = [];
   const add = (level, code, data = {}) => out.push({ level, code, ...data });
@@ -536,14 +554,14 @@ function attention(v) {
     if (clearlyMore(l.missedShare, l.typicalMissedShare)) add("warn", "missed", { epoch: l.epoch, mine: l.missedShare, typical: l.typicalMissedShare });
     if (l.validated + l.invalidated > 0 && clearlyMore(l.invalidShare, l.typicalInvalidShare)) add("warn", "judged-wrong", { epoch: l.epoch, mine: l.invalidShare, typical: l.typicalInvalidShare });
   }
-  // AI work through devshards: clearly more missed or wrong answers per session than the middle host.
+  // AI work through devshards: twice or more the middle host's missed or wrong
+  // answers per session. A note, listed after anything that stops it earning.
   const w = v.work;
-  const wellAbove = (mine, typical) => mine !== null && typical !== null && mine > typical * 3 && mine - typical > 2;
-  if (w && w.mine.sessions >= 5) {
-    if (wellAbove(w.missedPer, w.typical.missedPer)) add("warn", "ds-missed", { epoch: w.epoch, missed: w.mine.missed, sessions: w.mine.sessions, mine: w.missedPer, typical: w.typical.missedPer });
-    if (wellAbove(w.invalidPer, w.typical.invalidPer)) add("warn", "ds-wrong", { epoch: w.epoch, invalid: w.mine.invalid, sessions: w.mine.sessions, mine: w.invalidPer, typical: w.typical.invalidPer });
+  if (w) {
+    if (w.missedVs === "much-more") add("note", "ds-missed", { epoch: w.epoch, missed: w.mine.missed, sessions: w.mine.sessions, mine: w.missedPer, typical: w.typical.missedPer });
+    if (w.invalidVs === "much-more") add("note", "ds-wrong", { epoch: w.epoch, invalid: w.mine.invalid, sessions: w.mine.sessions, mine: w.invalidPer, typical: w.typical.invalidPer });
   }
-  const rank = { bad: 0, warn: 1 };
+  const rank = { bad: 0, warn: 1, note: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
@@ -562,10 +580,12 @@ function devshardWork(use, address, current) {
   const all = Object.values(u.h).map(one).filter((x) => x.sessions > 0);
   const per = (x, k) => x[k] / x.sessions;
   const mine = one(u.h[address]);
+  const missedPer = mine.sessions ? per(mine, "missed") : null, invalidPer = mine.sessions ? per(mine, "invalid") : null;
+  const typical = { sessions: median(all.map((x) => x.sessions)), missedPer: median(all.map((x) => per(x, "missed"))), invalidPer: median(all.map((x) => per(x, "invalid"))), paid: median(all.map((x) => x.paid)) };
   return {
-    epoch: u.e, hosts: all.length, mine,
-    missedPer: mine.sessions ? per(mine, "missed") : null, invalidPer: mine.sessions ? per(mine, "invalid") : null,
-    typical: { sessions: median(all.map((x) => x.sessions)), missedPer: median(all.map((x) => per(x, "missed"))), invalidPer: median(all.map((x) => per(x, "invalid"))), paid: median(all.map((x) => x.paid)) },
+    epoch: u.e, hosts: all.length, mine, missedPer, invalidPer, typical,
+    missedVs: beside(missedPer, typical.missedPer, WORK_SLACK.missed, mine.sessions),
+    invalidVs: beside(invalidPer, typical.invalidPer, WORK_SLACK.invalid, mine.sessions),
     // The chain adds results as the epoch's AI sessions close, through the next epoch.
     settling: u.e >= current - 1
   };
@@ -739,7 +759,8 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
     const last = lastRows.find((r) => r.address === h.address) || null;
     const ds = wu && wu.h[h.address];
     return {
-      work: ds ? { epoch: wu.e, missed: ds[0], invalid: ds[1], sessions: ds[5], missedPer: ds[5] ? ds[0] / ds[5] : null, typicalMissedPer } : null,
+      work: ds ? { epoch: wu.e, missed: ds[0], invalid: ds[1], sessions: ds[5], missedPer: ds[5] ? ds[0] / ds[5] : null, typicalMissedPer,
+        missedVs: ds[5] ? beside(ds[0] / ds[5], typicalMissedPer, WORK_SLACK.missed, ds[5]) : null } : null,
       address: h.address,
       weight: h.weight,
       share: share(h.weight, totalWeight),
@@ -1022,7 +1043,7 @@ module.exports = {
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
-  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, unpackEpochs, joinedAt }
+  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt }
 };
   return module.exports;
 })();
