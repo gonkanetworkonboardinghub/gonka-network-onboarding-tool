@@ -176,7 +176,9 @@ function go(i) {
   renderRail();
   // Looking back at a step that is done: it shows what was done, and nothing
   // on the server runs again unless asked for (revisitGuard).
-  S.revisitOf = doneSteps.has(S.step) && S.furthest > S.step ? S.step : null;
+  // Connect and the wallet on the way back to where a setup was are not looking back.
+  const resuming = S.resumeTo && ["connect", "wallet"].includes(STEPS[S.step].id);
+  S.revisitOf = doneSteps.has(S.step) && S.furthest > S.step && !resuming ? S.step : null;
   RENDER[STEPS[S.step].id]();
   if (S.revisitOf === S.step) revisitGuard(S.step);
   $("#stage").scrollTop = 0;
@@ -273,6 +275,10 @@ function resumeGuide(active) {
 /* ------------------------------------------------------------------ */
 const SESSION_KEY = "gonka-session";
 function saveSession() {
+  // While an earlier setup is on offer and nothing is chosen yet, what is on
+  // screen is a blank start: saving it would wipe out the setup on offer
+  // (an update's restart on 31 October 2026 did exactly that).
+  if (S.sessionOffered) return;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       v: 1, at: Date.now(), step: S.step,
@@ -292,6 +298,47 @@ function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
+/** Take up the setup on offer: its answers, its finished steps. keepSsh keeps
+ *  the login that just worked instead of the saved one. */
+function restoreOffered(keepSsh) {
+  const prev = S.sessionOffered;
+  if (!prev) return;
+  S.sessionOffered = null;
+  S.mode = prev.mode || S.mode;
+  if (!keepSsh) Object.assign(S.ssh, prev.ssh || {});
+  Object.assign(S.wallet, prev.wallet || {});
+  if (prev.net) S.net = prev.net;
+  S.chosenConfigFile = prev.chosenConfigFile || null;
+  S.chosenSetupKey = prev.chosenSetupKey || null;
+  S.chosenWhole = prev.chosenWhole || null;
+  S.nodeConfigText = prev.nodeConfigText || "";
+  S.models = prev.models || [];
+  S.serverKeyName = prev.serverKeyName || null;
+  (prev.done || []).forEach((i) => doneSteps.add(i));
+  renderRail();
+}
+/** Let the setup on offer go: a new one starts. */
+function forgetOffered() {
+  S.sessionOffered = null;
+  clearSession();
+  S.furthest = 0; S.resumeTo = null;
+  doneSteps.clear(); errorSteps.clear();
+  renderRail();
+}
+/**
+ * Connected without choosing, while an earlier setup is on offer: the same
+ * server means that setup, continued (back to where it was once the wallet
+ * is unlocked); another server means a new one.
+ */
+function adoptOffered(mode, host) {
+  const prev = S.sessionOffered;
+  if (!prev) return;
+  const same = (prev.mode || "ssh") === mode && (mode === "local" || (prev.ssh && prev.ssh.host === host));
+  if (!same) { forgetOffered(); return; }
+  const target = resumePoint(prev);
+  restoreOffered(true);
+  S.resumeTo = target;
+}
 /**
  * The step a saved session resumes at: the furthest point ever reached. Older
  * sessions saved only the last-rendered step (which the resume walk-back
@@ -761,7 +808,8 @@ RENDER.welcome = () => {
     <div class="btn-row">
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
-  $("#b-start").onclick = () => { markDone(); go(1); };
+  // Starting while an earlier setup is on offer is a new one: the offer goes.
+  $("#b-start").onclick = () => { if (S.sessionOffered) forgetOffered(); markDone(); go(1); };
   wireSshEarly();
   $("#stage").querySelectorAll(".check-links a").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
@@ -773,13 +821,24 @@ RENDER.welcome = () => {
   const prev = loadSession();
   const resumeTarget = resumePoint(prev);
   if (prev && resumeTarget > 1 && !S.connected) {
+    // Nothing is saved until they choose, so the setup on offer stays as it was.
+    S.sessionOffered = prev;
     S.furthest = Math.max(S.furthest || 0, resumeTarget);
     const when = new Date(prev.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     const label = (STEPS[resumeTarget] && t(STEPS[resumeTarget].label)) || "";
+    // A finished setup has nothing left to do: it opens on its last page,
+    // with no connecting and no passphrase.
+    const finished = resumeTarget === STEPS.length - 1;
     // Pinned at the very top of the stage so it's seen without scrolling.
     const bar = document.createElement("div");
     bar.className = "card resume-bar";
-    bar.innerHTML = `
+    bar.innerHTML = finished ? `
+      <h3>${esc(t("Your last setup is finished"))}</h3>
+      <p class="small">${esc(t("You finished it on {when}. The node runs on its own on your server, so nothing here needs doing again.", { when }))}</p>
+      <div class="btn-row">
+        <button class="primary" id="b-resume">${esc(t("Show it"))}</button>
+        <button id="b-fresh">${esc(t("Set up another node"))}</button>
+      </div>` : `
       <h3>${esc(t("Continue your previous setup?"))}</h3>
       <p class="small">${esc(t("You were on \"{step}\" ({when}). Your server keeps running on its own.", { step: label, when }))}</p>
       <p class="small">${esc(t("To pick up there, GNOT asks for two things again, because it never saves them: you connect to your server again, and you unlock your wallet with its passphrase. Everything else is filled in."))}</p>
@@ -789,30 +848,15 @@ RENDER.welcome = () => {
       </div>`;
     $("#stage").insertBefore(bar, $("#stage").firstChild);
     $("#b-resume").onclick = () => {
-      S.mode = prev.mode || S.mode;
-      Object.assign(S.ssh, prev.ssh || {});
-      Object.assign(S.wallet, prev.wallet || {});
-      if (prev.net) S.net = prev.net;
-      S.chosenConfigFile = prev.chosenConfigFile || null;
-      S.chosenSetupKey = prev.chosenSetupKey || null;
-      S.chosenWhole = prev.chosenWhole || null;
-      S.nodeConfigText = prev.nodeConfigText || "";
-      S.models = prev.models || [];
-      S.serverKeyName = prev.serverKeyName || null;
-      (prev.done || []).forEach((i) => doneSteps.add(i));
+      restoreOffered();
+      if (finished) { go(STEPS.length - 1); return; }
       // Remember where they actually were; the wizard walks itself back there
       // once the two things that can't be restored — the SSH session and the
       // wallet passphrase — have been re-supplied.
       S.resumeTo = resumeTarget;
-      renderRail();
       go(2);   // Connect first: everything downstream needs a live session
     };
-    $("#b-fresh").onclick = () => {
-      clearSession();
-      S.furthest = 0; S.resumeTo = null;
-      doneSteps.clear(); errorSteps.clear();
-      renderRail(); bar.remove();
-    };
+    $("#b-fresh").onclick = () => { forgetOffered(); bar.remove(); };
   }
 
   (async () => {
@@ -1051,6 +1095,7 @@ RENDER.connect = () => {
       try {
         setBusy(true, "Checking local machine…");
         const r = await api("connect", { mode: "local" });
+        adoptOffered("local");
         S.connected = true;
         S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
         toast("Connected: " + r.info);
@@ -1222,6 +1267,7 @@ RENDER.connect = () => {
         privateKeyPath: s.privateKeyPath || undefined,
         passphrase: s.passphrase || undefined
       }});
+      adoptOffered("ssh", s.host);
       S.connected = true;
       S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
       toast("Connected: " + r.info);
@@ -3594,7 +3640,8 @@ function renderHome() {
   // same "worth resuming" threshold the Welcome step uses).
   const saved = resumePoint(loadSession());
   const stepIdx = S.step > 0 ? S.step : (saved > 1 ? saved : 0);
-  const progress = stepIdx ? t(STEPS[stepIdx].label) : "";
+  const finished = stepIdx === STEPS.length - 1;
+  const progress = stepIdx && !finished ? t(STEPS[stepIdx].label) : "";
   el.innerHTML = `
     <div class="home-wrap">
       <header class="home-brand">
@@ -3606,9 +3653,9 @@ function renderHome() {
         <button class="tool-card big" id="tool-host">
           <span class="tool-kicker">Gonka Host Setup</span>
           <span class="tool-name">${esc(t("Set up a node"))}</span>
-          ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : ""}
+          ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : finished ? `<span class="tool-badge live">${esc(t("Your node is set up"))}</span>` : ""}
           <span class="tool-desc">${esc(t("From a rented GPU server to a registered, earning node. Step by step, no command line."))}</span>
-          <span class="tool-go">${esc(progress ? t("Continue →") : t("Start →"))}</span>
+          <span class="tool-go">${esc(progress || finished ? t("Continue →") : t("Start →"))}</span>
         </button>
         <button class="tool-card big" id="tool-monitor">
           <span class="tool-kicker">Gonka Host Monitor/Vote</span>
@@ -3630,7 +3677,12 @@ function renderHome() {
         <div class="version-line" id="home-version"></div>
       </footer>
     </div>`;
-  $("#tool-host").onclick = () => showHostSetup();
+  // "Continue" continues: with an earlier setup on offer, it is taken up
+  // straight away instead of leaving the choice on the Welcome page.
+  $("#tool-host").onclick = () => {
+    showHostSetup();
+    if (S.step === 0 && S.sessionOffered && $("#b-resume")) $("#b-resume").click();
+  };
   $("#tool-monitor").onclick = () => showMonitor();
   renderEarnStrip();
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
