@@ -441,8 +441,34 @@ function sshKeygen() {
   });
 }
 
+/**
+ * An SSH private key someone pasted instead of choosing its file: written to
+ * GNOT's own folder on this computer, beside a created key, and only its path
+ * is kept. A one-line field drops the key's line breaks, so they are put back.
+ */
+function tidyPrivateKey(text) {
+  const m = String(text || "").match(/-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/);
+  if (!m) throw new Error("That doesn't look like an SSH private key. Paste the whole key, from -----BEGIN to -----END, or choose its file.");
+  // Old PEM keys can carry header lines (Proc-Type, DEK-Info) before the body.
+  const lines = m[2].split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const headers = lines.filter((l) => /^[A-Za-z-]+:\s/.test(l));
+  const body = lines.filter((l) => !/^[A-Za-z-]+:\s/.test(l)).join("").replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(body)) throw new Error("The pasted SSH key is damaged. Paste it again, or choose its file.");
+  const width = m[1] === "OPENSSH PRIVATE KEY" ? 70 : 64;
+  return [`-----BEGIN ${m[1]}-----`, ...headers, ...(headers.length ? [""] : []), ...body.match(new RegExp(`.{1,${width}}`, "g")), `-----END ${m[1]}-----`, ""].join("\n");
+}
+function sshKeySave(text) {
+  const key = tidyPrivateKey(text);
+  const dir = path.join(app.getPath("userData"), "ssh");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "pasted_" + require("crypto").createHash("sha256").update(key).digest("hex").slice(0, 12));
+  fs.writeFileSync(file, key, { mode: 0o600 });
+  return { privatePath: file };
+}
+
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
   grantMlOps, manualRegister, depositCollateral, vote, importForNode, accountSequence,
-  keyringDir, sshKeygen, sshKeyInfo, keyringKeyNames, resetKeyring
+  keyringDir, sshKeygen, sshKeyInfo, sshKeySave, keyringKeyNames, resetKeyring,
+  _internal: { tidyPrivateKey }
 };

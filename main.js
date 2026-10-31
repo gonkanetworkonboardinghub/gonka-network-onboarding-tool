@@ -316,6 +316,7 @@ ipcMain.handle("keys:sequence", wrap(async ({ address, seedApiUrl }) => keys.acc
 ipcMain.handle("keys:sshKeygen", wrap(async () => keys.sshKeygen()));
 
 ipcMain.handle("keys:sshKeyInfo", wrap(async () => keys.sshKeyInfo()));
+ipcMain.handle("keys:sshKeySave", wrap(async ({ text }) => keys.sshKeySave(text)));
 ipcMain.handle("keys:names", wrap(async () => keys.keyringKeyNames()));
 ipcMain.handle("keys:resetKeyring", wrap(async () => keys.resetKeyring()));
 

@@ -84,6 +84,29 @@ class LocalDriver {
   dispose() {}
 }
 
+/**
+ * The private key in a key file, ready for ssh2, or an error that says what to
+ * do. Takes "~/.ssh/key" as people write it, and the public half (".pub"),
+ * often picked by mistake, when its private half sits beside it.
+ */
+function usableKey(file, passphrase) {
+  let p = String(file).trim().replace(/^["']|["']$/g, "");
+  if (/^~(?=$|[\\/])/.test(p)) p = path.join(os.homedir(), p.slice(1));
+  if (/\.pub$/i.test(p) && fs.existsSync(p.slice(0, -4))) p = p.slice(0, -4);
+  let data;
+  try { data = fs.readFileSync(p); }
+  catch (e) { throw new Error("Could not read the SSH key file: " + e.message); }
+  const { utils } = require("ssh2");
+  const key = utils.parseKey(data, passphrase || undefined);
+  if (key instanceof Error) {
+    if (/passphrase|encrypted/i.test(key.message)) throw new Error("This SSH key is protected by a passphrase. Enter it under Key passphrase.");
+    throw new Error("This file isn't an SSH private key (" + key.message + "). Choose the key file without .pub, or paste the key itself.");
+  }
+  const k = Array.isArray(key) ? key[0] : key;
+  if (k && typeof k.isPrivateKey === "function" && !k.isPrivateKey()) throw new Error("This is the public half of the key (the .pub file). Choose the private one, the file without .pub.");
+  return data;
+}
+
 class SshDriver {
   constructor() {
     this.kind = "ssh";
@@ -121,20 +144,22 @@ class SshDriver {
         readyTimeout: 20000,
         keepaliveInterval: 15000
       };
+      // A key and a password can both be given: each is tried in turn. A key
+      // that can't be used only stops the connection when there is no password.
       if (cfg.privateKeyPath) {
         try {
-          connCfg.privateKey = fs.readFileSync(cfg.privateKeyPath);
+          connCfg.privateKey = usableKey(cfg.privateKeyPath, cfg.passphrase);
           if (cfg.passphrase) connCfg.passphrase = cfg.passphrase;
         } catch (e) {
-          return reject(new Error("Could not read the SSH key file: " + e.message));
+          if (!cfg.password) return reject(e);
         }
-      } else if (cfg.password) {
+      }
+      if (cfg.password) {
         connCfg.password = cfg.password;
         connCfg.tryKeyboard = true;
         conn.on("keyboard-interactive", (n, i, il, prompts, finish) => finish(prompts.map(() => cfg.password)));
-      } else {
-        return reject(new Error("Provide a password or an SSH key file."));
       }
+      if (!connCfg.privateKey && !connCfg.password) return reject(new Error("Enter a password, or an SSH key file."));
       const gone = () => { if (this.conn === conn) this.conn = null; };
       conn
         .on("ready", () => { settled = true; this.conn = conn; resolve(); })
@@ -225,4 +250,4 @@ class SshDriver {
  */
 const localMachine = new LocalDriver();
 
-module.exports = { LocalDriver, SshDriver, localMachine, shq };
+module.exports = { LocalDriver, SshDriver, localMachine, shq, _internal: { usableKey } };

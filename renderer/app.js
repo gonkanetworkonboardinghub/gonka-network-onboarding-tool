@@ -46,7 +46,8 @@ const S = {
   K: null,                      // knowledge from main
   platform: null,
   mode: null,                   // "local" | "ssh"
-  ssh: { host: "", port: 22, username: "root", auth: "key", privateKeyPath: "", password: "", passphrase: "" },
+  // Most people have no SSH key yet, so creating one is where the choice starts.
+  ssh: { host: "", port: 22, username: "root", auth: "create", privateKeyPath: "", password: "", passphrase: "" },
   connected: false,
   scan: null,                   // { items, facts, ok }
   seed: null,                   // reachable seed node base URL
@@ -1083,11 +1084,11 @@ RENDER.connect = () => {
       </div>
       <div class="field"><span class="lbl">How do you log in?</span>
         <div class="seg" role="radiogroup">
-          ${[["key", "SSH key file (recommended)"], ["password", "Password"], ["create", "I don't have an SSH key — create one for me"]].map(([v, l]) =>
+          ${[["create", "Create an SSH key for me"], ["key", "SSH key file"], ["password", "Password"]].map(([v, l]) =>
             `<button type="button" role="radio" aria-checked="${s.auth === v}" class="${s.auth === v ? "on" : ""}" data-auth="${v}">${esc(t(l))}</button>`).join("")}
         </div></div>
       <div id="auth-key" style="display:${s.auth === "key" ? "block" : "none"}">
-        <label class="field"><span class="lbl">Private key file</span>
+        <label class="field"><span class="lbl">${esc(t("Private key file, or paste the key itself"))}</span>
           <input type="text" id="f-keypath" class="mono" value="${esc(s.privateKeyPath)}" placeholder="e.g. ~/.ssh/id_ed25519">
         </label>
         <button id="b-pick">Choose file…</button>
@@ -1146,6 +1147,17 @@ RENDER.connect = () => {
       $("#f-host").value = s.host;
     }
     if (pp) { s.port = parseInt(pp[1], 10); $("#f-port").value = s.port; }
+    // "ssh -i ~/.ssh/key root@…": the key file it names is the way in.
+    const ki = v.match(/(?:^|\s)-i\s*("[^"]+"|'[^']+'|\S+)/);
+    if (ki) {
+      s.privateKeyPath = ki[1].replace(/^["']|["']$/g, "");
+      $("#f-keypath").value = s.privateKeyPath;
+      if (s.auth !== "key") {
+        s.auth = "key";
+        document.querySelectorAll("[data-auth]").forEach((b) => { const on = b.dataset.auth === "key"; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+        ["key", "pass", "create"].forEach((k) => { $("#auth-" + k).style.display = k === "key" ? "block" : "none"; });
+      }
+    }
   };
   // Switching how to log in redraws the form; keep what was already typed.
   document.querySelectorAll("[data-auth]").forEach((b) => {
@@ -1186,13 +1198,22 @@ RENDER.connect = () => {
     s.host = $("#f-host").value.trim();
     s.port = parseInt($("#f-port").value, 10) || 22;
     s.username = $("#f-user").value.trim();
-    if (s.auth === "key") { s.privateKeyPath = $("#f-keypath").value.trim(); s.passphrase = $("#f-keypass").value; s.password = ""; }
-    else if (s.auth === "create") {
-      if (!s.generated) return alert(t("Create the SSH key first."));
-      s.privateKeyPath = s.generated.privatePath; s.passphrase = ""; s.password = "";
-    }
-    else { s.password = $("#f-pass").value; s.privateKeyPath = ""; }
     if (!s.host || !s.username) return alert("Address and username are required.");
+    // Whatever was given is used, whichever choice is showing: the key created
+    // on this computer, a key file (or the key itself, pasted), a password, or
+    // several, tried in turn. Someone with a key file who sits on "Password" still gets in.
+    let keyPath = $("#f-keypath").value.trim();
+    if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(keyPath)) {
+      // The key itself, pasted: kept as a file on this computer only, like a created one.
+      try { keyPath = (await api("sshKeySave", { text: keyPath })).privatePath; $("#f-keypath").value = keyPath; }
+      catch (e) { return alert(e.message); }
+    }
+    const made = s.generated ? s.generated.privatePath : "";
+    const key = (s.auth === "create" ? made : keyPath) || keyPath || made;
+    s.privateKeyPath = key;
+    s.passphrase = key && key === keyPath ? $("#f-keypass").value : "";
+    s.password = $("#f-pass").value;
+    if (!s.privateKeyPath && !s.password) return alert(s.auth === "create" ? t("Create the SSH key first.") : t("Enter a password, or an SSH key file."));
     try {
       setBusy(true, "Connecting over SSH…");
       const r = await api("connect", { mode: "ssh", ssh: {
