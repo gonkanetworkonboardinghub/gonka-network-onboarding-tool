@@ -1288,7 +1288,11 @@ function monShutdownHtml(node) {
   const guide = `<a href="#" data-open="https://gonka.ai/host/quickstart/#how-to-stop-your-node">${esc(t("Gonka's guide"))}</a>`;
   const head = `<div class="mon-card-head"><h3>${esc(t("Shut down safely"))}</h3>
     <button class="mon-quiet" id="mon-down-refresh">${esc(t("Check again"))}</button><button class="mon-quiet" id="mon-panel-close">${esc(t("Close"))}</button></div>
-    <p class="small mon-panel-lede">${t("Four steps, as in {guide}. Leaving early can lose the last epoch's reward.", { guide })}</p>`;
+    <p class="small mon-panel-lede">${t("Four steps, as in {guide}. Leaving early can lose the last epoch's reward.", { guide })}</p>
+    <div class="mon-down-ways">
+      <p><b>${esc(t("Renting the server?"))}</b> ${esc(t("Do steps 1 to 3 here, then end the server at your provider: that switches the node off and stops the payments. You can end it sooner to stop paying sooner; that gives up the reward still to come."))}</p>
+      <p><b>${esc(t("Your own machine?"))}</b> ${esc(t("Step 4 stops Gonka on it and leaves the machine itself on, free for anything else."))}</p>
+    </div>`;
   if (!d || (!d.data && d.busy)) return `<div class="card mon-panel">${head}${loadingHtml(t("Reading where your node stands…"))}</div>`;
   if (!d.data) return `<div class="card mon-panel">${head}<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: d.error }))}</div></div>`;
   const s = d.data;
@@ -1328,7 +1332,7 @@ function monShutdownHtml(node) {
   // Stopping before the steps above are done is allowed (money can run out
   // mid-epoch): it gives up the reward still to come, and says so first.
   let four;
-  const provider = esc(t("Switching off stops the node, not the rental: to stop paying for the server, end it at your provider too."));
+  const provider = esc(t("If you rent this server, end it at your provider too: switching off stops the node, not the rental."));
   if (d.off) four = step("done", t("Switch it off"), esc(t("Every container on the server is stopped. The node is off.")) + `<br><span class="small">${provider}</span>`);
   else if (!s.ready && linked && d.early) four = step("now", t("Switch it off"),
     esc(s.inEpoch
