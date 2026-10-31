@@ -173,6 +173,17 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   check("an address is 'gonka1' and 38 more of the right letters", [M.looksLikeAddress(ME), M.looksLikeAddress("gonka1" + "b".repeat(38)), M.looksLikeAddress(ME + "a"), M.looksLikeAddress("")], [true, false, false, false]);
   fs.rmSync(dir, { recursive: true, force: true });
 
+  /* ---- answers per AI session beside the middle host: one rule everywhere ---- */
+  const { beside } = M._internal;
+  check("252 missed in 69 sessions beside a typical 3.67 is about the same", beside(252 / 69, 3.67, 0.5, 69), "same");
+  check("19 a session beside 3.7 is much more, and worth a look", beside(19.1, 3.7, 0.5, 932), "much-more");
+  check("1.6 judged wrong beside 0.52 is much more", beside(114 / 72, 0.52, 0.2, 72), "much-more");
+  check("…but with fewer than 5 sessions it is only more", beside(1.6, 0.52, 0.2, 3), "more");
+  check("5.0 beside 3.7 is more, not much more", beside(5.0, 3.7, 0.5, 100), "more");
+  check("1.0 beside 3.7 is less", beside(0.96, 3.67, 0.5, 72), "less");
+  check("a gap inside the slack is the same, however the ratio looks", [beside(0.3, 0.1, 0.2, 50), beside(0.0, 0.15, 0.2, 50)], ["same", "same"]);
+  check("no typical host, no verdict", beside(2, null, 0.5, 10), null);
+
   /* ---- the asking, against stand-in nodes ---- */
   const hits = {};
   const node = (name, answer) => new Promise((resolve) => {
