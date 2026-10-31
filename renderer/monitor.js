@@ -43,6 +43,7 @@ const MON = {
   overview: null,     // the network as a whole (network and hosts pages)
   overviewAt: 0,
   overviewBusy: false,
+  answers: {},        // address -> whether its public address answered when last asked (monitor.answers)
   hostFilter: "",
   gov: null,          // proposals
   votes: {},          // proposal id -> [{ name, vote }] for the nodes kept here
@@ -335,6 +336,7 @@ async function monLoad(quiet) {
     const data = await api("monitorOverview", { address: asked, epochs: 30 });
     if (MON.address !== asked) return;                    // they moved on while it was loading
     MON.data = data; MON.at = Date.now(); MON.error = null;
+    if (typeof data.standing.answers === "boolean") MON.answers[asked] = data.standing.answers;
   } catch (e) {
     if (MON.address === asked) MON.error = e.message;
   } finally {
@@ -351,6 +353,22 @@ async function monLoadOverview(quiet) {
   catch (e) { MON.overviewError = e.message; }
   finally { MON.overviewBusy = false; }
   if (MON.view === "network" || MON.view === "mine" || MON.view === "hub" || MON.view === "votes") monRenderMain();
+  monAskAnswers();
+}
+
+/**
+ * Whether each host in the epoch still answers at its public address. The
+ * network counts a node in the epoch until it misses enough work, which for a
+ * small node can take hours after it went off; this shows it at once. Asked
+ * after the page is up, so a host that does not answer never slows it down.
+ */
+async function monAskAnswers() {
+  const hosts = ((MON.overview && MON.overview.hosts) || []).filter((h) => h.url);
+  if (!hosts.length) return;
+  let got;
+  try { got = await api("monitorAnswers", { urls: hosts.map((h) => h.url) }); } catch (_) { return; }
+  hosts.forEach((h, i) => { if (got[i] === true || got[i] === false) MON.answers[h.address] = got[i]; });
+  if (MON.view === "network" || MON.view === "mine") monRenderMain();
 }
 
 async function monLoadProposals() {
@@ -831,7 +849,7 @@ function monHostRows(rows) {
         return `
         <button class="mon-row mon-row-link" data-go-node="${esc(h.address)}">
           <span class="mon-rank">${esc(String(MON.overview.hosts.indexOf(h) + 1))}</span>
-          <span class="mono mon-host-cell">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded || h.underReported ? `<span class="mon-flags">${h.excluded ? `<i class="mon-flag">${esc(t("left out"))}</i>` : ""}${h.underReported ? `<i class="mon-flag soft" title="${esc(t("Its weight equals about {n} H100s, far more than the GPUs it reports.", { n: monNum(h.h100 || 0) }))}">${esc(t("reports too few GPUs"))}</i>` : ""}</span>` : ""}</span>
+          <span class="mono mon-host-cell">${mine && mine.name ? `<b class="mon-mine">${esc(mine.name)}</b> ` : ""}${esc(monShort(h.address))}${h.excluded || h.underReported || MON.answers[h.address] === false ? `<span class="mon-flags">${h.excluded ? `<i class="mon-flag">${esc(t("left out"))}</i>` : MON.answers[h.address] === false ? `<i class="mon-flag" title="${esc(t("Its public address does not answer: the node is switched off or cannot be reached."))}">${esc(t("not answering"))}</i>` : ""}${h.underReported ? `<i class="mon-flag soft" title="${esc(t("Its weight equals about {n} H100s, far more than the GPUs it reports.", { n: monNum(h.h100 || 0) }))}">${esc(t("reports too few GPUs"))}</i>` : ""}</span>` : ""}</span>
           <span class="r">${h.gpus === null ? "—" : esc(monNum(h.gpus))}</span>
           <span class="mon-muted mon-models-cell" title="${esc(h.models.map(monModel).join(", "))}">${esc(h.models.map(monModel).join(", "))}</span>
           <span class="r">${esc(monNum(h.weight))}</span>
@@ -864,7 +882,7 @@ function monMineHtml() {
   const o = MON.overview;
   const card = (n) => {
     const h = o ? o.hosts.find((x) => x.address === n.address) : null;
-    const state = !o ? ["wait", t("Reading…")] : h ? (h.excluded ? ["bad", t("Left out of epoch {n}", { n: o.epoch.index })] : ["ok", t("In epoch {n}", { n: o.epoch.index })]) : ["bad", t("Not in epoch {n}", { n: o.epoch.index })];
+    const state = !o ? ["wait", t("Reading…")] : h ? (h.excluded ? ["bad", t("Left out of epoch {n}", { n: o.epoch.index })] : MON.answers[n.address] === false ? ["bad", t("Not answering")] : ["ok", t("In epoch {n}", { n: o.epoch.index })]) : ["bad", t("Not in epoch {n}", { n: o.epoch.index })];
     const fig = (label, value) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
     return `
       <button class="mon-node-card" data-go-node="${esc(n.address)}">
@@ -1414,6 +1432,7 @@ function monNodeHtml(d) {
   // ---- the one-line verdict ----
   let verdict;
   if (st.excluded) verdict = `<div class="mon-verdict bad"><span class="mon-dot"></span><div><b>${esc(t("Left out of epoch {n}", { n: ep.index }))}</b><span>${esc(t("The network removed it from this epoch: {why}.", { why: monReason(st.excluded.reason) }))}</span></div></div>`;
+  else if (st.inEpoch && st.answers === false) verdict = `<div class="mon-verdict bad"><span class="mon-dot"></span><div><b>${esc(t("Not answering"))}</b><span>${esc(t("The network still counts it in epoch {n}, but its public address does not answer: the node is switched off or cannot be reached. Work sent to it now goes unanswered.", { n: ep.index }))}</span></div></div>`;
   else if (st.inEpoch) verdict = `<div class="mon-verdict good"><span class="mon-dot"></span><div><b>${esc(t("Taking part in epoch {n}", { n: ep.index }))}</b><span>${esc(t("The network counts this node in the current epoch, with {models}.", { models: st.models.map(monModel).join(", ") || "—" }))}</span></div></div>`;
   else if (st.known) verdict = `<div class="mon-verdict bad"><span class="mon-dot"></span><div><b>${esc(t("Not in epoch {n}", { n: ep.index }))}</b><span>${esc(t("The node is registered, but it is not among the {hosts} hosts in the current epoch. It earns nothing until it passes a Proof of Compute.", { hosts: ep.hosts }))}</span></div></div>`;
   else verdict = `<div class="mon-verdict bad"><span class="mon-dot"></span><div><b>${esc(t("The network has no node at this address"))}</b><span>${esc(t("Check the address. A node appears here once it has registered."))}</span></div></div>`;
@@ -1443,7 +1462,7 @@ function monNodeHtml(d) {
         <div class="mon-tile-sub">${esc([monUsd(d.now.estimate), t("the network's own estimate")].filter(Boolean).join(" · "))}</div></div>` : `
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}${tip(TIPS.nodeGpus)}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
-        <div class="mon-tile-sub">${d.hardware.gpuCount ? esc(t(d.hardware.nodes.length === 1 ? "{n} working · 1 machine" : "{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
+        <div class="mon-tile-sub">${d.hardware.gpuCount && st.answers === false ? esc(t("not answering")) : d.hardware.gpuCount ? esc(t(d.hardware.nodes.length === 1 ? "{n} working · 1 machine" : "{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}${tip(TIPS.onItsWay)}</div>
         <div class="mon-tile-num">${esc(monGnkShort(d.money.vesting.total))}</div>
         <div class="mon-tile-sub">${d.money.vesting.total > 0 && d.money.vesting.epochs ? esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs })].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
@@ -1461,6 +1480,7 @@ function monAttentionCard(d) {
     switch (a.code) {
       case "excluded": return t("The network left this node out of the current epoch: {why}.", { why: monReason(a.reason) });
       case "not-in-epoch": return t("The node is registered but is not in the current epoch, so it is earning nothing.");
+      case "no-answer": return t("Its public address, {url}, does not answer. Until it does, it misses the work the network sends it, and that can cost this epoch's reward.", { url: a.url });
       case "machines-down": return t(a.machines.length === 1 ? "One of its {of} machines is not working: {list}." : "{n} of its {of} machines are not working: {list}.", { n: a.machines.length, of: a.of, list: a.machines.map((m) => `${m.id} (${m.status || "?"})`).join(", ") });
       case "no-allowance": return t("The wallet has no fee allowance for the node. Since Gonka v0.2.16 the node cannot pay its fees without one.");
       case "allowance-low": return t("Only {left} is left of the fee allowance. When it runs out the node cannot pay its fees until the allowance is renewed.", { left: monGnk(a.left) });

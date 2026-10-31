@@ -543,6 +543,7 @@ function attention(v) {
   if (!st.known) return out;
   if (st.excluded) add("bad", "excluded", { reason: st.excluded.reason });
   else if (!st.inEpoch) add("bad", "not-in-epoch");
+  else if (st.answers === false) add("bad", "no-answer", { url: st.url });
   const down = v.hardware.nodes.filter((n) => !/INFERENCE|POC|POW/i.test(n.status));
   if (down.length) add(st.inEpoch ? "warn" : "bad", "machines-down", { machines: down.map((n) => ({ id: n.id, status: n.status })), of: v.hardware.nodes.length });
   if (!m.allowance) add("bad", "no-allowance");
@@ -591,11 +592,38 @@ function devshardWork(use, address, current) {
   };
 }
 
+/**
+ * Whether a host's public address answers at all. The network learns that a
+ * node is gone only when it sends it work and hears nothing back, which for a
+ * small node can take hours; its address tells at once. Measured 2026-10-31:
+ * all 29 running hosts answered "/" within a third of a second, and a node whose
+ * server had been ended an hour before did not answer in 8. Any HTTP answer
+ * counts, even a refusal. Asked twice before saying no: one lost answer is not
+ * a node gone. null when there is no public address to ask.
+ */
+async function answers(url) {
+  let u;
+  try { u = new URL(String(url || "")); } catch (_) { return null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  // Hosts tell their own address: one on a private network is not asked.
+  if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[)/i.test(u.hostname)) return null;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const res = await fetch(u.origin + "/", { signal: AbortSignal.timeout(4000) });
+      res.arrayBuffer().catch(() => {});
+      return true;
+    } catch (_) { /* once more */ }
+  }
+  return false;
+}
+
 /** The whole picture for one address. */
 async function overview(seeds, address, { epochs = 30 } = {}) {
   const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
-  const hist = await history(seeds, mem.epoch || now.index, epochs);
+  const me = mem.hosts.find((h) => h.address === address);
+  const [hist, answering] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? answers(me.url) : null]);
   const view = summarise({ address, now, mem, hist, raw });
+  view.standing.answers = answering;
   view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight
@@ -762,6 +790,7 @@ async function networkOverview(seeds, { epochs = 180 } = {}) {
       work: ds ? { epoch: wu.e, missed: ds[0], invalid: ds[1], sessions: ds[5], missedPer: ds[5] ? ds[0] / ds[5] : null, typicalMissedPer,
         missedVs: ds[5] ? beside(ds[0] / ds[5], typicalMissedPer, WORK_SLACK.missed, ds[5]) : null } : null,
       address: h.address,
+      url: h.url,
       weight: h.weight,
       share: share(h.weight, totalWeight),
       models: h.models,
@@ -1039,7 +1068,7 @@ function saveNodes(dir, nodes) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, network, networkOverview, hardwareSetups, typicalFees, summarise,
+  epochNow, members, history, host, overview, answers, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
