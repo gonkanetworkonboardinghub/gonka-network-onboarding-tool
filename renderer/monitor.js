@@ -1532,7 +1532,7 @@ function monRewardsCard(d) {
     <div class="card">
       <h3>${esc(t("Rewards, epoch by epoch"))}</h3>
       ${plot}
-      <p class="small">${esc(t("{total} over the {n} epochs it took part in, out of the last {of}. The tallest bar is {max}.", { total: monGnk(tot.reward), n: tot.epochs, of: tot.of, max: monGnk(max) }))} ${tot.unknown ? esc(tot.unknown === 1 ? t("The newest epoch is not collected yet; epochs are added a few times a day.") : t("{n} epochs are not collected yet; epochs are added a few times a day.", { n: tot.unknown })) : ""} ${MON.price ? esc(t("At today's price that is {usd}.", { usd: monUsd(tot.reward).replace("≈ ", "") })) : ""}</p>
+      <p class="small">${esc(tot.epochs === 1 ? t("{total} from the one epoch it took part in, out of the last {of}.", { total: monGnk(tot.reward), of: tot.of }) : t("{total} over the {n} epochs it took part in, out of the last {of}. The tallest bar is {max}.", { total: monGnk(tot.reward), n: tot.epochs, of: tot.of, max: monGnk(max) }))} ${tot.unknown ? esc(tot.unknown === 1 ? t("The newest epoch is not collected yet; epochs are added a few times a day.") : t("{n} epochs are not collected yet; epochs are added a few times a day.", { n: tot.unknown })) : ""} ${MON.price ? esc(t("At today's price that is {usd}.", { usd: monUsd(tot.reward).replace("≈ ", "") })) : ""}</p>
     </div>`;
 }
 

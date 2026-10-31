@@ -15,6 +15,8 @@
 //   view=votes                           -> { rules, totalWeight, hosts, proposals, money }
 //   view=node&address=gonka1…[&epochs=30] -> one node's data, plus { price }
 //   view=vote&id=12&address=gonka1…      -> { vote: "YES" | "NO" | "NO_WITH_VETO" | "ABSTAIN" | null }
+//   view=answers                         -> { epoch, answers: { gonka1…: true | false | null } }: whether each
+//                                           host in the epoch answers at its public address
 // Errors: { error } with status 400 (a wrong question) or 502 (the network did not answer).
 
 // What the app knows about the network: its public nodes and where the data job publishes.
@@ -1186,11 +1188,18 @@ Deno.serve(async (req) => {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");
     const epochs = Math.min(180, Math.max(7, Number(q.epochs) || 30));
     a = await priced(`node|${address}|${epochs}`, () => Monitor.overview(SEEDS, address, { epochs }));
+  } else if (view === "answers") {
+    // The addresses are the ones the hosts registered, read here: a visitor cannot name one.
+    a = await once("answers", async () => {
+      const mem = await Monitor.members(SEEDS);
+      const got = await Promise.all(mem.hosts.map((h) => Monitor.answers(h.url)));
+      return { epoch: mem.epoch, answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i]])) };
+    });
   } else if (view === "vote") {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");
     const id = Math.round(Number(q.id));
     if (!(id > 0)) return wrong("That is not a proposal number.");
     a = await once(`vote|${id}|${address}`, async () => ({ vote: await Monitor.voteOf(SEEDS, id, address) }));
-  } else return wrong("Ask for view=price, network, votes, node or vote.");
+  } else return wrong("Ask for view=price, network, votes, node, vote or answers.");
   return new Response(JSON.stringify(a.data), { status: a.status, headers });
 });

@@ -112,6 +112,14 @@ function differences(name, a, b) {
     const appVote = await monitor.voteOf(seeds, id, top);
     if (siteVote.vote !== appVote) diffs.push(`vote #${id}: app ${appVote}, function ${siteVote.vote}`);
     console.log(`vote on #${id}: ${siteVote.vote}`);
+    // Whether each host answers: every host in the epoch has an answer, and the node seen down here is down there too.
+    const siteAns = await ask({ view: "answers" });
+    const hostsNow = (siteNet.hosts || []).map((h) => h.address);
+    const missing = hostsNow.filter((a) => !(a in siteAns.answers));
+    if (missing.length) diffs.push(`answers: no answer for ${missing.length} host(s)`);
+    const down = Object.keys(siteAns.answers).filter((a) => siteAns.answers[a] === false);
+    for (const a of down) { const h = siteNet.hosts.find((x) => x.address === a); if (h && (await monitor.answers(h.url)) !== false) diffs.push(`answers: ${a} down in the function, up in the app`); }
+    console.log(`answers: ${Object.values(siteAns.answers).filter((v) => v === true).length} answer, ${down.length} do not${down.length ? " (" + down.map((a) => a.slice(0, 14)).join(", ") + ")" : ""}`);
 
     if (!diffs.length) { console.log(`${url ? "deployed function" : "generated function, run here"}: same as the app, figure for figure`); return; }
     if (attempt === 2) { console.log("DIFFERENT:\n  " + diffs.join("\n  ")); process.exitCode = 1; return; }
