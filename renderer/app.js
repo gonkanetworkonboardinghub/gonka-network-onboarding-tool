@@ -298,6 +298,8 @@ function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
+// Set by "Set up another node" just before the app reloads: open on Host Setup.
+const FRESH_SETUP_KEY = "gonka-fresh-setup";
 /** Take up the setup on offer: its answers, its finished steps. keepSsh keeps
  *  the login that just worked instead of the saved one. */
 function restoreOffered(keepSsh) {
@@ -3131,7 +3133,14 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
   $("#d-part").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + S.K.api.participants + S.wallet.address }); };
   $("#d-dash").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + "/dashboard/gonka/validator" }); };
   $("#d-doc").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.quickstart }); };
-  $("#b-again").onclick = () => location.reload();
+  // A clean start for the next node: the finished one stays in My nodes, so
+  // its saved setup is let go (else Host Setup would only reopen it), and the
+  // app opens straight on Host Setup's first step, not on the home screen.
+  $("#b-again").onclick = () => {
+    clearSession();
+    try { sessionStorage.setItem(FRESH_SETUP_KEY, "1"); } catch (_) {}
+    location.reload();
+  };
 };
 
 /** Put the node just set up into Monitor/Vote's My nodes, linked to its wallet. */
@@ -3760,8 +3769,10 @@ function showHostSetup() {
   applyChrome();
   renderRail();
   await repairSession();
+  let fresh = false;
+  try { fresh = sessionStorage.getItem(FRESH_SETUP_KEY) === "1"; sessionStorage.removeItem(FRESH_SETUP_KEY); } catch (_) {}
   go(0);
-  showHome();
+  if (fresh) showHostSetup(); else showHome();
 
   // Epoch countdown bar: tick locally every second, re-sync with the chain
   // every 2 minutes (also catches the rollover into a new epoch).
