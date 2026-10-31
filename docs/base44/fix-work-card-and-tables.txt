@@ -1,0 +1,52 @@
+PROMPT FOR BASE44 — three small fixes: the "How well it worked" numbers, the rigs table's "†", and the provider table's width
+(no pictures; paste everything below and publish)
+
+Do NOT change the backend function gnot-monitor: its answers are right. Change
+only the pages below.
+
+1. A NODE'S PAGE (/monitor/node/…), the card "How well it worked in epoch {n}"
+   It shows 0.0 for both "Answers missed, per session" and "Answers judged
+   wrong, per session", draws "this node" as an empty bar, and always says
+   "less than a typical host". It reads the wrong fields. In the node's answer
+   the per-session figures sit directly in work, NOT inside work.mine:
+     work.missedPer          this node's answers missed per session
+     work.invalidPer         this node's answers judged wrong per session
+     work.typical.missedPer  a typical host's answers missed per session
+     work.typical.invalidPer a typical host's answers judged wrong per session
+     work.mine.missed, work.mine.invalid, work.mine.sessions, work.mine.paid
+                             this node's totals
+   - The big number on the right of "Answers missed, per session" is
+     work.missedPer; on "Answers judged wrong, per session" it is
+     work.invalidPer (one decimal under 10, whole numbers above).
+   - The two bars: "this node" is as long as work.missedPer (or
+     work.invalidPer), "a typical host" as long as work.typical.missedPer (or
+     work.typical.invalidPer); the longer of the two fills the bar.
+   - The line under them compares work.missedPer with work.typical.missedPer:
+     "more than a typical host" (red) when it is over 1.5 × the typical and
+     more than 0.5 above it; "less than a typical host" when it is under
+     0.67 × the typical; otherwise "about the same as a typical host". The
+     same for judged wrong with work.invalidPer and work.typical.invalidPer
+     (red when over 1.5 × and more than 0.2 above).
+   Check: the node gonka1shmqkv3n7l46htar8juy8h5wlg0vz0vfsdue2k must show
+   about 19 missed per session against a typical 3.7, "more than a typical
+   host" in red, and about 3.7 judged wrong per session against 0.5, also
+   "more than a typical host" in red — the same as its "Things worth a look"
+   lines already say.
+
+2. MINE OR BUY (/mine-or-buy), the rigs table
+   A rig name with "†" still runs into the model name beside it: "8× RTX PRO
+   6000 †" is kept on one line and is about 40px wider than its column, so the
+   "†" touches "GLM-5.3-Flash". Let the rig name wrap onto a second line when it
+   does not fit (the "†" stays right after the name), and keep at least 12px
+   between the rig column and the model column.
+
+3. MINE OR BUY, the provider table (a provider opened, such as Spheron)
+   On a 1360px-wide window the table is about 60px wider than its card, so the
+   last column, "Each day", is cut off and needs scrolling sideways. Make all
+   six columns fit inside the card on windows 1280px wide and wider: let the
+   column name "Cheapest dedicated" take two lines ("Cheapest" / "dedicated",
+   with its "i" right after "dedicated") and let that column be only as wide as
+   its prices and regions need. Keep at least 16px between columns. On phones
+   and narrower windows, scrolling sideways stays as it is.
+
+Change nothing else on the site.
