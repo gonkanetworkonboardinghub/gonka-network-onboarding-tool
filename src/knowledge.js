@@ -93,7 +93,9 @@ const overridable = {
   // and the daily check keeps saying so.
   // "wasm" arrives with v0.2.17 (smart-contract transactions, at the cosmos
   // rate). The app sends none, so it changes nothing here.
-  checkedAgainst: { chain: "v0.2.16", on: "2026-10-23", realRun: "2026-08-03", feeGroups: ["epoch", "cosmos", "wasm"] },
+  // 2026-10-30: a node set up start to finish with GNOT 1.8.5 on a rented
+  // 8× A100 took part in epoch 442 and claimed its reward on 31 October.
+  checkedAgainst: { chain: "v0.2.16", on: "2026-10-23", realRun: "2026-10-30", feeGroups: ["epoch", "cosmos", "wasm"] },
 
   // Where the daily comparison with the live network is published. The app
   // reads it at start: to say so plainly when Gonka has changed and this copy
