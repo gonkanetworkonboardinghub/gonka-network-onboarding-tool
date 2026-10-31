@@ -120,6 +120,12 @@ function differences(name, a, b) {
     const down = Object.keys(siteAns.answers).filter((a) => siteAns.answers[a] === false);
     for (const a of down) { const h = siteNet.hosts.find((x) => x.address === a); if (h && (await monitor.answers(h.url)) !== false) diffs.push(`answers: ${a} down in the function, up in the app`); }
     console.log(`answers: ${Object.values(siteAns.answers).filter((v) => v === true).length} answer, ${down.length} do not${down.length ? " (" + down.map((a) => a.slice(0, 14)).join(", ") + ")" : ""}`);
+    // The statuses the function saw, so a gateway answering in a node's place shows.
+    const seen = {};
+    for (const v of Object.values(siteAns.status || {})) seen[v === null ? "none" : v] = (seen[v === null ? "none" : v] || 0) + 1;
+    console.log("answers, HTTP status seen:", JSON.stringify(seen));
+    // A host this computer cannot reach must not be "answering" there.
+    for (const h of siteNet.hosts) if (siteAns.answers[h.address] === true && (await monitor.answers(h.url)) === false) diffs.push(`answers: ${h.address} answers in the function (status ${(siteAns.status || {})[h.address]}), not here`);
 
     if (!diffs.length) { console.log(`${url ? "deployed function" : "generated function, run here"}: same as the app, figure for figure`); return; }
     if (attempt === 2) { console.log("DIFFERENT:\n  " + diffs.join("\n  ")); process.exitCode = 1; return; }

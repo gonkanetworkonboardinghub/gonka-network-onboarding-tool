@@ -15,8 +15,8 @@
 //   view=votes                           -> { rules, totalWeight, hosts, proposals, money }
 //   view=node&address=gonka1…[&epochs=30] -> one node's data, plus { price }
 //   view=vote&id=12&address=gonka1…      -> { vote: "YES" | "NO" | "NO_WITH_VETO" | "ABSTAIN" | null }
-//   view=answers                         -> { epoch, answers: { gonka1…: true | false | null } }: whether each
-//                                           host in the epoch answers at its public address
+//   view=answers                         -> { epoch, answers: { gonka1…: true | false | null }, status: { gonka1…: 200 | … | null } }:
+//                                           whether each host in the epoch answers at its public address, and the HTTP status seen
 // Errors: { error } with status 400 (a wrong question) or 502 (the network did not answer).
 
 // What the app knows about the network: its public nodes and where the data job publishes.
@@ -599,24 +599,39 @@ function devshardWork(use, address, current) {
  * node is gone only when it sends it work and hears nothing back, which for a
  * small node can take hours; its address tells at once. Measured 2026-10-31:
  * all 29 running hosts answered "/" within a third of a second, and a node whose
- * server had been ended an hour before did not answer in 8. Any HTTP answer
- * counts, even a refusal. Asked twice before saying no: one lost answer is not
- * a node gone. null when there is no public address to ask.
+ * server had been ended an hour before did not answer in 8. Asked twice before
+ * saying no: one lost answer is not a node gone. null when there is no public
+ * address to ask.
  */
 async function answers(url) {
+  const k = await knock(url);
+  return k ? k.ok : null;
+}
+
+/**
+ * What a host's public address answers: { ok, status }, status being the last
+ * HTTP status seen (null for none). A node's own front page answers "/" with
+ * 200 (Gonka's dashboard). A 5xx is not the node: the website's server reaches
+ * the internet through a gateway that answers by itself when a node is not
+ * there, and it said every host answered, the ended one too (2026-10-31).
+ * null when there is no public address to ask.
+ */
+async function knock(url) {
   let u;
   try { u = new URL(String(url || "")); } catch (_) { return null; }
   if (!/^https?:$/.test(u.protocol)) return null;
   // Hosts tell their own address: one on a private network is not asked.
   if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[)/i.test(u.hostname)) return null;
+  let status = null;
   for (let i = 0; i < 2; i++) {
     try {
       const res = await fetch(u.origin + "/", { signal: AbortSignal.timeout(4000) });
       res.arrayBuffer().catch(() => {});
-      return true;
+      status = res.status;
+      if (status < 500) return { ok: true, status };
     } catch (_) { /* once more */ }
   }
-  return false;
+  return { ok: false, status };
 }
 
 /** The whole picture for one address. */
@@ -1070,7 +1085,7 @@ function saveNodes(dir, nodes) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, answers, network, networkOverview, hardwareSetups, typicalFees, summarise,
+  epochNow, members, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
@@ -1192,8 +1207,13 @@ Deno.serve(async (req) => {
     // The addresses are the ones the hosts registered, read here: a visitor cannot name one.
     a = await once("answers", async () => {
       const mem = await Monitor.members(SEEDS);
-      const got = await Promise.all(mem.hosts.map((h) => Monitor.answers(h.url)));
-      return { epoch: mem.epoch, answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i]])) };
+      const got = await Promise.all(mem.hosts.map((h) => Monitor.knock(h.url)));
+      return {
+        epoch: mem.epoch,
+        answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].ok : null])),
+        // The HTTP status each address answered last, null for none: what this server's gateway hands back.
+        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null]))
+      };
     });
   } else if (view === "vote") {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");

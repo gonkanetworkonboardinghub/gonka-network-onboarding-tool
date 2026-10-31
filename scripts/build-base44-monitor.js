@@ -57,8 +57,8 @@ const src = `// gnot-monitor — the data behind the website's Monitor/Vote page
 //   view=votes                           -> { rules, totalWeight, hosts, proposals, money }
 //   view=node&address=gonka1…[&epochs=30] -> one node's data, plus { price }
 //   view=vote&id=12&address=gonka1…      -> { vote: "YES" | "NO" | "NO_WITH_VETO" | "ABSTAIN" | null }
-//   view=answers                         -> { epoch, answers: { gonka1…: true | false | null } }: whether each
-//                                           host in the epoch answers at its public address
+//   view=answers                         -> { epoch, answers: { gonka1…: true | false | null }, status: { gonka1…: 200 | … | null } }:
+//                                           whether each host in the epoch answers at its public address, and the HTTP status seen
 // Errors: { error } with status 400 (a wrong question) or 502 (the network did not answer).
 
 // What the app knows about the network: its public nodes and where the data job publishes.
@@ -164,8 +164,13 @@ Deno.serve(async (req) => {
     // The addresses are the ones the hosts registered, read here: a visitor cannot name one.
     a = await once("answers", async () => {
       const mem = await Monitor.members(SEEDS);
-      const got = await Promise.all(mem.hosts.map((h) => Monitor.answers(h.url)));
-      return { epoch: mem.epoch, answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i]])) };
+      const got = await Promise.all(mem.hosts.map((h) => Monitor.knock(h.url)));
+      return {
+        epoch: mem.epoch,
+        answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].ok : null])),
+        // The HTTP status each address answered last, null for none: what this server's gateway hands back.
+        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null]))
+      };
     });
   } else if (view === "vote") {
     if (!Monitor.looksLikeAddress(address)) return wrong("That is not a Gonka address.");
