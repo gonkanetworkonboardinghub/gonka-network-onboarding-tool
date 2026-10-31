@@ -53,6 +53,18 @@ function keyringKeyNames() {
   } catch (_) { return []; }
 }
 
+/**
+ * The addresses of the wallets on this computer, read without the passphrase:
+ * each one's "<hex address>.address" file is named by its address bytes.
+ */
+function keyringAddresses() {
+  try {
+    const { bech32 } = require("@scure/base");
+    return fs.readdirSync(keyringFileDir()).filter((f) => /^[0-9a-f]{40}\.address$/.test(f))
+      .map((f) => bech32.encode("gonka", bech32.toWords(Buffer.from(f.slice(0, 40), "hex"))));
+  } catch (_) { return []; }
+}
+
 async function listKeys(passphrase) {
   const out = [];
   for (const name of keyringKeyNames()) {
@@ -469,6 +481,6 @@ function sshKeySave(text) {
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
   grantMlOps, manualRegister, depositCollateral, vote, importForNode, accountSequence,
-  keyringDir, sshKeygen, sshKeyInfo, sshKeySave, keyringKeyNames, resetKeyring,
+  keyringDir, sshKeygen, sshKeyInfo, sshKeySave, keyringKeyNames, keyringAddresses, resetKeyring,
   _internal: { tidyPrivateKey }
 };

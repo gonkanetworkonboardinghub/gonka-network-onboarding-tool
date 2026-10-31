@@ -1078,6 +1078,7 @@ button.mon-tile-link:hover { border-color: var(--line-strong); background: var(-
 .mon-panel .field-row.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .mon-panel .mon-card-head { margin-bottom: 10px; flex-wrap: wrap; }
 .mon-panel .mon-card-head .mon-quiet { margin-left: auto; }
+.mon-panel .mon-card-head .mon-quiet ~ .mon-quiet { margin-left: 0; }
 .mon-panel-lede { margin: -4px 0 8px; }
 /* "Link your wallet": the way to vote, reach the server and shut down */
 .mon-linkcta { display: flex; align-items: center; gap: 16px; margin: 16px 0; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--accent); background: var(--accent-dim); }

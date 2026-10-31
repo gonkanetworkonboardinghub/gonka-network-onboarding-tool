@@ -26,6 +26,7 @@ const MON = {
   open: new Set(),    // proposals unfolded on the Votes page
   nodes: [],          // [{ address, name, wallet?, server? }] — the nodes this person keeps an eye on
   keyNames: [],       // the wallets in this computer's keyring, by name
+  keyAddresses: [],   // …and their addresses, known without a passphrase
   panel: null,        // on your own node's page: "server" | "shutdown"
   srv: { address: null, busy: false, error: null, lines: [], cwd: "", history: [], idx: 0 },
   down: null,         // { address, data, busy, error, confirm } — the way out, for the node on screen
@@ -120,6 +121,10 @@ async function showMonitor(address) {
     </div>`;
   try { MON.nodes = await api("monitorNodes"); } catch (_) { MON.nodes = []; }
   try { MON.keyNames = await api("keyNames"); } catch (_) { MON.keyNames = []; }
+  try { MON.keyAddresses = await api("keyAddresses"); } catch (_) { MON.keyAddresses = []; }
+  // The SSH key GNOT created on this computer, to offer when a server's key is not known.
+  try { const k = await api("sshKeyInfo"); MON.sshKeyPath = (k && k.privatePath) || ""; } catch (_) { MON.sshKeyPath = ""; }
+  await monAutoLink();
   api("gnkPrice").then((p) => { MON.price = p && p.usd ? p.usd : null; MON.priceSources = (p && p.sources) || []; monRenderMain(); }).catch(() => {});
   monRenderEpoch();
   if (address) monGo("node", address, "mine");
@@ -277,7 +282,26 @@ async function monSave() {
   try { MON.nodes = await api("monitorSaveNodes", { nodes: MON.nodes }); } catch (_) { /* kept for this session at least */ }
 }
 async function monKeep(address, name) {
-  if (!monKept(address)) { MON.nodes.push({ address, name: String(name || "").trim() }); await monSave(); }
+  if (!monKept(address)) { MON.nodes.push({ address, name: String(name || "").trim() }); await monSave(); await monAutoLink(); }
+}
+/**
+ * A node whose wallet is the one wallet on this computer is yours: it is
+ * linked to it straight away, with no passphrase (the wallet's address is in
+ * its file's name). With several wallets here, which name is which can only
+ * be read by unlocking one, so the link form stays for that.
+ */
+async function monAutoLink() {
+  if (MON.keyNames.length !== 1 || MON.keyAddresses.length !== 1) return;
+  const [name] = MON.keyNames, [address] = MON.keyAddresses;
+  const node = MON.nodes.find((n) => n.address === address && !monOwn(n));
+  if (!node) return;
+  node.wallet = name;
+  // The setup on this computer may still know how to reach its server.
+  const s = typeof loadSession === "function" ? loadSession() : null;
+  if (!node.server && s && s.wallet && s.wallet.address === node.address) {
+    node.server = s.mode === "local" ? { mode: "local" } : { mode: "ssh", ...s.ssh, auth: s.ssh && s.ssh.auth === "password" ? "password" : "key" };
+  }
+  await monSave();
 }
 /** Take a node off the list, with a few seconds to change one's mind. */
 async function monForget(address) {
@@ -990,6 +1014,9 @@ function monWireActions(node) {
       monRenderMain();
     };
   });
+  // Every panel closes the same way; a server stays connected when its panel closes.
+  const close = $("#mon-panel-close");
+  if (close) close.onclick = () => { MON.panel = null; monRenderMain(); };
   if (MON.panel === "server") monWireServer(node);
   if (MON.panel === "shutdown") monWireShutdown(node);
   if (MON.panel === "link") { monWireLink(node); monFocusLink(); }
@@ -1016,7 +1043,7 @@ function monLinkHtml(node) {
       </div>`;
   }
   const saved = MON.keyNames.length > 0;
-  const mode = l.mode || (saved ? "saved" : "words");
+  const mode = monLinkMode(l, node);
   const tab = (id, label) => `<button type="button" class="${mode === id ? "on" : ""}" data-link-mode="${id}" role="radio" aria-checked="${mode === id}">${esc(label)}</button>`;
   return `
     <div class="card mon-link-form">
@@ -1048,6 +1075,13 @@ function monLinkHtml(node) {
     </div>`;
 }
 
+/* Which way to link first: a wallet here when this node's wallet is here (or
+   which one it is can't be told), else its 24 words. */
+function monLinkMode(l, node) {
+  if (l.mode) return l.mode;
+  if (!MON.keyNames.length) return "words";
+  return !MON.keyAddresses.length || MON.keyAddresses.includes(node.address) ? "saved" : "words";
+}
 function monWireLink(node) {
   const l = MON.link && MON.link.address === node.address ? MON.link : null;
   if (!l || !l.open) {
@@ -1056,7 +1090,7 @@ function monWireLink(node) {
   }
   $("#mon-link-cancel").onclick = () => { MON.link = null; MON.panel = null; monRenderMain(); };
   document.querySelectorAll("[data-link-mode]").forEach((b) => { b.onclick = () => { l.mode = b.dataset.linkMode; l.error = null; monRenderMain(); monFocusLink(); }; });
-  const mode = l.mode || (MON.keyNames.length ? "saved" : "words");
+  const mode = monLinkMode(l, node);
   const go = async () => {
     const passphrase = $("#mon-link-pass").value;
     let words = "";
@@ -1072,6 +1106,7 @@ function monWireLink(node) {
       if (mode === "words") {
         name = (await api("keyImportForNode", { address: node.address, mnemonic: words, passphrase })).name;
         MON.keyNames = await api("keyNames");
+        MON.keyAddresses = await api("keyAddresses");
       } else {
         name = $("#mon-link-name") ? $("#mon-link-name").value : "";
         const k = await api("keyShow", { name, passphrase });
@@ -1115,7 +1150,7 @@ function monServerHtml(node) {
     const auth = s.auth === "password" ? "password" : "key";
     return `
       <div class="card mon-panel">
-        <h3>${esc(t("Connect to your server"))}</h3>
+        <div class="mon-card-head"><h3>${esc(t("Connect to your server"))}</h3><button class="mon-quiet" id="mon-panel-close">${esc(t("Cancel"))}</button></div>
         ${local ? `<p class="small">${esc(t("This node runs on this computer."))}</p>` : `
         <div class="field-row">
           <label class="field"><span class="lbl">${esc(t("Server address (IP or hostname)"))}</span><input type="text" id="mon-s-host" class="mono" value="${esc(s.host || "")}" placeholder="203.0.113.42"></label>
@@ -1126,7 +1161,7 @@ function monServerHtml(node) {
           <select id="mon-s-auth"><option value="key" ${auth === "key" ? "selected" : ""}>${esc(t("SSH key file"))}</option><option value="password" ${auth === "password" ? "selected" : ""}>${esc(t("Password"))}</option></select></div>
         <div id="mon-s-keybox" ${auth === "key" ? "" : "hidden"}>
           <div class="field-row two">
-            <label class="field"><span class="lbl">${esc(t("Private key file"))}</span><input type="text" id="mon-s-key" class="mono" value="${esc(s.privateKeyPath || "")}"></label>
+            <label class="field"><span class="lbl">${esc(t("Private key file"))}</span><input type="text" id="mon-s-key" class="mono" value="${esc(s.privateKeyPath || MON.sshKeyPath || "")}"></label>
             <label class="field"><span class="lbl">${esc(t("Key passphrase (leave empty if none)"))}</span><input type="password" id="mon-s-keypass" autocomplete="off"></label>
           </div>
           <button id="mon-s-pick" class="mon-quiet">${esc(t("Choose file…"))}</button>
@@ -1141,7 +1176,7 @@ function monServerHtml(node) {
   }
   return `
     <div class="card mon-panel">
-      <div class="mon-card-head"><h3>${esc(t("Your server"))}</h3><span class="small mono">${esc(v.info || "")}</span><button id="mon-s-off" class="mon-quiet">${esc(t("Disconnect"))}</button></div>
+      <div class="mon-card-head"><h3>${esc(t("Your server"))}</h3><span class="small mono">${esc(v.info || "")}</span><button id="mon-s-off" class="mon-quiet">${esc(t("Disconnect"))}</button><button class="mon-quiet" id="mon-panel-close">${esc(t("Close"))}</button></div>
       <div class="mon-quick">${MON_QUICK.map(([label, cmd], i) => `<button class="mon-quiet" data-quick="${i}" title="${esc(cmd)}">${esc(t(label))}</button>`).join("")}</div>
       <pre class="mon-term-out mono" id="mon-term-out">${v.lines.map((l) => `<span class="${l.err ? "err" : l.cmd ? "cmd" : ""}">${esc(l.text)}</span>`).join("")}</pre>
       <form class="mon-term-form" id="mon-term-form" autocomplete="off">
@@ -1252,7 +1287,7 @@ function monShutdownHtml(node) {
   const linked = MON.srv.address === node.address;
   const guide = `<a href="#" data-open="https://gonka.ai/host/quickstart/#how-to-stop-your-node">${esc(t("Gonka's guide"))}</a>`;
   const head = `<div class="mon-card-head"><h3>${esc(t("Shut down safely"))}</h3>
-    <button class="mon-quiet" id="mon-down-refresh">${esc(t("Check again"))}</button></div>
+    <button class="mon-quiet" id="mon-down-refresh">${esc(t("Check again"))}</button><button class="mon-quiet" id="mon-panel-close">${esc(t("Close"))}</button></div>
     <p class="small mon-panel-lede">${t("Four steps, as in {guide}. Leaving early can lose the last epoch's reward.", { guide })}</p>`;
   if (!d || (!d.data && d.busy)) return `<div class="card mon-panel">${head}${loadingHtml(t("Reading where your node stands…"))}</div>`;
   if (!d.data) return `<div class="card mon-panel">${head}<div class="warn-banner">${esc(t("Couldn't read the network: {why}", { why: d.error }))}</div></div>`;

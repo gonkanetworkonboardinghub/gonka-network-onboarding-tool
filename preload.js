@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("gonka", {
   sshKeyInfo: call("keys:sshKeyInfo"),
   sshKeySave: call("keys:sshKeySave"),
   keyNames: call("keys:names"),
+  keyAddresses: call("keys:addresses"),
   resetKeyring: call("keys:resetKeyring"),
 
   genEnv: call("config:generateEnv"),
