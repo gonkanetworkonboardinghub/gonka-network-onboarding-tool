@@ -39,7 +39,8 @@ env:
 
 jobs:
   mac:
-    runs-on: macos-14
+    # macOS 14 runners retire on 2 November 2026 (brownouts before that).
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
