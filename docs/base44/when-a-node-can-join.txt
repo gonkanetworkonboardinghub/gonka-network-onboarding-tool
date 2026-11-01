@@ -1,0 +1,24 @@
+PROMPT FOR BASE44 — explain when a node can join
+(no pictures; paste everything below and publish)
+
+People do not know that a node can only join when a new epoch starts, or that the time moves. Add this in the three places below. Use the wording exactly.
+
+1. GET A NODE (/get-a-node): a new card right after "What your server needs", before the Spheron section. Title: "When a node can join". Then these four points:
+
+   - A node can only join when a new epoch starts. Each epoch opens with a Proof of Compute, a test of a few minutes that proves what its GPUs can do.
+   - If it is ready at that moment, it is in that epoch, and it stays in from epoch to epoch as long as it passes each test. If it is not ready, it waits for the next one, about 23 hours later, while the server keeps costing money.
+   - The time moves: epochs last about 23 hours, so each one starts at a different time on the clock. Go by the countdown, not by yesterday's time.
+   - Start 2–3 hours before the next Proof of Compute, so the model download and the setup finish in time. Rent your server shortly before you start, so you don't pay for hours of waiting.
+
+   Under them, one live line, in the visitor's own time zone with the zone named, from the gnot-monitor function's answer to { view: "network" }: epoch.secondsToNextPoc is the seconds until the next one, and epoch.hours is how long an epoch lasts.
+     "Next one: {when}. The one after: {when2}."
+   {when} = now + epoch.secondsToNextPoc. {when2} = {when} + epoch.hours. Format both like "Mon, 9:21 AM EST". While it has not loaded, show nothing there.
+
+2. REGISTER A NODE (/register-a-node): right above "Step by step with GNOT", one short note with the same live line:
+   "A node can only join when a new epoch starts, about every 23 hours, and the time moves. Start 2–3 hours before the next one. Next one: {when}. The one after: {when2}."
+
+3. FAQ (/faq): a new question in "WHAT YOU NEED", right before "How long does setup take?":
+   Question: "When can my node join the network?"
+   Answer: "Only when a new epoch starts. Each epoch opens with a Proof of Compute, a test of a few minutes. A node that is ready at that moment is in that epoch, and stays in from epoch to epoch as long as it passes each test. A node that is not ready waits for the next one, about 23 hours later, while the server keeps costing money. Epochs last about 23 hours, so the start time moves on the clock: go by the countdown in GNOT or on Monitor/Vote, not by yesterday's time. Start 2–3 hours before the next one, and rent your server shortly before you start."
+
+Add the new words to every language the site offers. Change nothing else on the site.

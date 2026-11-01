@@ -411,6 +411,7 @@ function renderEpochBar() {
     { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
   $("#epoch-text").textContent =
     `⏱ ${t("Next Proof of Compute")}: ${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s · ${at} · ${(frac * 100).toFixed(1)}%`;
+  $("#epochbar").title = t("A new node can only join when this countdown reaches zero.");
   renderPocAdvice();   // the first step's "best time to start" (only there when it is shown)
   if (typeof monRenderEpoch === "function") monRenderEpoch();   // and the same clock along the top of Monitor/Vote
 }
@@ -717,11 +718,47 @@ function pocAdviceText() {
   if (remain >= 2 * H) return t("Next one: {when}. Now is a good time to start.", { when });
   return t("Next one: {when}, less than 2 hours away. Starting now, your node will most likely join the one after it, about a day later.", { when });
 }
+/** How long an epoch lasts, in whole hours, read from the chain (15,391 blocks in November 2026). */
+function epochHours() {
+  const h = pocState ? pocState.totalBlocks * pocState.secPerBlock / 3600 : 0;
+  return h > 0 ? Math.round(h) : 23;
+}
+/** The Proof of Compute after the next one: epochs are not 24 hours, so its time on the clock differs. */
+function pocAfterNextText() {
+  if (!pocState || !pocState.totalBlocks) return "";
+  const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
+  const when = new Date(Date.now() + remain + pocState.totalBlocks * pocState.secPerBlock * 1000).toLocaleString(undefined,
+    { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  return t("The one after: {when}.", { when });
+}
+/**
+ * On the steps where time can run out: what the node has to be ready for. A
+ * node ready at the Proof of Compute is in that epoch; one that is not waits
+ * for the next. Nothing to say once it is in the epoch.
+ */
+function pocNoteText() {
+  if (!pocState || S.verifyEarning) return "";
+  const remain = pocState.etaMs - (Date.now() - pocState.at);
+  if (remain <= 0) return "";
+  const when = new Date(Date.now() + remain).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+  return t("Next Proof of Compute: {when}, in {span}. Your node must be ready by then to join that epoch. If it isn't, it joins the next one, about {hours} hours later.", { when, span: monSpan(remain / 1000), hours: epochHours() });
+}
+function pocNoteHtml() {
+  const text = pocNoteText();
+  return `<div class="info-banner poc-note" id="poc-note" ${text ? "" : "hidden"}>${esc(text)}</div>`;
+}
 function renderPocAdvice() {
   const el = $("#poc-when");
-  if (!el) return;
-  const text = pocAdviceText();
-  if (el.textContent !== text) el.textContent = text;
+  if (el) {
+    const text = `${pocAdviceText()} ${pocAfterNextText()}`.trim();
+    if (el.textContent !== text) el.textContent = text;
+  }
+  const note = $("#poc-note");
+  if (note) {
+    const text = pocNoteText();
+    if (note.textContent !== text) note.textContent = text;
+    note.hidden = !text;
+  }
 }
 
 /* Most providers ask for an SSH key while the server is being rented, which is
@@ -803,12 +840,21 @@ RENDER.welcome = () => {
       </div></details>
       <div id="ssh-early">${sshEarlyHtml()}</div>
     </div>
+    <div class="card" id="poc-card">
+      <h3>${esc(t("When a node can join"))}</h3>
+      <ul class="plain">
+        <li>${esc(t("A node can only join when a new epoch starts. Each epoch opens with a Proof of Compute, a test of a few minutes that proves what its GPUs can do."))}</li>
+        <li>${esc(t("If it is ready at that moment, it is in that epoch, and it stays in from epoch to epoch as long as it passes each test. If it is not ready, it waits for the next one, about {hours} hours later, while the server keeps costing money.", { hours: epochHours() }))}</li>
+        <li>${esc(t("The time moves: epochs last about {hours} hours, so each one starts at a different time on the clock. Go by the countdown at the top of the window, not by yesterday's time.", { hours: epochHours() }))}</li>
+        <li>${esc(t("Start 2–3 hours before the next Proof of Compute, so the model download and the setup finish in time."))}
+          ${esc(t("Rent your server shortly before you start, so you don't pay for hours of waiting."))}
+          <span class="poc-when" id="poc-when">${esc(`${pocAdviceText()} ${pocAfterNextText()}`.trim())}</span></li>
+      </ul>
+    </div>
     <div class="two-col">
       <div class="card">
         <h3>${esc(t("What you'll need"))}</h3>
         <ul class="plain">
-          <li>${esc(t("Start 2–3 hours before the next Proof of Compute, so the model download and the setup finish in time."))}
-            <span class="poc-when" id="poc-when">${esc(pocAdviceText())}</span></li>
           <li>${t("A pen and paper for your wallet recovery phrase. Seriously — paper.")}</li>
         </ul>
       </div>
@@ -2264,6 +2310,7 @@ RENDER.weights = () => {
     ${header("Step 9", "Download model weights", `
       Your node needs the model files (hundreds of GB) before it can serve inference.
       This is the longest step — you can leave it running.`)}
+    ${pocNoteHtml()}
     <div class="card">
       <p>Models to download: ${S.models.map((m) => `<code>${esc(m)}</code>`).join(", ") || "<i>none detected</i>"}</p>
       <p class="hint">Downloads go to the server's shared cache and resume automatically if interrupted.</p>
@@ -2355,6 +2402,7 @@ RENDER.deploy = () => {
     ${header("Step 10", "Launch and register", `
       The wizard now runs the official launch sequence, in the exact order Gonka requires.
       Watch the activity log below for details.`)}
+    ${pocNoteHtml()}
     <div class="card">${tasks.map((tk) => `
       <div class="task" id="task-${tk.id}">
         <span class="t-led"></span><span class="t-label">${esc(t(tk.label))}</span><span class="t-note"></span>
@@ -2542,6 +2590,7 @@ RENDER.verify = () => {
     <div class="info-banner">
       ${t("<b>You can leave this running and walk away.</b> The steps below finish on their own — the slow one is the network snapshot, which can take up to an hour. Your node only needs to stay switched on.")}
     </div>
+    ${pocNoteHtml()}
     <div class="card">
       <h3>${t("This is you on the network")}</h3>
       <p class="small">${t("Your wallet address is your identity everywhere on Gonka. On every dashboard and list, this is the name to look for:")}</p>
@@ -2560,8 +2609,8 @@ RENDER.verify = () => {
         <li><b>${t("Network snapshot")}</b> — ${t("your node copies a recent picture of the blockchain instead of replaying years of history. The slowest part, and it pauses near the end while it saves everything to disk. That pause is normal.")}</li>
         <li><b>${t("Catching up")}</b> — ${t("replaying the last few thousand blocks to reach the network's current position. Usually a minute or two.")}</li>
         <li><b>${t("Registered")}</b> — ${t("your wallet address is recorded on the chain as this server. Already done.")}</li>
-        <li><b>${t("Proof of Compute")}</b> — ${t("about every 24 hours the network asks every node to prove its GPUs work. This is what earns your weight. The countdown at the top of the window shows when the next one starts.")}</li>
-        <li><b>${t("Earning")}</b> — ${t("once a round is passed your node joins the active list and is paid for the work it does. Rewards are settled at the end of each roughly 24-hour epoch.")}</li>
+        <li><b>${t("Proof of Compute")}</b> — ${t("about every 23 hours the network asks every node to prove its GPUs work. This is what earns your weight. The countdown at the top of the window shows when the next one starts.")}</li>
+        <li><b>${t("Earning")}</b> — ${t("once a round is passed your node joins the active list and is paid for the work it does. Rewards are settled at the end of each roughly 23-hour epoch.")}</li>
       </ul>`)}
     </div>
     <div class="btn-row">
@@ -2786,7 +2835,7 @@ RENDER.verify = () => {
               t("Your node is in this epoch's active set — it passed Proof of Compute and is being paid for the work it does. Rewards settle at the end of the epoch, so keep the server running until then."));
           } else if (S.registeredVisible) {
             s5 = row("waiting", t("Earning"),
-              t("Not yet. Your node joins the active set after a completed Proof of Compute round — that list is finalised about 20 minutes after the round ends, so this can take a while to turn green."));
+              t("Not yet. Your node joins the active set after a completed Proof of Compute round — that list is finalised about 30 minutes after the round ends, so this can take a while to turn green."));
           }
           // Finished ("your node is live") only opens once it truly is ready, or already earning.
           S.verifyReady = earning || !!(synced && S.registeredVisible && ml && ml.gpuTotal > 0 && ml.gpuReady === ml.gpuTotal && ml.weightsReady);
@@ -2989,7 +3038,7 @@ RENDER.collateral = () => {
   const laterLink = $("#c-later");
   if (laterLink) laterLink.onclick = (e) => {
     e.preventDefault();
-    alert(t("Skip the deposit for now and finish setup. After your first Proof of Compute (about 24 hours), reopen this app and come back to this step — it will then size the deposit from YOUR measured weight instead of the network maximum. You earn at 20% until you do."));
+    alert(t("Skip the deposit for now and finish setup. After your first Proof of Compute (about 23 hours), reopen this app and come back to this step — it will then size the deposit from YOUR measured weight instead of the network maximum. You earn at 20% until you do."));
   };
   // No choice card: the deposit is the point of this step, so compute and show
   // it straight away. Waiting is a link, not an equal option.
@@ -3097,7 +3146,7 @@ RENDER.done = () => {
     <div class="card">
       <h3>${t("The only three things that matter from here")}</h3>
       <ul class="plain">
-        <li><b>${t("Leave the server on.")}</b> ${t("Proof of Compute runs about every 24 hours and it is the only way to earn. A node that is switched off earns nothing and loses its place.")}</li>
+        <li><b>${t("Leave the server on.")}</b> ${t("Proof of Compute runs about every 23 hours and it is the only way to earn. A node that is switched off earns nothing and loses its place.")}</li>
         <li><b>${t("Keep your paper backup safe.")}</b> ${t("Those 24 words ARE your wallet and your earnings. This app never stored them, and nobody can recover them for you.")}</li>
         <li><b>${t("Never delete the {tmkms} folder on the server, and never re-create the operational key.", { tmkms: "<code>.tmkms</code>" })}</b> ${t("Both are unrecoverable and would cost you the node's identity.")}</li>
       </ul>

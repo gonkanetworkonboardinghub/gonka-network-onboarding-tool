@@ -52,8 +52,11 @@ async function findPage() {
 
   const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
   let id = 0; const waiting = new Map(); const errors = [];
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && waiting.has(d.id)) { waiting.get(d.id)(d); waiting.delete(d.id); } if (d.method === "Runtime.exceptionThrown") errors.push(d.params.exceptionDetails.exception ? d.params.exceptionDetails.exception.description : d.params.exceptionDetails.text); };
-  const send = (method, params) => new Promise((r) => { const n = ++id; waiting.set(n, r); ws.send(JSON.stringify({ id: n, method, params })); });
+  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && waiting.has(d.id)) { waiting.get(d.id)(d); waiting.delete(d.id); } if (d.method === "Runtime.exceptionThrown") errors.push(d.params.exceptionDetails.exception ? d.params.exceptionDetails.exception.description : d.params.exceptionDetails.text);
+    // A copy left open partway through a setup asks before it reloads; nobody is there to answer.
+    if (d.method === "Page.javascriptDialogOpening") ws.send(JSON.stringify({ id: ++id, method: "Page.handleJavaScriptDialog", params: { accept: true } })); };
+  // A page that never answers is a failed check, not a check that never ends.
+  const send = (method, params) => new Promise((r, no) => { const n = ++id; const timer = setTimeout(() => { waiting.delete(n); no(new Error(`no answer from the page in 90 seconds (${method})`)); }, 90000); waiting.set(n, (d) => { clearTimeout(timer); r(d); }); ws.send(JSON.stringify({ id: n, method, params })); });
   const run = async (e) => { const d = await send("Runtime.evaluate", { expression: `(async () => { ${e} })()`, awaitPromise: true, returnByValue: true }); if (d.result.exceptionDetails) throw new Error(d.result.exceptionDetails.exception ? d.result.exceptionDetails.exception.description : d.result.exceptionDetails.text); return d.result.result.value; };
   const until = async (cond, tries = 60) => { for (let i = 0; i < tries; i++) { try { if (await run(`return !!(${cond})`)) return true; } catch (_) {} await sleep(400); } return false; };
   const fresh = () => errors.length;
