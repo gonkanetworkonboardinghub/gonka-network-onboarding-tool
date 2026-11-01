@@ -149,7 +149,7 @@ async function getJson(url, opts = {}) {
     const shown = num(on.totals && on.totals.gnkMinedAllEpochs);
     if (shown != null) {
       const shownN = shown * 1e9;
-      if (Math.abs(shownN - paid) > Math.max(1e9, 0.05 * paid)) say("warnings", `the website shows ${gnk(shownN)} GNK mined by nodes set up with GNOT; the chain paid them ${gnk(paid)} GNK (the website's figure is an estimate)`);
+      if (Math.abs(shownN - paid) > Math.max(1e9, 0.05 * paid)) say("warnings", `the website shows ${gnk(shownN)} GNK mined by nodes set up with GNOT; the chain paid them ${gnk(paid)} GNK (the data job should show what the chain paid)`);
       else say("ok", `GNK paid to nodes set up with GNOT: ${gnk(paid)}, as the website shows`);
     }
   }

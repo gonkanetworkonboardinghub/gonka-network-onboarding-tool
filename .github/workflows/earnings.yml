@@ -110,15 +110,6 @@ jobs:
           node scripts/rentals-snapshot.js "$src" "$RUNNER_TEMP/rentals.json" \
             || { rm -f "$RUNNER_TEMP/rentals.json"; exit 1; }
 
-      - name: Count the nodes set up with GNOT
-        id: onboarded
-        continue-on-error: true
-        run: |
-          # if the chain read failed, count against last time's epoch figures
-          src="$RUNNER_TEMP/earnings.json"; [ -s "$src" ] || src="$RUNNER_TEMP/prev-earnings.json"
-          node scripts/onboarded-snapshot.js "$RUNNER_TEMP/prev-onboarded.json" "$src" "$RUNNER_TEMP/onboarded.json" \
-            || { rm -f "$RUNNER_TEMP/onboarded.json"; exit 1; }
-
       - name: Count downloads
         id: stats
         continue-on-error: true
@@ -143,6 +134,16 @@ jobs:
         run: |
           node scripts/epochs-snapshot.js "$RUNNER_TEMP/prev-epochs.json" "$RUNNER_TEMP/epochs.json" \
             || { rm -f "$RUNNER_TEMP/epochs.json"; exit 1; }
+
+      - name: Count the nodes set up with GNOT
+        id: onboarded
+        continue-on-error: true
+        run: |
+          # if a read failed, count against last time's figures
+          src="$RUNNER_TEMP/earnings.json"; [ -s "$src" ] || src="$RUNNER_TEMP/prev-earnings.json"
+          ep="$RUNNER_TEMP/epochs.json"; [ -s "$ep" ] || ep="$RUNNER_TEMP/prev-epochs.json"
+          node scripts/onboarded-snapshot.js "$RUNNER_TEMP/prev-onboarded.json" "$src" "$RUNNER_TEMP/onboarded.json" "$ep" \
+            || { rm -f "$RUNNER_TEMP/onboarded.json"; exit 1; }
 
       - name: Count every host's GPUs, and the network's totals
         id: network

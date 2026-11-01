@@ -2,7 +2,7 @@
  * onboarded-snapshot.js — how many nodes and GPUs GNOT has brought into the
  * network, epoch by epoch, with the transactions as proof.
  *
- *   node scripts/onboarded-snapshot.js <previous.json> <earnings.json> <out.json>
+ *   node scripts/onboarded-snapshot.js <previous.json> <earnings.json> <out.json> <epochs.json>
  *
  * Every transaction GNOT signs carries the public note "Set up with GNOT vX"
  * (src/services/keys.js): the permission grant every setup sends, plus the
@@ -14,16 +14,19 @@
  *
  * History lives in the file this writes, so each run only scans new blocks.
  * previous.json may be missing (first run); earnings.json is the file
- * scripts/earnings-snapshot.js wrote in the same run (epoch, GNK per weight).
+ * scripts/earnings-snapshot.js wrote in the same run (epoch, GNK per weight);
+ * epochs.json is the file scripts/epochs-snapshot.js wrote (what the chain paid
+ * every host), the only source of the GNK figures here: an epoch counts what
+ * the chain paid for it, and nothing until the chain has paid.
  */
 const fs = require("fs");
 const path = require("path");
 const K = require("../src/knowledge");
 const wallet = require("../src/services/wallet");
 
-const [prevPath, earningsPath, outPath] = process.argv.slice(2);
-if (!earningsPath || !outPath) {
-  console.error("Usage: node scripts/onboarded-snapshot.js <previous.json> <earnings.json> <out.json>");
+const [prevPath, earningsPath, outPath, epochsPath] = process.argv.slice(2);
+if (!earningsPath || !outPath || !epochsPath) {
+  console.error("Usage: node scripts/onboarded-snapshot.js <previous.json> <earnings.json> <out.json> <epochs.json>");
   process.exit(1);
 }
 
@@ -85,6 +88,8 @@ async function scan(base, action, from, to) {
   let prev = {};
   try { prev = JSON.parse(fs.readFileSync(prevPath, "utf8")); } catch (_) { /* first run */ }
   const earnings = JSON.parse(fs.readFileSync(earningsPath, "utf8"));
+  const results = JSON.parse(fs.readFileSync(epochsPath, "utf8"));
+  if (!Array.isArray(results.epochs) || !Array.isArray(results.hosts)) throw new Error(`${epochsPath} holds no results from the chain`);
 
   const indexer = await findIndexer();
   const head = Number((await getJson(`${indexer}/chain-rpc/status`)).result.sync_info.latest_block_height);
@@ -131,17 +136,23 @@ async function scan(base, action, from, to) {
   }
 
   // 3. This epoch's line in the history. Weights are fixed for the whole epoch,
-  //    so re-running within it just refreshes the same line.
+  //    so re-running within it just refreshes the same line. Each line's GNK is
+  //    what the chain paid these nodes that epoch; an epoch too old to still be
+  //    in epochs.json keeps what was read while it was.
   const epochIndex = Number(egd.epoch_index);
   const active = [...nodes.values()].filter((n) => n.activeNow);
   const line = {
     epoch: epochIndex,
     activeNodes: active.length,
     gpus: active.reduce((a, n) => a + n.gpus, 0),
-    weight: active.reduce((a, n) => a + n.weight, 0),
-    gnk: active.reduce((a, n) => a + n.weight * gnkPerWeight, 0)
+    weight: active.reduce((a, n) => a + n.weight, 0)
   };
-  const epochs = (prev.epochs || []).filter((e) => e.epoch !== epochIndex).concat([line]).sort((a, b) => a.epoch - b.epoch);
+  const ours = new Set([...nodes.keys()].map((a) => results.hosts.indexOf(a)));
+  const paidIn = new Map(results.epochs.map((e) => [e.e, e.r.reduce((a, r) => a + (ours.has(r[0]) ? r[1] : 0), 0) / 1e9]));
+  const gnkOf = (e) => paidIn.has(e.epoch) ? paidIn.get(e.epoch) : e.epoch < results.from ? e.gnk : 0;
+  const epochs = (prev.epochs || []).filter((e) => e.epoch !== epochIndex).concat([line])
+    .sort((a, b) => a.epoch - b.epoch)
+    .map((e) => ({ ...e, gnk: gnkOf(e) }));
 
   const out = {
     asOf: new Date().toISOString(),
