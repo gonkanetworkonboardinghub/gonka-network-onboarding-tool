@@ -368,7 +368,7 @@ async function monAskAnswers() {
   let got;
   try { got = await api("monitorAnswers", { urls: hosts.map((h) => h.url) }); } catch (_) { return; }
   hosts.forEach((h, i) => { if (got[i] === true || got[i] === false) MON.answers[h.address] = got[i]; });
-  if (MON.view === "network" || MON.view === "mine") monRenderMain();
+  if (MON.view === "network" || MON.view === "mine" || MON.view === "votes") monRenderMain();
 }
 
 async function monLoadProposals() {
@@ -1767,6 +1767,21 @@ function monYourVoteHtml(live) {
   if (own.length) {
     const weight = (n) => { const h = o && o.hosts.find((x) => x.address === n.address); return h ? t("{share} of the network's weight", { share: monPct(h.share, 2) }) : ""; };
     const weights = own.map((n) => ({ n, w: weight(n) })).filter((x) => x.w);
+    // A vote counts by the node's weight when the vote closes, two days after
+    // it opens (one fast-track kind: half a day). A node out of the epoch has
+    // none; one that is off is out after the next Proof of Compute. Either
+    // way its wallet can still sign, but the vote would count for nothing.
+    const card = (state, text) => `
+      <div class="mon-yourvote">
+        <span class="mon-yv-icon">${MON_ICONS.votes}</span>
+        <div class="mon-yv-body">
+          <b>${esc(t("You vote with {names}", { names: own.map(monName).join(", ") }))}</b>
+          <span>${esc(text)}</span>
+        </div>
+        <span class="mon-yv-state off"><i></i>${esc(state)}</span>
+      </div>`;
+    if (o && !weights.length) return card(t("No weight now"), t("A vote counts by the node's weight in the current epoch, and it is not in epoch {n}, so its vote would count for nothing now. It can vote again once it takes part in an epoch.", { n: o.epoch.index }));
+    if (weights.length && weights.every((x) => MON.answers[x.n.address] === false)) return card(t("Node off"), t("Your node is not answering. A vote counts by the node's weight when the vote closes, and a node that is off is out of the network after the next Proof of Compute, so its vote would most likely count for nothing."));
     return `
       <div class="mon-yourvote ready">
         <span class="mon-yv-icon">${MON_ICONS.votes}</span>

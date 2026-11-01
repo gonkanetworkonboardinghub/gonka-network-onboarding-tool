@@ -862,6 +862,8 @@ body.on-home #monitor { display: none; }
 .mon-yv-body .mon-yv-weight { font-weight: 600; color: var(--text); }
 .mon-yv-state { display: inline-flex; flex: none; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--green); color: var(--green); font-size: 13px; font-weight: 600; }
 .mon-yv-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.mon-yv-state.off { border-color: var(--line-strong); color: var(--muted); }
+.mon-yv-state.off i { background: var(--muted); }
 .mon-none-open { margin-bottom: 10px; padding: 14px 18px; border-radius: 10px; border: 1px dashed var(--line-strong); font-size: 14px; color: var(--muted); }
 .mon-prop-main { display: flex; align-items: flex-start; gap: 20px; }
 .mon-prop-what { flex: 1 1 auto; min-width: 0; }
