@@ -439,7 +439,7 @@ function tip(text, vars) {
 }
 /** What the "i"s say, in English; one place, so a figure is explained the same way wherever it shows. */
 const TIPS = {
-  rig: "The GPUs in one server, and how many copies of the model it runs at once. GNOT can set up every rig shown here.",
+  rig: "The GPUs in one server, and how many copies of the model it runs at once. GNOT can set up every rig shown here, except those marked †.",
   model: "The AI model the server runs for the Gonka network. The network pays hosts for serving the models it needs.",
   gnkDay: "What a typical server like this was paid per day in the last finished epoch, measured from the chain: its share of that epoch's reward, by the work it proved.",
   worth: "That GNK a day at today's price, the middle of 4 markets.",
@@ -3474,10 +3474,11 @@ function renderRent() {
   // day and is worth, the most it may cost, what the provider asks now, and
   // what is left each day — so a "short by" or "ahead by" can be read through.
   const dim = (s) => `<span class="dim">${esc(s)}</span>`;
-  const rows = p.rows.map((row) => {
+  const ownRows = p.ownRows || [];
+  const rows = [...p.rows, ...ownRows].map((row) => {
     const top = row.runs[0];
     const o = row.best;
-    const rig = `${row.gpuCount}× ${esc(row.gpuClass)}` + (top.copies > 1 ? small(t("{n} copies at once", { n: top.copies })) : "");
+    const rig = `${row.gpuCount}× ${esc(row.gpuClass)}${row.own ? " †" : ""}` + (top.copies > 1 ? small(t("{n} copies at once", { n: top.copies })) : "");
     // The model it earns most with; a server that can run others says how many.
     const model = `<span class="nowrap">${esc(shortModel(top.model))}</span>` + (row.runs.length > 1 ? small(t("best of {n} models", { n: row.runs.length })) : "");
     const offer = o ? esc(fmtUsd(o.pricePerHour)) + "/h" + small(o.region) + (o.cuda ? small(`CUDA ${o.cuda}`) : "")
@@ -3510,6 +3511,7 @@ function renderRent() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${ownRows.length ? `<div class="earn-scope">${esc(t("† The network runs this and pays for it, but no ready-made configuration has been published, so this app cannot set it up for you — you would have to write your own node-config."))}</div>` : ""}
     <div class="earn-scope">${esc(t("From {providers}'s public price list, read at {time}. Only dedicated servers, and only those with what a node needs: memory of 1.5 × the GPUs', 1,000 GB of disk and a system image with CUDA {min} or newer.", { providers: p.name, time: time(p.at), min: (S.K && S.K.requirements.cudaMin) || "12.9" }))}</div>`}`;
   $("#rent-back").onclick = (e) => { e.preventDefault(); RENT_VIEW = "list"; renderRent(); };
   $("#rent-site").onclick = (e) => { e.preventDefault(); api("openExternal", { url: p.site }); };
@@ -3521,7 +3523,7 @@ function renderRentHint() {
   if (!el || !pick || !RENT) return;
   const opt = pick.options[pick.selectedIndex];
   // The cheapest offer for this server size across every provider.
-  const same = opt ? RENT.providers.flatMap((p) => p.rows).filter((r) => r.gpuClass === opt.dataset.gpu && r.gpuCount === Number(opt.dataset.count)) : [];
+  const same = opt ? RENT.providers.flatMap((p) => [...p.rows, ...(p.ownRows || [])]).filter((r) => r.gpuClass === opt.dataset.gpu && r.gpuCount === Number(opt.dataset.count)) : [];
   if (!same.length) { el.innerHTML = ""; return; }
   const row = same.filter((r) => r.best).sort((a, b) => a.best.pricePerHour - b.best.pricePerHour)[0];
   if (!row) { el.textContent = t("No dedicated server with what a node needs is on offer for this right now."); return; }
@@ -3581,7 +3583,7 @@ function renderEarnBody(d) {
       ${rigCell(c)}
       <td>${esc(shortModel(c.model))}</td>
       ${nowCell(c)}
-      <td class="dim" colspan="3">${esc(t("No host runs this yet, so there is nothing to measure."))}</td>
+      <td class="dim" colspan="3">${esc(t("No host runs this right now, so there is no figure for it today."))}</td>
     </tr>`).join("");
   // Every rig in the calculator, the unmeasured ones last: "c3" or "n1".
   const calcRigs = [...d.configs.map((c, i) => ({ c, v: "c" + i })), ...(d.noHosts || []).map((c, i) => ({ c, v: "n" + i, none: true }))];
@@ -3620,7 +3622,7 @@ function renderEarnBody(d) {
       <div class="earn-calc-row">
         <select id="earn-pick">${calcRigs.map(({ c, v, none }) =>
           `<option value="${v}" data-gpu="${esc(c.gpuClass)}" data-count="${c.gpuCount}"${start && start.v === v ? " selected" : ""}>${c.gpuCount}× ${esc(c.gpuClass)} — ${esc(shortModel(c.model))}${c.copies > 1 ? ` (${esc(t("{n} copies", { n: c.copies }))})` : ""}${none
-            ? ` (${esc(t("no host runs it yet"))})` : ""}</option>`).join("")}</select>
+            ? ` (${esc(t("no host runs it right now"))})` : ""}</option>`).join("")}</select>
         <input id="earn-cost" type="number" min="0" step="0.01" placeholder="${esc(t("what you pay"))}" />
         <select id="earn-unit">
           <option value="24">${esc(t("per hour"))}</option>
@@ -3679,8 +3681,15 @@ function renderEarnBody(d) {
     const c = chosen && chosen.c;
     // Nothing measured to compare a price with: say so, whatever was typed.
     if (chosen && chosen.none) {
-      out.innerHTML = `<div>${esc(t("No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it.",
-        { rig: `${c.gpuCount}× ${c.gpuClass}`, model: shortModel(c.model) }))}</div>`;
+      const notes = [t("No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it.",
+        { rig: `${c.gpuCount}× ${c.gpuClass}`, model: shortModel(c.model) })];
+      const typed = Number(cost.value);
+      if (isFinite(typed) && typed > 0) {
+        const perDay = typed * Number(unit.value);
+        notes.push(t("You pay {usd} a day.", { usd: fmtUsd(perDay) }));
+        if (d.price.usd) notes.push(t("To pay for itself at that price, it would have to mine {gnk} GNK a day.", { gnk: fmtGnk(perDay / d.price.usd) }));
+      }
+      out.innerHTML = notes.map((l) => `<div>${esc(l)}</div>`).join("");
       return;
     }
     const paid = Number(cost.value);

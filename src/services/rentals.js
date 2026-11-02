@@ -21,8 +21,13 @@
  */
 const K = require("../knowledge");
 
-/** GPU kinds GNOT can set up, as providers name them. Grace (GH200, GB200/GB300) machines are a different platform. */
-const KINDS = [[/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"]];
+/**
+ * GPU kinds the network runs, as providers name them: those GNOT can set up,
+ * and those hosts run with a node-config of their own (compareOwn).
+ * Grace (GH200, GB200/GB300) machines are a different platform.
+ */
+const KINDS = [[/B300/i, "B300"], [/B200/i, "B200"], [/H200/i, "H200"], [/H100/i, "H100"], [/A100/i, "A100"],
+  [/RTX\s*PRO\s*6000/i, "RTX PRO 6000"], [/RTX\s*5090/i, "RTX 5090"], [/\bH20\b/i, "H20"]];
 const NOT_THESE = /\bG[BH]\d00\b|\bCC\b/i;
 /** Gonka's A100 setup splits the model over 4 × 80 GB, so a 40 GB A100 cannot run it. */
 const MIN_GPU_GB = { A100: 75 };
@@ -171,6 +176,27 @@ function compare(earnings, offers) {
 }
 
 /**
+ * The rigs the network runs and pays for that have no ready-made configuration
+ * (marked † in the table): possible on Gonka, so they are compared too, each
+ * with its own row, after the rigs GNOT can set up.
+ */
+function compareOwn(earnings, offers) {
+  return (earnings.configs || []).filter((c) => c.deployable === false).map((c) => {
+    const here = offers.filter((o) => o.gpu === c.gpuClass && o.gpus === c.gpuCount).map((o) => ({ ...o, short: shortOf(o) }))
+      .sort((a, b) => a.pricePerHour - b.pricePerHour);
+    const best = here.find((o) => !o.short.length) || null;
+    return {
+      gpuClass: c.gpuClass, gpuCount: c.gpuCount, own: true,
+      runs: [{ model: c.model, copies: c.copies, breakEvenPerHour: c.breakEvenPerHour, gnkPerDay: c.gnkPerDay, usdPerDay: c.usdPerDay }],
+      offers: here.length,
+      best,
+      cheapest: best ? null : here[0] || null,
+      gapPerDay: best && c.breakEvenPerHour != null ? (c.breakEvenPerHour - best.pricePerHour) * 24 : null
+    };
+  });
+}
+
+/**
  * A provider's offers, read again when the list comes back much shorter than
  * it was: on 26 October 2026 the website read Spheron's list with a single
  * offer GNOT could use, where there are usually dozens, and five minutes later
@@ -205,9 +231,9 @@ async function estimate(earnings, { force = false } = {}) {
     const at = new Date().toISOString();
     try {
       const list = await readFull(p);
-      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: compare(earnings, list) });
+      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: list.length, error: null, rows: compare(earnings, list), ownRows: compareOwn(earnings, list) });
     } catch (e) {
-      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: 0, error: e.message, rows: [] });
+      providers.push({ id: p.id, name: p.name, site: p.site, at, offers: 0, error: e.message, rows: [], ownRows: [] });
     }
   }
   const data = { asOf: new Date().toISOString(), providers };
@@ -215,7 +241,7 @@ async function estimate(earnings, { force = false } = {}) {
   return data;
 }
 
-module.exports = { estimate, compare, spheron, shortOf };
+module.exports = { estimate, compare, compareOwn, spheron, shortOf };
 // The pieces the website's Base44 function is built from (scripts/build-base44-rentals.js),
 // so the website compares with exactly this code.
 module.exports._parts = { KINDS, NOT_THESE, MIN_GPU_GB, CACHE_MS, getJson, kindOf, cudaAtLeast, newestCuda, spheron, PROVIDERS, shortOf, compare, THIN_RETRIES, THIN_WAIT_MS, readFull, estimate };
