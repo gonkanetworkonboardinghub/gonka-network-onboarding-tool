@@ -718,6 +718,25 @@ function pocAdviceText() {
   if (remain >= 2 * H) return t("Next one: {when}. Now is a good time to start.", { when });
   return t("Next one: {when}, less than 2 hours away. Starting now, your node will most likely join the one after it, about a day later.", { when });
 }
+/**
+ * "Fetched 05:24 PM · 3 min ago": when what is on screen was read from the
+ * network. One wording everywhere, by this computer's clock; it keeps counting
+ * while the page stays open (renderFetched).
+ */
+function fetchedText(at) {
+  if (!at) return "";
+  const then = new Date(at), ms = Date.now() - at;
+  const when = then.toLocaleString(undefined, { ...(then.toDateString() === new Date().toDateString() ? {} : { weekday: "short" }), hour: "2-digit", minute: "2-digit" });
+  return ms < 60000 ? t("Fetched {when} · just now", { when }) : t("Fetched {when} · {ago} ago", { when, ago: monSpan(ms / 1000) });
+}
+function fetchedHtml(at) { return `<span class="fetched" data-at="${Number(at) || 0}">${esc(fetchedText(at))}</span>`; }
+function renderFetched() {
+  document.querySelectorAll(".fetched").forEach((el) => {
+    const text = fetchedText(Number(el.dataset.at));
+    if (el.textContent !== text) el.textContent = text;
+  });
+}
+
 /** How long an epoch lasts, in whole hours, read from the chain (15,391 blocks in November 2026). */
 function epochHours() {
   const h = pocState ? pocState.totalBlocks * pocState.secPerBlock / 3600 : 0;
@@ -1053,7 +1072,7 @@ RENDER.welcome = () => {
       const ids = (list) => list.map((id) => `<code>${esc(id)}</code>`).join(", ");
       const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
       card.innerHTML = `
-        <h3>${esc(t(ready.length ? "Choose a model and hardware" : "What's supported right now"))}</h3>
+        <div class="fetched-head"><h3>${esc(t(ready.length ? "Choose a model and hardware" : "What's supported right now"))}</h3>${fetchedHtml(Date.now())}</div>
         ${ready.length ? `<p class="pick-lead">${esc(t("Pick one of the setups available now to see exactly what your server needs for it."))}</p>` : ""}
         <div id="arch-warn"></div>
         ${ready.length ? `<div class="model-list">${[...byModel].map(([id, rs]) => {
@@ -3390,6 +3409,7 @@ function openEarnings() {
       <div class="sheet-top"><span class="tool-name">${esc(t("Mine it or buy it?"))}</span></div>
       <div class="earn-now" id="earn-now"></div>
       <p class="sheet-lead">${esc(t("What each rig mined over the last epoch, measured from the chain, against what that much GNK costs to buy."))}</p>
+      <div class="fetched-line" id="earn-fetched"></div>
       <div id="earn-body" class="earn-body">${chainLoaderHtml()}</div>
       <div class="btn-row"><button class="primary" id="sheet-close">${esc(t("Close"))}</button></div>
     </div>`;
@@ -3407,6 +3427,7 @@ function openEarnings() {
   loadEarnings()
     .then((d) => {
       renderEarnBody(d); refreshPrice(d.price);
+      if ($("#earn-fetched")) $("#earn-fetched").innerHTML = fetchedHtml(Date.parse(d.asOf) || EARN_AT);
       return loadRentals().then(renderRent).catch((e) => { RENT_ERROR = e.message || ""; renderRent(); });
     })
     .catch((e) => { const b = $("#earn-body"); if (b) b.textContent = t("Could not read the network right now.") + " " + (e.message || ""); });
@@ -3429,13 +3450,6 @@ function renderRent() {
   }
   // This computer's clock, with its time zone named, so nobody wonders whose time it is.
   const time = (iso) => new Date(iso).toLocaleTimeString(window.I18N.lang(), { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-  const when = (iso) => {
-    const d = new Date(iso), yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (d.toDateString() === new Date().toDateString()) return t("today, {time}", { time: time(iso) });
-    if (d.toDateString() === yesterday.toDateString()) return t("yesterday, {time}", { time: time(iso) });
-    return d.toLocaleString(window.I18N.lang(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-  };
   const p = RENT.providers.find((x) => x.id === RENT_VIEW);
   if (!p) {
     box.innerHTML = `<div class="rent-providers">${RENT.providers.map((x) => {
@@ -3447,7 +3461,7 @@ function renderRent() {
           : ok
             ? t("{n} of the {m} configurations GNOT can set up for you are available at {provider}, with everything a node needs.", { n: ok, m: x.rows.length, provider: x.name })
             : t("None of the {m} configurations GNOT can set up for you is available at {provider} right now with everything a node needs.", { m: x.rows.length, provider: x.name }))}</span>
-        ${x.error ? "" : `<span class="rent-provider-sub">${esc(t("Prices as of {when}.", { when: when(x.at) }))}</span>`}</span>
+        ${x.error ? "" : `<span class="rent-provider-sub">${fetchedHtml(Date.parse(x.at))}</span>`}</span>
         <span class="rent-chev" aria-hidden="true">›</span></button>`;
     }).join("")}</div>
     <div class="earn-scope">${esc(t("Read from each provider's public price list. Before you rent, check on the provider's own site."))}</div>`;
@@ -3827,6 +3841,7 @@ function showHostSetup() {
   // every 2 minutes (also catches the rollover into a new epoch).
   syncEpochBar();
   setInterval(renderEpochBar, 1000);
+  setInterval(renderFetched, 15000);
   setInterval(syncEpochBar, 120000);
   // A release that comes out while the app is open (watchForUpdates).
   setInterval(watchForUpdates, 60 * 60 * 1000);

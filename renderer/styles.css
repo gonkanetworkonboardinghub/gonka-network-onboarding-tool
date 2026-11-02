@@ -766,7 +766,10 @@ body.on-home #monitor { display: none; }
 }
 .mon-tab2:hover { color: var(--text); }
 .mon-tab2.on { background: var(--accent); color: var(--on-accent); }
-.mon-top-refresh { justify-self: end; }
+.mon-top-tools { justify-self: end; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.fetched { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fetched-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.fetched-line { margin: -4px 0 10px; }
 /* where the epoch is, under the top bar on every page */
 .mon-epoch {
   flex: none; display: flex; align-items: center; gap: 14px; padding: 9px 28px;

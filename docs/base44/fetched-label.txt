@@ -1,0 +1,23 @@
+PROMPT FOR BASE44 — one clear "Fetched" label wherever figures come from the network
+(no pictures; paste everything below and publish)
+
+Visitors should see at a glance how fresh the live figures are. Add one small grey label, the same everywhere:
+
+  "Fetched 5:24 PM · just now"
+  "Fetched 5:24 PM · 3 min ago"
+
+The time is in the visitor's own clock. Under a minute it says "just now"; after that the minutes or hours, and it keeps counting while the page stays open. If the reading is from another day, add the day ("Fetched Mon, 5:24 PM · 1 day ago"). Show nothing until the figures have loaded.
+
+Where it goes:
+
+1. MINE OR BUY (/mine-or-buy), near the top, right under "What each rig mined over the last epoch…". The time comes from the gnot-rentals answer: earningsAsOf. Use earningsAsOf, not the moment the page loaded, so a reading that is older says so.
+
+2. MINE OR BUY, "Compare with providers", on the Spheron card: replace "Prices as of …" with the label, using that provider's "at" from the same answer.
+
+3. GET A NODE (/get-a-node), "Right now at Spheron": replace "Read from Spheron's public price list today, 5:25 PM." with the label, followed by "Read from Spheron's public price list. Before you rent, check on Spheron's own site."
+
+4. MONITOR/VOTE (/monitor and every page under it), in the top bar, just left of the Refresh button, one label for what the page shows: the time that page's data arrived from gnot-monitor (the node's answer on a node's page, the votes answer on Votes, the network answer elsewhere). On a node's page, remove "read just now" so there is only one.
+
+Do not add the label to anything else: leave "Checked against the live Gonka network …" and "GPUs counted machine by machine at …" as they are.
+
+Add the new words to every language the site offers. Change nothing else on the site.

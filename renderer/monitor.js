@@ -46,6 +46,7 @@ const MON = {
   answers: {},        // address -> whether its public address answered when last asked (monitor.answers)
   hostFilter: "",
   gov: null,          // proposals
+  govAt: 0,
   votes: {},          // proposal id -> [{ name, vote }] for the nodes kept here
   price: null,        // USD per GNK, when it can be had
   timer: null
@@ -191,10 +192,20 @@ function monRenderTop() {
     <button class="mon-back" id="mon-back"><span aria-hidden="true">←</span> ${esc(back.label)}</button>
     ${v === "hub" ? `<span class="mon-top-title">Gonka Host Monitor/Vote</span>`
       : `<nav class="mon-tabs2" aria-label="Gonka Host Monitor/Vote">${tab("mine", t("My nodes"))}${tab("network", t("The network"))}${tab("votes", t("Votes"))}</nav>`}
-    <button class="mon-quiet mon-top-refresh" id="mon-refresh">${esc(t("Refresh"))}</button>`;
+    <div class="mon-top-tools"><span class="fetched" id="mon-fetched" data-at="0"></span><button class="mon-quiet mon-top-refresh" id="mon-refresh">${esc(t("Refresh"))}</button></div>`;
+  monShowFetched();
   $("#mon-back").onclick = () => (back.go ? monGo(back.go) : leaveMonitor());
   top.querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => monGo(b.dataset.tab); });
   $("#mon-refresh").onclick = monRefreshNow;
+}
+
+/** When what this page shows was read: the node's own page, the proposals, or the network page's reading. */
+function monShowFetched() {
+  const el = $("#mon-fetched");
+  if (!el) return;
+  const v = MON.view;
+  el.dataset.at = (v === "node" ? (MON.data ? MON.at : 0) : v === "votes" ? MON.govAt : v === "add" ? 0 : MON.overviewAt) || 0;
+  renderFetched();
 }
 
 /* ---- where the epoch is ------------------------------------------------ */
@@ -374,6 +385,7 @@ async function monAskAnswers() {
 async function monLoadProposals() {
   try {
     MON.gov = await api("monitorProposals");
+    MON.govAt = Date.now();
     MON.votes = {};
     for (const p of MON.gov.proposals.filter((x) => x.status === "VOTING_PERIOD")) {
       MON.votes[p.id] = [];
@@ -392,6 +404,7 @@ function monRenderMain() {
   const main = $("#mon-main");
   if (!main || !document.body.classList.contains("on-monitor")) return;
   MON.plots = {};
+  monShowFetched();
   const tip = document.getElementById("mon-tip");
   if (tip) tip.style.display = "none";
   let html;
@@ -980,7 +993,6 @@ function monNodePageHtml() {
         <div class="mon-head-addr mono" id="mon-copy" title="${esc(t("Copy address"))}">${esc(node.address)}</div>
       </div>
       <div class="mon-head-tools">
-        <span class="small" id="mon-age">${!MON.at || !MON.data ? "" : Date.now() - MON.at < 60000 ? esc(t("read just now")) : esc(t("read {when} ago", { when: monSpan((Date.now() - MON.at) / 1000) }))}</span>
         ${kept ? `<button id="mon-rename" class="mon-quiet">${esc(t("Rename"))}</button><button id="mon-remove" class="mon-quiet">${esc(t("Unfollow"))}</button>`
                : `<button id="mon-keep" class="primary">${esc(t("Follow this node"))}</button>`}
       </div>
