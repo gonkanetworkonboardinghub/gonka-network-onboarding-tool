@@ -1310,7 +1310,7 @@ Deno.serve(async (req) => {
    a. The list of rigs holds every rig again, the ones no host runs too, marked "(no host runs it right now)".
    b. It opens on the first rig in the list again, not on one chosen because a provider offers it.
    c. When the chosen rig has no provider offer, show again, under the price box: "No dedicated server with what a node needs is on offer for this right now." The offer line also works for the † rigs, using ownRows as well as rows.
-   d. For a rig no host runs, always show: "No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it." When a price is typed, add under it: "You pay {usd} a day." and "To pay for itself at that price, it would have to mine {gnk} GNK a day." ({gnk} = what they pay per day ÷ the GNK price.)
+   d. For a rig no host runs, always show: "No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it." Under it: "Closest GPUs measured today: {list}." {list} comes from earnings.classes in the same answer: going along A100, H100, H200, B200, B300, the nearest kind below and the nearest above that have a figure, each as "{gpu}, about {gnk} GNK per GPU a day" (gnkPerGpuPerDay), joined with " · ". Never a figure for the kind itself. When a price is typed, add under it: "You pay {usd} a day." and "To pay for itself at that price, it would have to mine {gnk} GNK a day." ({gnk} = what they pay per day ÷ the GNK price.)
 
 3. MINE OR BUY, the table: for rigs no host runs, replace "Not run by any host yet. Its figures show here once one does." with "No host runs this right now, so there is no figure for it today."
 

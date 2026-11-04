@@ -3328,6 +3328,22 @@ async function loadEarnings(force) {
   return EARN;
 }
 
+/**
+ * For a kind of GPU no host runs right now: the nearest kinds below and above
+ * it that hosts do run, as measured today. Real figures to judge by, never a
+ * figure made up for the kind itself. Its own last readings came from 5 to 14
+ * GPUs and swung more than threefold (October 2026), so they are not used.
+ */
+const GPU_LADDER = ["A100", "H100", "H200", "B200", "B300"];
+function closestMeasured(gpuClass, classes) {
+  const at = GPU_LADDER.indexOf(gpuClass);
+  if (at < 0) return [];
+  const measured = (id) => (classes || []).find((k) => k.id === id && k.gnkPerGpuPerDay > 0);
+  const below = GPU_LADDER.slice(0, at).reverse().map(measured).find(Boolean);
+  const above = GPU_LADDER.slice(at + 1).map(measured).find(Boolean);
+  return [below, above].filter(Boolean);
+}
+
 /** Headline rig for the strip: the most common class on the network today. */
 function headlineConfig(d) {
   const common = (d.classes || []).slice().sort((a, b) => b.gpus - a.gpus)[0];
@@ -3683,6 +3699,10 @@ function renderEarnBody(d) {
     if (chosen && chosen.none) {
       const notes = [t("No host runs {rig} for {model} right now, so there is no measured figure to compare your price with. It appears here by itself once hosts run it.",
         { rig: `${c.gpuCount}× ${c.gpuClass}`, model: shortModel(c.model) })];
+      const near = closestMeasured(c.gpuClass, d.classes);
+      if (near.length) notes.push(t("Closest GPUs measured today: {list}.", {
+        list: near.map((k) => t("{gpu}, about {gnk} GNK per GPU a day", { gpu: k.id, gnk: fmtGnk(k.gnkPerGpuPerDay) })).join(" · ")
+      }));
       const typed = Number(cost.value);
       if (isFinite(typed) && typed > 0) {
         const perDay = typed * Number(unit.value);
