@@ -1,8 +1,14 @@
 # The Gonka Network Onboarding Tool (GNOT)
 
-The source code of GNOT, the free Windows and Mac app from
-[The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com)
-that makes taking part in the Gonka network easier.
+**From a GPU server to a registered Gonka node in about an hour or two.**
+
+GNOT is a Windows and Mac app from
+[The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com).
+It checks your server against everything Gonka needs, fixes what's missing,
+creates your wallet on your own computer, sets up and registers the node, and
+then follows it: how it's doing, what it earns, voting, and a safe shutdown.
+
+![Gonka Host Setup: choose a model and the GPUs your server has](docs/images/host-setup.webp)
 
 > **Source available for review.** This code is public so anyone can read it
 > and verify what the app does. It is not open source: all rights are
@@ -27,12 +33,22 @@ GNOT opens on a home screen of tools:
   own node (one whose wallet is on this computer) votes with it, opens a
   command line on its server, and shuts it down the way Gonka's guide says to.
 
+| | |
+| --- | --- |
+| ![The health check: what passed and what to fix, each with a Fix button](docs/images/health-check.webp) | ![Setup is done: the node is registered and the app watches it until it is ready](docs/images/setup-done.webp) |
+| **Health check.** Every requirement checked; anything missing gets a Fix button that shows its exact commands first. | **Setup is done.** The node is registered, and the app follows it until it is fully ready. |
+| ![Gonka Host Monitor/Vote: my nodes, the network, and votes](docs/images/monitor-vote.webp) | |
+| **Monitor/Vote.** Your nodes, every host on the network, and what the network is voting on. | |
+
+*Pictures from the app with a made-up example server and wallet.*
+
 ## Verifying what the app does
 
 Good places to start reading:
 
 | What | Where |
 | --- | --- |
+| Everything it does on your server, in plain words | [docs/what-gnot-does-on-your-server.md](docs/what-gnot-does-on-your-server.md) |
 | Your wallet | `src/services/wallet.js`, `src/services/keys.js` |
 | Commands run on your server | `src/services/scan.js`, `src/services/fixes.js`, `src/services/deploy.js`, `src/services/mynode.js` |
 | Network facts and endpoints | `src/knowledge.js`, `src/services/netdata.js` |
@@ -48,9 +64,10 @@ The short version:
   signed locally and sent to Gonka network nodes.
 - **Everything the app runs on your server** goes over your SSH connection.
   The setup's commands appear in the Activity log; Monitor/Vote runs only the
-  ones you type and the shutdown steps in `src/services/mynode.js`. Server
-  passwords and key passphrases are never saved.
-- **No accounts and no tracking.** The app talks to Gonka network nodes,
+  ones you type and the shutdown steps in `src/services/mynode.js`. The app
+  never saves your server password or your passphrase on your computer. Step
+  by step: [docs/what-gnot-does-on-your-server.md](docs/what-gnot-does-on-your-server.md).
+- **No accounts, and nothing about you is collected.** The app talks to Gonka network nodes,
   GitHub (the update manifest, releases, Gonka's official repository for
   supported configurations, and this repository's `data` branch for the
   network's figures), GitHub Container Registry (to check node images),
