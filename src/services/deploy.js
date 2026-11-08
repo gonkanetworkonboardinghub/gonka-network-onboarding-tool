@@ -87,12 +87,46 @@ async function writeConfigs(driver, { configEnv, nodeConfigJson, gpuCount }) {
   const pwd = await driver.exec(`cd ${JOIN()} && pwd`);
   const abs = pwd.stdout.trim();
   if (!abs) throw new Error("Deploy folder not found — run the clone step first.");
+  // The server's key opens only with the password it was made with, so a
+  // password already in config.env stays exactly as it is.
+  const kept = await serverKeyringLine(driver);
+  if (kept) configEnv = withKeyringLine(configEnv, kept);
   await driver.writeFile(abs + "/config.env", configEnv);
   await driver.writeFile(abs + "/node-config.json", nodeConfigJson);
 
   // Same compose adjustments the launch step applies — see ensureMlnodeCompose.
   await ensureMlnodeCompose(driver, gpuCount);
-  return { ok: true, dir: abs };
+  return { ok: true, dir: abs, keptKeyringPassword: !!kept };
+}
+
+/**
+ * The KEYRING_PASSWORD line of the config.env already on the server, when it
+ * holds a real password (not empty, not the template's <FILLIN>); else null.
+ *
+ * GNOT gives the server's operational key a random password of its own, made
+ * on this computer (renderer: newServerPassword), so the wallet's passphrase
+ * never goes to the server. But a key that already exists was made with
+ * whatever config.env says (copies of GNOT before this change used the
+ * wallet's passphrase), and only that password opens it: a second run, a
+ * resumed setup or a server set up earlier keeps its line word for word.
+ * The line is read, never logged.
+ */
+async function serverKeyringLine(driver) {
+  const r = await driver.exec(
+    `cd ${JOIN()} 2>/dev/null && grep -m1 -E '^ *(export +)?KEYRING_PASSWORD=' config.env 2>/dev/null || true`);
+  const line = String(r.stdout || "").split("\n")[0].replace(/\r$/, "");
+  const m = /^\s*(?:export\s+)?KEYRING_PASSWORD=(.*)$/.exec(line);
+  if (!m) return null;
+  const value = m[1].replace(/\s+#.*$/, "").trim();
+  return value && !/<[^>]*>/.test(value) ? line : null;
+}
+
+/** config.env text with its KEYRING_PASSWORD line replaced by `line` (or added, if it has none). */
+function withKeyringLine(text, line) {
+  const lines = String(text).split("\n");
+  const i = lines.findIndex((l) => /^\s*(?:export\s+)?KEYRING_PASSWORD=/.test(l));
+  if (i >= 0) lines[i] = line; else lines.unshift(line);
+  return lines.join("\n");
 }
 
 /** Image references named by the compose files on the server. */
@@ -793,7 +827,7 @@ async function containersStatus(driver) {
 }
 
 module.exports = {
-  cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName,
+  cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName, serverKeyringLine, withKeyringLine,
   listComposeImages, serverArch,
   pullImages, startCore, reachableSeeds, switchSeed, diagnostics, warmKeyExists, createWarmKey, getConsensusKey,
   registerHost, launchAll, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,

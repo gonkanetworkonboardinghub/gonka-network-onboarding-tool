@@ -14,10 +14,10 @@ named under each part.
 
 ## What never goes to your server
 
-- **Your wallet.** Its key and its 24 words are made and kept on your own
-  computer (`src/services/wallet.js`, `src/services/keys.js`). The server only
-  ever gets your wallet's *public* key, written into `config.env` as
-  `ACCOUNT_PUBKEY`, as Gonka's guide does.
+- **Your wallet.** Its key, its 24 words and its passphrase are made and kept
+  on your own computer (`src/services/wallet.js`, `src/services/keys.js`). The
+  server only ever gets your wallet's *public* key, written into `config.env`
+  as `ACCOUNT_PUBKEY`, as Gonka's guide does.
 - **Your server password and your SSH key's passphrase.** They are used to
   connect and never saved, on your computer or anywhere else.
 - **Anything about you.** The only thing the app reports is that it was
@@ -71,7 +71,7 @@ Code: `src/services/fixes.js`.
    guide recommends for a node on one machine.
 3. **Your node's settings.** Writes two files into `~/gonka/deploy/join`:
    - `config.env`: the node's name and public address, your wallet's public
-     key, the passphrase that protects the server's own key (see below),
+     key, a password made just for the server's own key (see below),
      where model weights go, and which public Gonka node to sync from. If you
      chose HTTPS with automatic certificates, the DNS provider key you typed
      in goes here too, for Gonka's own certificate service.
@@ -137,14 +137,16 @@ Code: `src/services/mynode.js`.
 - Only if it was needed: the `gnot-container-mss` service and its script,
   `/usr/local/sbin/gnot-container-mss.sh`.
 
-## The passphrase in config.env
+## The password in config.env
 
 Gonka's node keeps the server's own key (the one it uses for its work) in an
-encrypted file, and reads the passphrase for that file from `config.env`.
-That's how Gonka's own guide sets up every node. GNOT uses the same
-passphrase you chose for your wallet, so there's only one to remember.
+encrypted file, and reads the password for that file from `config.env`, so it
+can start by itself. That's how Gonka's own guide sets up every node.
 
-That passphrase on its own can't touch your wallet or your GNK. Your
-wallet's key file exists only on your computer, and moving any GNK needs that
-file. Someone would need both your computer's wallet file and the
-passphrase. As with any password, pick one you don't use anywhere else.
+GNOT makes that password at random, just for the server's key. You never need
+to know it or type it, and it has nothing to do with your wallet: your
+wallet's passphrase never goes to your server.
+
+If the server already has a password in `config.env` (from an earlier setup),
+GNOT keeps it as it is, because the server's key opens only with the password
+it was made with.

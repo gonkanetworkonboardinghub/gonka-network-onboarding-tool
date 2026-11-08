@@ -65,7 +65,8 @@ The short version:
 - **Everything the app runs on your server** goes over your SSH connection.
   The setup's commands appear in the Activity log; Monitor/Vote runs only the
   ones you type and the shutdown steps in `src/services/mynode.js`. The app
-  never saves your server password or your passphrase on your computer. Step
+  never saves your server password or your passphrase on your computer, and
+  your wallet's passphrase never goes to your server. Step
   by step: [docs/what-gnot-does-on-your-server.md](docs/what-gnot-does-on-your-server.md).
 - **No accounts, and nothing about you is collected.** The app talks to Gonka network nodes,
   GitHub (the update manifest, releases, Gonka's official repository for

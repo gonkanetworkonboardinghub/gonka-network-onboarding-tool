@@ -69,6 +69,7 @@ const S = {
   governance: [],               // live governance model list
 
   configEnvText: "",
+  serverKeyringPassword: "",    // random, for the server's key only; kept in memory, never saved here
   warm: { address: "", existed: false },
   registered: false,
   granted: false,
@@ -298,6 +299,13 @@ function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
+
+/** A password for the server's own key: 48 random hex characters, safe as-is in config.env and in the shell. */
+function newServerPassword() {
+  const b = new Uint8Array(24);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 // Set by "Set up another node" just before the app reloads: open on Host Setup.
 const FRESH_SETUP_KEY = "gonka-fresh-setup";
 /** Take up the setup on offer: its answers, its finished steps. keepSsh keeps
@@ -2259,7 +2267,11 @@ RENDER.review = () => {
     const answers = {
       seeds: S.serverSeeds && S.serverSeeds.length ? S.serverSeeds : undefined,
       keyName: S.serverKeyName || ("node-" + Math.floor(100000 + Math.random() * 900000)),
-      keyringPassword: S.wallet.passphrase,   // reuse — one passphrase to remember
+      // The server's own key gets a password of its own, made here at random:
+      // the node reads it from config.env by itself, nobody ever types it, and
+      // the wallet's passphrase never goes to the server. A server whose
+      // config.env already holds one keeps it (deploy.writeConfigs).
+      keyringPassword: S.serverKeyringPassword || (S.serverKeyringPassword = newServerPassword()),
       mode: S.net.scheme,
       host: S.net.host,
       accountPubkey: S.wallet.pubkey,
