@@ -76,6 +76,8 @@ function monShortNum(n) {
 const monGnkShort = (ngonka) => monShortNum(Number(ngonka) / MON_NGONKA) + " GNK";
 const monUsd = (ngonka) => (MON.price ? "≈ $" + monShortNum(Number(ngonka) / MON_NGONKA * MON.price) : "");
 const monPct = (share, max = 1) => (Number(share) * 100).toLocaleString(monLang(), { maximumFractionDigits: max }) + "%";
+/** A turnout: whole percents, but a small one keeps a decimal, so a vote that has begun never reads "0%". */
+const monTurnout = (share) => share > 0 && share < 0.001 ? t("under 0.1%") : monPct(share, share > 0 && share < 0.1 ? 1 : 0);
 const monShort = (a) => (a && a.length > 20 ? a.slice(0, 10) + "…" + a.slice(-6) : a || "");
 const monModel = (m) => String(m).split("/").pop();
 const monDate = (iso) => { try { return new Date(iso).toLocaleDateString(monLang(), { year: "numeric", month: "short", day: "numeric" }); } catch (_) { return ""; } };
@@ -1879,7 +1881,8 @@ function monVotesHtml() {
             </div>` : ""}
           ${isLive && turnout !== null ? `
             <div class="mon-turnout"><div class="mon-turnout-bar"><i style="width:${(turnout * 100).toFixed(1)}%"></i><b style="left:${(p.quorum * 100).toFixed(1)}%"></b></div>
-            <span class="small">${esc(t("{voted} of the network's weight has voted. It needs {needs} to count.", { voted: monPct(turnout, 0), needs: monPct(p.quorum, 0) }))}</span></div>` : ""}
+            <span class="small">${esc(t("{voted} of the network's weight has voted. It needs {needs} to count.", { voted: monTurnout(turnout), needs: monPct(p.quorum, 0) }))}</span>
+            ${p.voters ? `<span class="small mon-voters">${esc(t(p.voters === 1 ? "1 wallet has voted. A vote counts by the weight behind it, so a wallet with no weight adds nothing." : "{n} wallets have voted. A vote counts by the weight behind it, so a wallet with no weight adds nothing.", { n: monNum(p.voters) }))}</span>` : ""}</div>` : ""}
           ${isLive ? monBallotHtml(p) : ""}
           ${why ? `<p class="small">${esc(why)}</p>` : ""}
           ${pays.length ? `<div class="mon-prop-pays">${pays.map((l) => `<div>${esc(l)}</div>`).join("")}${p.pays.recipients ? `<div class="small">${esc(t("recipients: {n}", { n: p.pays.recipients }))}</div>` : ""}</div>` : ""}

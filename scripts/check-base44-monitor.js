@@ -55,8 +55,8 @@ const pick = {
     capacity: `${o.capacity.length} ${settled(o.capacity[o.capacity.length - 1])}`
   }),
   votes: (g) => ({
-    rules: g.rules, hosts: g.hosts,
-    proposals: g.proposals.map((p) => `#${p.id} ${p.status} ${p.title} | ${p.does.join(",")} | ${JSON.stringify(p.pays)} | ${p.tally.yes} ${p.tally.no} ${p.tally.veto} ${p.tally.abstain}`),
+    rules: g.rules, hosts: g.hosts, total: `${g.totalWeight} ${g.weightFrom}`,
+    proposals: g.proposals.map((p) => `#${p.id} ${p.status} ${p.title} | ${p.does.join(",")} | ${JSON.stringify(p.pays)} | ${p.tally.yes} ${p.tally.no} ${p.tally.veto} ${p.tally.abstain} | ${p.turnout} ${p.voters}`),
     money: g.money && `${g.money.pool && g.money.pool.ngonka} ${g.money.govAccount && g.money.govAccount.ngonka}`
   }),
   node: (d) => ({

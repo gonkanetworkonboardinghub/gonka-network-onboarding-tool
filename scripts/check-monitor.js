@@ -145,6 +145,10 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   check("what it asks for, added up", prop.asked, 50000e9);
   check("what it does, in kinds", prop.does, ["spend", "upgrade"]);
   check("which version an upgrade moves to", prop.upgradeTo, { name: "v9", height: 77 });
+  check("a live vote carries how many wallets voted", tidyProposal({ id: "1", status: "PROPOSAL_STATUS_VOTING_PERIOD", messages: [] }, { totalWeight: 10, voters: 6 }).voters, 6);
+  check("…and null when that is unknown", tidyProposal({ id: "1", status: "PROPOSAL_STATUS_PASSED", messages: [] }, { totalWeight: 10 }).voters, null);
+  // Nov 9, 2026: 211,072 voted of 2,233,602 voting power is 9.45%, not the 10.3% the hosts' weights gave.
+  check("turnout is measured against the total it is given", tidyProposal({ id: "1", status: "PROPOSAL_STATUS_VOTING_PERIOD", messages: [] }, { totalWeight: 2233602, liveTally: { yes_count: "211072" } }).turnout, near(211072 / 2233602));
   check("a live tally replaces the final one", tidyProposal({ id: "1", status: "PROPOSAL_STATUS_VOTING_PERIOD", messages: [], final_tally_result: {} }, { totalWeight: 10, liveTally: { yes_count: "4" } }).tally.yes, 4);
   check("amounts in other coins are not counted as GNK", askedIn([{ amount: [{ denom: "uusdt", amount: "5" }] }]), 0);
   // Proposal #116's shape: GNK moved from the pool into the governance account and paid out

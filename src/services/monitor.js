@@ -898,7 +898,7 @@ async function governanceFile() {
   return govFile.data;
 }
 
-function tidyProposal(p, { totalWeight, quorum, threshold, liveTally, ctx }) {
+function tidyProposal(p, { totalWeight, quorum, threshold, liveTally, voters, ctx }) {
   const t = liveTally || p.final_tally_result || {};
   const yes = num(t.yes_count), no = num(t.no_count), veto = num(t.no_with_veto_count), abstain = num(t.abstain_count);
   const voted = yes + no + veto + abstain;
@@ -917,6 +917,8 @@ function tidyProposal(p, { totalWeight, quorum, threshold, liveTally, ctx }) {
     pays: payoutsIn(p.messages, ctx),
     upgradeTo: upgrade && upgrade.plan ? { name: upgrade.plan.name, height: num(upgrade.plan.height) } : null,
     tally: { yes, no, veto, abstain, voted },
+    // How many wallets voted, weight or not (live votes only; null when unknown).
+    voters: Number.isFinite(voters) ? voters : null,
     // Of those who voted yes or no; abstaining counts toward turnout only.
     yesShare: share(yes, yes + no + veto),
     turnout: totalWeight > 0 ? share(voted, totalWeight) : null,
@@ -953,26 +955,60 @@ async function everyProposal(seeds) {
   return propCache.list;
 }
 
+/**
+ * All the voting power there is: what the chain measures a vote's turnout
+ * against, the bonded validators' power. Hosts' epoch weights add up to less
+ * (Nov 9, 2026: 2,048,550 against 2,233,602), so a turnout measured against
+ * them read too high: 10% where the chain counted 9.4%. Gonka's staking pool
+ * reports 0, so the validator set is added up instead. 0 when unknown.
+ */
+async function votingPowerTotal(seeds) {
+  let total = 0, seen = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await ask(seeds, `/chain-api/cosmos/base/tendermint/v1beta1/validatorsets/latest?pagination.limit=200&pagination.offset=${seen}`);
+    const vals = (r && r.validators) || [];
+    total += vals.reduce((a, v) => a + num(v.voting_power), 0);
+    seen += vals.length;
+    if (!vals.length || seen >= num(r && r.pagination && r.pagination.total)) break;
+  }
+  return total;
+}
+
+/** How many wallets have voted on a proposal, whatever their weight. */
+async function votersOf(seeds, id) {
+  let n = 0, key = "";
+  for (let i = 0; i < 10; i++) {
+    const r = await ask(seeds, `/chain-api/cosmos/gov/v1/proposals/${id}/votes?pagination.limit=200` + (key ? "&pagination.key=" + encodeURIComponent(key) : ""));
+    n += ((r && r.votes) || []).length;
+    key = r && r.pagination && r.pagination.next_key;
+    if (!key) break;
+  }
+  return n;
+}
+
 async function proposals(seeds) {
-  const [list, params, mem, money] = await Promise.all([
+  const [list, params, mem, money, power] = await Promise.all([
     everyProposal(seeds),
     soft(ask(seeds, "/chain-api/cosmos/gov/v1/params/tallying")),
     soft(members(seeds)),
-    governanceFile()
+    governanceFile(),
+    soft(votingPowerTotal(seeds))
   ]);
   const ctx = money ? { gov: money.govAccount && money.govAccount.address, sale: (money.sale || []).map((s) => s.address), usdtDenom: money.usdt && money.usdt.denom } : {};
-  const totalWeight = mem ? mem.hosts.reduce((a, h) => a + h.weight, 0) : 0;
+  const hostsWeight = mem ? mem.hosts.reduce((a, h) => a + h.weight, 0) : 0;
+  // Turnout is measured as the chain measures it; the hosts' weights only stand in when that cannot be read.
+  const totalWeight = power > 0 ? power : hostsWeight;
   const tp = (params && params.params) || {};
   const rules = { quorum: num(tp.quorum), threshold: num(tp.threshold), veto: num(tp.veto_threshold) };
   const raw = list || [];
   const out = [];
   for (const p of raw) {
     const live = /VOTING_PERIOD/.test(String(p.status));
-    const tally = live ? await soft(ask(seeds, `/chain-api/cosmos/gov/v1/proposals/${p.id}/tally`)) : null;
-    out.push(tidyProposal(p, { totalWeight, quorum: rules.quorum, threshold: rules.threshold, liveTally: tally && tally.tally, ctx }));
+    const [tally, voters] = live ? await Promise.all([soft(ask(seeds, `/chain-api/cosmos/gov/v1/proposals/${p.id}/tally`)), soft(votersOf(seeds, p.id))]) : [null, undefined];
+    out.push(tidyProposal(p, { totalWeight, quorum: rules.quorum, threshold: rules.threshold, liveTally: tally && tally.tally, voters, ctx }));
   }
   out.sort((a, b) => (Number(b.status === "VOTING_PERIOD") - Number(a.status === "VOTING_PERIOD")) || (b.id - a.id));
-  return { rules, totalWeight, hosts: mem ? mem.hosts.length : 0, proposals: out, money: money || null };
+  return { rules, totalWeight, weightFrom: power > 0 ? "chain" : "hosts", hosts: mem ? mem.hosts.length : 0, proposals: out, money: money || null };
 }
 
 /** How one address voted on a proposal that is still open (the chain forgets votes afterwards). */
