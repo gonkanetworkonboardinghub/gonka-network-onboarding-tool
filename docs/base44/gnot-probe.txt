@@ -1,0 +1,49 @@
+PROMPT FOR BASE44 — a small new backend function, gnot-probe (read-only test)
+(no pictures; paste everything below and publish)
+
+CREATE A NEW BACKEND FUNCTION named gnot-probe with EXACTLY the code below, unchanged. Do not change gnot-monitor or anything else, and do not link it from any page.
+
+Why: since this afternoon the site's server cannot read some of Gonka's public records (a host's details on its page, which hosts were left out, what the last epoch paid), while the same records answer normally from elsewhere. This function only asks Gonka's three public nodes a few public questions, once each, and says what they answered, so the cause can be found. It reads nothing private and stores nothing.
+
+----- code for gnot-probe (start) -----
+const NODES = ["http://node1.gonka.ai:8000", "http://node2.gonka.ai:8000", "http://node3.gonka.ai:8000"];
+const HOST = "gonka1u7s3mpw4654l30vwzlzsxkhfrmscl6p4p80asy";
+const QUESTIONS = {
+  participant: `/chain-api/productscience/inference/inference/participant/${HOST}`,
+  hardware: `/chain-api/productscience/inference/inference/hardware_nodes/${HOST}`,
+  params: "/chain-api/productscience/inference/inference/params",
+  balance: `/chain-api/cosmos/bank/v1beta1/balances/${HOST}`,
+  epoch: "/api/v1/epochs/latest"
+};
+
+async function askOnce(url) {
+  const started = Date.now();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const text = await res.text();
+    return {
+      status: res.status,
+      ms: Date.now() - started,
+      server: res.headers.get("server"),
+      body: res.ok ? text.length + " bytes" : text.slice(0, 200)
+    };
+  } catch (e) {
+    return { status: null, ms: Date.now() - started, error: String((e && e.message) || e).slice(0, 200) };
+  }
+}
+
+Deno.serve(async () => {
+  const out = { at: new Date().toISOString(), answers: {} };
+  for (const node of NODES) {
+    out.answers[node] = {};
+    for (const [name, path] of Object.entries(QUESTIONS)) {
+      out.answers[node][name] = await askOnce(node + path);
+    }
+  }
+  return new Response(JSON.stringify(out, null, 2), {
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" }
+  });
+});
+----- code for gnot-probe (end) -----
+
+Change nothing else on the site.

@@ -114,6 +114,10 @@ async function getJson(url, timeoutMs = 10000) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (res.status === 404) return null;                    // "nothing recorded" is an answer, not a failure
   if (res.status === 503 || res.status === 429) { const e = new Error("the node asked us to slow down"); e.slowDown = true; throw e; }
+  // Cloudflare's own answers when the node behind it is down (520-530; node3 since Nov 9, 2026, as the
+  // website's server sees it): the node cannot be reached, nothing was refused. Counted as a refusal, it
+  // left a question one refusal from being given up on.
+  if (res.status >= 520 && res.status <= 530) throw new Error(`node down (Cloudflare ${res.status}) at ${url}`);
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
   return res.json();
 }
@@ -145,6 +149,20 @@ const AVOID_NODE_MS = 3 * 60 * 1000;
 const pace = {};                 // node -> { left, at }
 const failed = {};               // "node|kind" or "node|*" -> until when to leave it alone
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The last questions that went wrong, oldest first: what the website's server can say about itself. */
+const trouble = [];
+function noteTrouble(node, path, e) {
+  trouble.push({ at: new Date().toISOString(), node, path: String(path).split("?")[0], error: String((e && e.message) || e).replace(/ from https?:\/\/\S+/, "").slice(0, 200) });
+  if (trouble.length > 40) trouble.shift();
+}
+function recentTrouble() {
+  const now = Date.now();
+  return {
+    trouble: trouble.slice(),
+    leftAlone: Object.entries(failed).filter(([, until]) => until > now).map(([what, until]) => ({ what, forSeconds: Math.round((until - now) / 1000) })),
+    allowance: Object.fromEntries(Object.keys(pace).map((n) => [n, Math.round(allowance(n).left * 10) / 10]))
+  };
+}
 function allowance(node) {
   const p = pace[node] || (pace[node] = { left: ALLOWANCE, at: Date.now() });
   const now = Date.now();
@@ -164,6 +182,7 @@ async function paced(node, path, timeoutMs) {
     await turn(node);
     try { return await getJson(node + path, timeoutMs); }
     catch (e) {
+      if (e.slowDown) noteTrouble(node, path, new Error(`asked to slow down (try ${attempt + 1})`));
       if (!e.slowDown || attempt >= 2) throw e;
       allowance(node).left = 0;                          // told to slow down: start the allowance again
       await sleep(2000 * (attempt + 1));
@@ -190,6 +209,7 @@ function ask(seeds, path, timeoutMs) {
         resolve(answer);
       }, (e) => {
         pending--; last = e;
+        noteTrouble(node, path, e);
         // An HTTP error is about this kind of question; anything else means the node cannot be reached.
         failed[node + "|" + (/^HTTP \d/.test(String(e.message)) ? kind : "*")] = Date.now() + (/^HTTP \d/.test(String(e.message)) ? AVOID_KIND_MS : AVOID_NODE_MS);
         if (done) return;
@@ -1159,7 +1179,7 @@ module.exports = {
   epochNow, members, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
-  attention,
+  attention, recentTrouble,
   _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere }
 };
   return module.exports;
@@ -1291,6 +1311,9 @@ Deno.serve(async (req) => {
     const id = Math.round(Number(q.id));
     if (!(id > 0)) return wrong("That is not a proposal number.");
     a = await once(`vote|${id}|${address}`, async () => ({ vote: await Monitor.voteOf(SEEDS, id, address) }));
-  } else return wrong("Ask for view=price, network, votes, node, vote or answers.");
+  } else if (view === "errors") {
+    // What went wrong lately when this server asked Gonka's public nodes. Public questions only; nothing is kept for long.
+    a = { status: 200, data: { at: new Date().toISOString(), ...Monitor.recentTrouble() } };
+  } else return wrong("Ask for view=price, network, votes, node, vote, answers or errors.");
   return new Response(JSON.stringify(a.data), { status: a.status, headers });
 });

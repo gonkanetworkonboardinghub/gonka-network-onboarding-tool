@@ -177,7 +177,10 @@ Deno.serve(async (req) => {
     const id = Math.round(Number(q.id));
     if (!(id > 0)) return wrong("That is not a proposal number.");
     a = await once(\`vote|\${id}|\${address}\`, async () => ({ vote: await Monitor.voteOf(SEEDS, id, address) }));
-  } else return wrong("Ask for view=price, network, votes, node, vote or answers.");
+  } else if (view === "errors") {
+    // What went wrong lately when this server asked Gonka's public nodes. Public questions only; nothing is kept for long.
+    a = { status: 200, data: { at: new Date().toISOString(), ...Monitor.recentTrouble() } };
+  } else return wrong("Ask for view=price, network, votes, node, vote, answers or errors.");
   return new Response(JSON.stringify(a.data), { status: a.status, headers });
 });
 `;

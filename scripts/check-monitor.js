@@ -225,6 +225,7 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   const none = await node("none", () => ({ status: 404 }));
   const busy = await node("busy", (url, n) => (n === 1 ? { status: 503 } : { status: 200, body: { from: "busy" } }));
   const dead = "http://127.0.0.1:9";
+  const cfDown = await node("cfDown", () => ({ status: 521 }));
 
   check("a node that fails is passed over", await ask([broken.url, good.url], "/kind-a/one"), { from: "good" });
   hits.broken = 0;
@@ -235,8 +236,11 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   const t0 = Date.now();
   check("told to slow down: it waits and asks again", await ask([busy.url], "/kind-d/one"), { from: "busy" });
   check("…after a pause, not at once", Date.now() - t0, (ms) => ms >= 1900);
+  // Nov 9, 2026: node3 down behind Cloudflare (521) plus one refusal used to give the question up.
+  check("a node down behind Cloudflare is not a refusal", await ask([cfDown.url, broken.url, good.url], "/kind-f/one"), { from: "good" });
+  check("…and what went wrong is kept", M.recentTrouble().trouble.some((x) => /Cloudflare 521/.test(x.error)), true);
   check("when no node answers, it fails plainly", await ask([dead], "/kind-e/one").then(() => "answered", () => "failed"), "failed");
-  for (const n of [good, broken, none, busy]) n.close();
+  for (const n of [good, broken, none, busy, cfDown]) n.close();
 
   console.log(failed ? `\n${failed} FAILED` : "\nall good");
   process.exit(failed ? 1 : 0);
