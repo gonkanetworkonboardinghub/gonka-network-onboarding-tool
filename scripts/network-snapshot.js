@@ -19,6 +19,7 @@
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
+const monitor = require("../src/services/monitor");
 
 const GAP_MS = 800;
 const INF = "/chain-api/productscience/inference/inference";
@@ -137,6 +138,15 @@ const UNDER_REPORTED_ABOVE = 3;
     above: UNDER_REPORTED_ABOVE
   };
 
+  // Whether each host's public address answers, asked from here: GitHub's
+  // machines reach every host, while the website's server gets a 403 from its
+  // own gateway for most of them, a switched-off one too (monitor.settleKnock).
+  const reach = { at: new Date().toISOString(), hosts: {} };
+  await Promise.all((ap.participants || []).map(async (p) => {
+    const r = await monitor._internal.knockHere(p.inference_url).catch(() => null);
+    if (r) reach.hosts[p.index] = { ok: r.ok, status: r.status };
+  }));
+
   const supply = await getJson(`${seed}/chain-api/cosmos/bank/v1beta1/supply/by_denom?denom=ngonka`).catch(() => null);
   const pool = await getJson(`${seed}/chain-api/cosmos/distribution/v1beta1/community_pool`).catch(() => null);
   const out = {
@@ -149,6 +159,7 @@ const UNDER_REPORTED_ABOVE = 3;
     models: Object.fromEntries(Object.entries(setups).map(([m, byKey]) => [m,
       Object.values(byKey).map((s) => ({ gpus: s.gpus, machines: s.machines, hosts: s.hosts.size }))
         .sort((a, b) => b.machines - a.machines)])),
+    reach,
     // The size most GPUs of a kind report (a few report a little less).
     vram: Object.fromEntries(Object.entries(sizes).map(([kind, by]) =>
       [kind, Number(Object.entries(by).sort((a, b) => b[1] - a[1])[0][0])]))
@@ -156,5 +167,6 @@ const UNDER_REPORTED_ABOVE = 3;
   fs.writeFileSync(outPath, JSON.stringify(out) + "\n");
   console.log(`epoch ${epoch}: ${totals.hosts} hosts, ${totals.gpus} GPUs reported (${totals.gpusWorking} on working machines), ` +
     `weight of about ${totals.h100 ? totals.h100.equivalent : "?"} H100s, ${totals.underReported.hosts} hosts under-reporting with ${(totals.underReported.weightShare * 100).toFixed(0)}% of the weight, ` +
+    `${Object.values(reach.hosts).filter((r) => !r.ok).length} of ${Object.keys(reach.hosts).length} public addresses not answering, ` +
     `supply ${out.supply ? Math.round(out.supply / 1e9).toLocaleString("en") : "?"} GNK, community pool ${out.communityPool ? Math.round(out.communityPool / 1e9).toLocaleString("en") : "?"} GNK, ${asked} questions`);
 })().catch((e) => { console.error("network-snapshot failed: " + e.message); process.exit(1); });

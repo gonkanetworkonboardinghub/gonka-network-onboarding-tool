@@ -160,6 +160,16 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   check("USDT paid straight from the pool is counted too", [p116.poolUsdt, p116.usdt], [10000e6, 59425e6]);
   check("the governance account is not counted as a recipient", p116.recipients, 2);
 
+  // A 403 from the website server's gateway says nothing; the data job's knock decides (settleKnock).
+  const sk = M._internal.settleKnock;
+  const R = { at: new Date(Date.now() - 3600e3).toISOString(), hosts: { [B]: { ok: false, status: null }, [ME]: { ok: true, status: 200 } } };
+  check("a 403, the data job saw it off: not answering", sk({ ok: true, status: 403 }, R, B).ok, false);
+  check("a 403, the data job saw it answer: answering", sk({ ok: true, status: 403 }, R, ME).ok, true);
+  check("a 403 and no record of the host: still answering, never a false alarm", sk({ ok: true, status: 403 }, R, "gonka1" + "x".repeat(38)).ok, true);
+  check("a record over 12 hours old is not used", sk({ ok: true, status: 403 }, { ...R, at: new Date(Date.now() - 13 * 3600e3).toISOString() }, B).ok, true);
+  check("a 200 is never overruled", sk({ ok: true, status: 200 }, R, B).ok, true);
+  check("no answer at all stays not answering", sk({ ok: false, status: null }, R, ME).ok, false);
+
   /* ---- the list of watched nodes ---- */
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gnot-monitor-"));
   const saved = M.saveNodes(dir, [{ address: ME, name: "  My\u0007 node  " }, { address: "gonka1nope" }, { address: ME, name: "again" }, { address: " " + B + " ", name: "x".repeat(90) }, null, { address: "cosmos1" + "a".repeat(38) }]);

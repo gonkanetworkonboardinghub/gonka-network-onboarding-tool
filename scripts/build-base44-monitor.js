@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
     // The addresses are the ones the hosts registered, read here: a visitor cannot name one.
     a = await once("answers", async () => {
       const mem = await Monitor.members(SEEDS);
-      const got = await Promise.all(mem.hosts.map((h) => Monitor.knock(h.url)));
+      const got = await Promise.all(mem.hosts.map((h) => Monitor.knock(h.url, h.address)));
       return {
         epoch: mem.epoch,
         answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].ok : null])),

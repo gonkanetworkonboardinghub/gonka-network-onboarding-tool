@@ -516,8 +516,8 @@ function devshardWork(use, address, current) {
  * saying no: one lost answer is not a node gone. null when there is no public
  * address to ask.
  */
-async function answers(url) {
-  const k = await knock(url);
+async function answers(url, address) {
+  const k = await knock(url, address);
   return k ? k.ok : null;
 }
 
@@ -529,7 +529,37 @@ async function answers(url) {
  * there, and it said every host answered, the ended one too (2026-10-31).
  * null when there is no public address to ask.
  */
-async function knock(url) {
+async function knock(url, address) {
+  const own = await knockHere(url);
+  // A 403 says nothing about the node (see settleKnock): ask what the data job saw.
+  if (own && own.status === 403 && address) {
+    const file = await networkFile();
+    return settleKnock(own, file && file.reach, address);
+  }
+  return own;
+}
+
+/**
+ * When a knock from here cannot tell, what the data job's knock from GitHub's
+ * machines saw (network.json "reach", scripts/network-snapshot.js) decides, if
+ * it is less than REACH_MAX_AGE old. A 403 cannot tell: the website's server
+ * reaches the internet through a gateway that hands back 403 for most hosts,
+ * one that was switched off too (seen 2026-11-09, when 21 of 26 hosts answered
+ * it 403 and every live one answered 200 from anywhere else). Without a recent
+ * record a 403 still counts as answering, so there is never a false alarm.
+ */
+const REACH_MAX_AGE = 12 * 3600 * 1000;
+function settleKnock(own, reach, address, now = Date.now()) {
+  if (!own || own.status !== 403 || !reach || !reach.hosts || !address) return own;
+  const age = now - Date.parse(reach.at || "");
+  if (!(age >= 0 && age < REACH_MAX_AGE)) return own;
+  const seen = reach.hosts[address];
+  if (!seen || typeof seen.ok !== "boolean") return own;
+  return { ok: seen.ok, status: own.status, seenBy: "data", seenAt: reach.at };
+}
+
+/** One knock from this computer: { ok, status }, or null when there is no public address to ask. */
+async function knockHere(url) {
   let u;
   try { u = new URL(String(url || "")); } catch (_) { return null; }
   if (!/^https?:$/.test(u.protocol)) return null;
@@ -551,7 +581,7 @@ async function knock(url) {
 async function overview(seeds, address, { epochs = 30 } = {}) {
   const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const me = mem.hosts.find((h) => h.address === address);
-  const [hist, answering] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? answers(me.url) : null]);
+  const [hist, answering] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? answers(me.url, address) : null]);
   const view = summarise({ address, now, mem, hist, raw });
   view.standing.answers = answering;
   view.work = devshardWork(use, address, mem.epoch || now.index);
@@ -1007,5 +1037,5 @@ module.exports = {
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes,
   attention,
-  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt }
+  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere }
 };
