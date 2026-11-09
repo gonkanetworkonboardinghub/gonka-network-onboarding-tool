@@ -147,6 +147,18 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
   check("which version an upgrade moves to", prop.upgradeTo, { name: "v9", height: 77 });
   check("a live tally replaces the final one", tidyProposal({ id: "1", status: "PROPOSAL_STATUS_VOTING_PERIOD", messages: [], final_tally_result: {} }, { totalWeight: 10, liveTally: { yes_count: "4" } }).tally.yes, 4);
   check("amounts in other coins are not counted as GNK", askedIn([{ amount: [{ denom: "uusdt", amount: "5" }] }]), 0);
+  // Proposal #116's shape: GNK moved from the pool into the governance account and paid out
+  // from there, vested; USDT paid both straight from the pool and from the community sale.
+  const GOV = "gonka1" + "g".repeat(38), SALE = "gonka1" + "s".repeat(38), U = "ibc/USDT";
+  const p116 = M._internal.payoutsIn([
+    { "@type": "/cosmos.distribution.v1beta1.MsgCommunityPoolSpend", recipient: B, amount: [{ denom: U, amount: "10000000000" }] },
+    { "@type": "/cosmwasm.wasm.v1.MsgExecuteContract", contract: SALE, msg: { withdraw_ibc: { denom: U, amount: "59425000000", recipient: ME } } },
+    { "@type": "/cosmos.distribution.v1beta1.MsgCommunityPoolSpend", recipient: GOV, amount: [{ denom: "ngonka", amount: "85000000000000" }] },
+    { "@type": "/inference.streamvesting.MsgBatchTransferWithVesting", sender: GOV, outputs: [{ recipient: B, amount: [{ denom: "ngonka", amount: "30000000000000" }] }, { recipient: ME, amount: [{ denom: "ngonka", amount: "55000000000000" }] }] }
+  ], { gov: GOV, sale: [SALE], usdtDenom: U });
+  check("GNK moved into the governance account and paid from there counts once", [p116.pool, p116.gov, p116.toSale], [0, 85000e9, 0]);
+  check("USDT paid straight from the pool is counted too", [p116.poolUsdt, p116.usdt], [10000e6, 59425e6]);
+  check("the governance account is not counted as a recipient", p116.recipients, 2);
 
   /* ---- the list of watched nodes ---- */
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gnot-monitor-"));

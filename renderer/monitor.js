@@ -1724,6 +1724,7 @@ function monPays(p) {
   const lines = [];
   if (x.toSale) lines.push(t(did ? "Moves {amount} from the community pool into the community sale" : "Would move {amount} from the community pool into the community sale", { amount: monGnk(x.toSale) }));
   if (x.pool) lines.push(t(did ? "Pays {amount} from the community pool" : "Would pay {amount} from the community pool", { amount: monGnk(x.pool) }));
+  if (x.poolUsdt) lines.push(t(did ? "Pays {amount} from the community pool" : "Would pay {amount} from the community pool", { amount: monUsdt(x.poolUsdt, false) }));
   if (x.gov) lines.push(t(did ? "Pays {amount} from the governance account, unlocking over time" : "Would pay {amount} from the governance account, unlocking over time", { amount: monGnk(x.gov) }));
   if (x.usdt) lines.push(t(did ? "Pays {amount} from the community sale" : "Would pay {amount} from the community sale", { amount: monUsdt(x.usdt, false) }));
   return lines;
@@ -1742,7 +1743,7 @@ function monMoneyHtml() {
       ${monTile(t("Community pool"), monGnkShort(m.pool.ngonka), monUsd(m.pool.ngonka))}
       ${sale ? monTile(t("Community sale"), monGnkShort(sale.ngonka), t("left to sell · {usdt} in hand", { usdt: monUsdt(sale.usdt) })) : ""}
       ${monTile(t("Governance account"), monGnkShort(m.govAccount.ngonka), monUsd(m.govAccount.ngonka))}
-      ${monTile(t("Paid out by proposals"), monUsdt(m.paid.usdt), t("and {gnk}", { gnk: monGnkShort(paidGnk) }))}
+      ${monTile(t("Paid out by proposals"), monUsdt((m.paid.usdt || 0) + (m.paid.usdtFromPool || 0)), t("and {gnk}", { gnk: monGnkShort(paidGnk) }))}
     </div>
     ${more("How does this money work?", `
       <p>${esc(t("Only a passed proposal can spend from the community pool, the governance account or the community sale."))}</p>
@@ -1757,7 +1758,7 @@ function monMoneyHtml() {
 function monAskHtml(p) {
   const x = p.pays || {};
   const gnk = (x.pool || 0) + (x.gov || 0) + (x.toSale || 0);
-  const usdt = x.usdt || 0;
+  const usdt = (x.usdt || 0) + (x.poolUsdt || 0);
   if (!gnk && !usdt) return "";
   const dec = (MON.gov && MON.gov.money && MON.gov.money.usdt && MON.gov.money.usdt.decimals) || 6;
   const label = p.status === "PASSED" ? t("Paid") : p.status === "VOTING_PERIOD" ? t("Asks for") : t("Asked for");

@@ -82,15 +82,20 @@ const ngonka = (list) => (list || []).reduce((a, c) => (/^ngonka$/i.test(c.denom
 
   // What each passed proposal paid, and from where.
   const payouts = [];
-  const paid = { fromPool: 0, toSale: 0, fromGov: 0, usdt: 0 };
+  const usdtIn = (list) => (usdtDenom ? (list || []).reduce((a, c) => (c.denom === usdtDenom ? a + Math.floor(Number(c.amount) || 0) : a), 0) : 0);
+  const paid = { fromPool: 0, toSale: 0, fromGov: 0, usdt: 0, usdtFromPool: 0 };
   for (const p of all.filter((x) => /PASSED/.test(x.status))) {
-    const row = { id: Number(p.id), title: p.title || "", ended: p.voting_end_time || null, fromPool: 0, toSale: 0, fromGov: 0, usdt: 0, recipients: 0 };
+    const row = { id: Number(p.id), title: p.title || "", ended: p.voting_end_time || null, fromPool: 0, toSale: 0, fromGov: 0, usdt: 0, usdtFromPool: 0, recipients: 0 };
     const to = new Set();
     for (const m of p.messages || []) {
       const type = String(m["@type"]).split(".").pop();
       if (type === "MsgCommunityPoolSpend") {
-        const a = ngonka(m.amount);
-        if (saleAddresses.has(m.recipient)) row.toSale += a; else { row.fromPool += a; to.add(m.recipient); }
+        // From the pool into the governance account is only a move: what the
+        // governance account then pays out is counted once, as fromGov.
+        if (m.recipient === govAddress) continue;
+        const a = ngonka(m.amount), u = usdtIn(m.amount);
+        if (saleAddresses.has(m.recipient)) row.toSale += a;
+        else { row.fromPool += a; row.usdtFromPool += u; if (a || u) to.add(m.recipient); }
       } else if (type === "MsgBatchTransferWithVesting" && m.sender === govAddress) {
         for (const o of m.outputs || []) { row.fromGov += ngonka(o.amount); to.add(o.recipient); }
       } else if (type === "MsgTransferWithVesting" && (m.sender === govAddress || m.from_address === govAddress)) {
@@ -103,9 +108,9 @@ const ngonka = (list) => (list || []).reduce((a, c) => (/^ngonka$/i.test(c.denom
     }
     to.delete(undefined);
     row.recipients = to.size;
-    if (row.fromPool || row.toSale || row.fromGov || row.usdt) {
+    if (row.fromPool || row.toSale || row.fromGov || row.usdt || row.usdtFromPool) {
       payouts.push(row);
-      for (const f of ["fromPool", "toSale", "fromGov", "usdt"]) paid[f] += row[f];
+      for (const f of ["fromPool", "toSale", "fromGov", "usdt", "usdtFromPool"]) paid[f] += row[f];
     }
   }
   payouts.sort((a, b) => b.id - a.id);
@@ -138,5 +143,5 @@ const ngonka = (list) => (list || []).reduce((a, c) => (/^ngonka$/i.test(c.denom
   const g = (n) => Math.round(n / 1e9).toLocaleString("en");
   console.log(`${all.length} proposals, ${payouts.length} paid something: ${g(paid.fromPool)} GNK from the pool to people, ` +
     `${g(paid.toSale)} GNK into the sale, ${g(paid.fromGov)} GNK from the governance account, ` +
-    `${(paid.usdt / 10 ** usdtDecimals).toLocaleString("en")} USDT. Pool ${g(out.pool.ngonka)} GNK; ${asked} questions`);
+    `${((paid.usdt + paid.usdtFromPool) / 10 ** usdtDecimals).toLocaleString("en")} USDT. Pool ${g(out.pool.ngonka)} GNK; ${asked} questions`);
 })().catch((e) => { console.error("governance-snapshot failed: " + e.message); process.exit(1); });

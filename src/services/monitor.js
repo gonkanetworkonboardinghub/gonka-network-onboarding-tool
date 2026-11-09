@@ -827,14 +827,19 @@ function askedIn(messages) {
  */
 function payoutsIn(messages, ctx = {}) {
   const coinsOf = (list) => (list || []).reduce((a, c) => (/^ngonka$/i.test(c.denom) ? a + num(c.amount) : a), 0);
+  const usdtOf = (list) => (ctx.usdtDenom ? (list || []).reduce((a, c) => (c.denom === ctx.usdtDenom ? a + num(c.amount) : a), 0) : 0);
   const sale = new Set(ctx.sale || []);
-  const out = { pool: 0, toSale: 0, gov: 0, usdt: 0, recipients: 0 };
+  const out = { pool: 0, toSale: 0, gov: 0, usdt: 0, poolUsdt: 0, recipients: 0 };
   const to = new Set();
   for (const m of messages || []) {
     const type = String(m["@type"] || "").split(".").pop();
     if (type === "MsgCommunityPoolSpend") {
-      const a = coinsOf(m.amount);
-      if (sale.has(m.recipient)) out.toSale += a; else { out.pool += a; to.add(m.recipient); }
+      // GNK sent from the pool to the governance account only moves it there;
+      // the governance account's own payout of it is counted below, once.
+      if (ctx.gov && m.recipient === ctx.gov) continue;
+      const a = coinsOf(m.amount), u = usdtOf(m.amount);
+      if (sale.has(m.recipient)) out.toSale += a;
+      else { out.pool += a; out.poolUsdt += u; if (a || u) to.add(m.recipient); }
     } else if (type === "MsgBatchTransferWithVesting" && (!ctx.gov || m.sender === ctx.gov)) {
       for (const o of m.outputs || []) { out.gov += coinsOf(o.amount); to.add(o.recipient); }
     } else if (type === "MsgTransferWithVesting" && (!ctx.gov || m.sender === ctx.gov || m.from_address === ctx.gov)) {
