@@ -693,11 +693,25 @@ async function chainFacts(seed) {
  * paid in the last three finished epochs, from epochs.json and each epoch's
  * weights. Null when it cannot be read or does not add up.
  */
+/**
+ * Every host's pay for the recent epochs (epochs.json). The data job hands over
+ * the file it has just read (GNOT_EPOCHS_FILE), so its figures are never one run
+ * behind; the app reads the published copy. Null when there is neither.
+ */
+async function epochsRecord() {
+  // (typeof: the website's copy of this file runs where there may be no process)
+  const local = typeof process !== "undefined" && process.env ? process.env.GNOT_EPOCHS_FILE : "";
+  if (local) return JSON.parse(require("fs").readFileSync(local, "utf8"));
+  const url = K.get().epochsUrl;
+  return url ? getJson(url, 20000) : null;
+}
+
 async function typicalShare(facts) {
-  const url = K.get().epochsUrl, bp = facts.rewardParams;
-  if (!url || !bp || !bp.use_bitcoin_rewards) return null;
+  const bp = facts.rewardParams;
+  if (!bp || !bp.use_bitcoin_rewards) return null;
   try {
-    const file = await getJson(url, 20000);
+    const file = await epochsRecord();
+    if (!file) return null;
     const hosts = file.hosts || [];
     const done = (file.epochs || [])
       .filter((e) => e.e < facts.epochIndex && (e.r || []).some((r) => Number(r[1]) > 0))
@@ -735,10 +749,9 @@ async function typicalShare(facts) {
  * the record cannot be read or does not add up.
  */
 async function lastPaid(currentEpoch, mintedGnk) {
-  const url = K.get().epochsUrl;
-  if (!url) return null;
   try {
-    const file = await getJson(url, 20000);
+    const file = await epochsRecord();
+    if (!file) return null;
     const done = (file.epochs || [])
       .filter((e) => e.e < currentEpoch && (e.r || []).some((r) => Number(r[1]) > 0))
       .sort((a, b) => b.e - a.e)[0];

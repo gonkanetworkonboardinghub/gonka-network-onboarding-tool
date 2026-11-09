@@ -1,0 +1,20 @@
+PROMPT FOR BASE44 — Mine or buy: the provider tables on phones
+(no pictures; paste everything below and publish)
+
+On a phone, the table inside each provider's card under "Compare with providers" (open a provider card, for example Spheron) is wider than the screen: only RIG and MODEL fit, the other four columns sit behind a sideways scroll, model names are cut off, and the rows are very tall. Change only how it looks on narrow screens:
+
+1. When the screen is narrower than 640px, show each row of a provider's table as its own small card instead of a table row, one under another, with no sideways scrolling. Every provider's table, every row (the † rows too):
+   - First: the rig in bold (for example "2× H200"), with its small grey line under it when it has one ("2 copies at once"), and its † when it has one.
+   - Then the model ("MiniMax-M2.7"), allowed to wrap onto a second line, never cut off, with its small grey line under it ("best of 2 models").
+   - Then four lines, the label on the left in the same small grey capitals as the table's headers, the value on the right:
+       GNK A DAY            450 ≈ $73.29
+       RENT BELOW           $3.05/h
+       CHEAPEST DEDICATED   $11.18/h, with its small grey line under it ("noida-india · CUDA 13.0"); or the "None with what a node needs …" text, wrapping
+       EACH DAY             −$195.13 short each day (the same colours as in the table)
+   - The (i) next to each header becomes an (i) next to the same label in the card, with the same explanation.
+2. The text under the table ("From Spheron's public price list …" and the † note) stays under the cards, unchanged.
+3. On screens 640px wide or wider, keep the table exactly as it is now.
+
+4. Also on phones, at the top of Mine or buy, in a rig's card, "Machines now" for a rig no host runs reads "0" with "measured on other H200 machines" squeezed beside it. On narrow screens put "measured on other … machines" on its own line under the 0, right-aligned, in the small grey text.
+
+Add any new words to every language the site offers. Change nothing else on the site.

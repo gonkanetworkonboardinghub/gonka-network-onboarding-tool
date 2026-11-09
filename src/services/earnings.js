@@ -279,7 +279,8 @@ async function chainFacts(seed) {
  * behind; the app reads the published copy. Null when there is neither.
  */
 async function epochsRecord() {
-  const local = process.env.GNOT_EPOCHS_FILE;
+  // (typeof: the website's copy of this file runs where there may be no process)
+  const local = typeof process !== "undefined" && process.env ? process.env.GNOT_EPOCHS_FILE : "";
   if (local) return JSON.parse(require("fs").readFileSync(local, "utf8"));
   const url = K.get().epochsUrl;
   return url ? getJson(url, 20000) : null;
