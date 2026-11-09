@@ -1,0 +1,45 @@
+# Starts the data job (earnings.yml) a couple of minutes after each epoch's
+# claim block, the moment the website's numbers change on the chain: the
+# previous epoch's pay is claimed and the new epoch's hosts and weights are
+# known. See scripts/epoch-watch.js.
+#
+# GitHub runs schedules late or not at all, so this is started three ways: its
+# own schedule, the end of every data job run, and by hand. A run only waits
+# when the claim block is within its reach (about five and a half hours) and
+# stops at once otherwise, and only one runs at a time.
+name: Epoch watch
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: epoch-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            src
+            scripts/epoch-watch.js
+            package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Wait for the next claim block, then start the data job
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WATCH_MINUTES: "335"
+        run: node scripts/epoch-watch.js
