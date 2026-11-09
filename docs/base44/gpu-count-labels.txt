@@ -1,0 +1,19 @@
+PROMPT FOR BASE44 — say plainly that the GPU numbers are a count of GPUs, not H100 equivalents
+(no pictures; paste everything below and publish)
+
+A visitor asked whether the GPU numbers on The network page are all the GPUs, or H100 equivalents. They are a count of GPUs (each one counts as 1, whatever its kind), but the page only says so when you point at the chart. Make it plain, on the page itself. Only these words change; the numbers, the data and everything else stay exactly as they are.
+
+On Monitor/Vote → The network (/monitor/network):
+
+1. The tile "GPUS HOSTS REPORT, EPOCH {n}" (the one with 1,313 and "1,172 working"):
+   - Right under "{n} working", add one small grey line: "A count of GPUs, not H100 equivalents".
+   - Change the line "All the weight equals about {n} H100s" to: "In H100 equivalents: about {n}" (the same number as today), with an (i) after it that says: "All the network's weight, divided by what a typical H100 makes. Unlike the GPU count, it does not depend on what hosts report."
+   - The list of kinds under it (553 H100, 271 H200 …) stays as it is.
+
+2. The chart "GPUs hosts report, epoch by epoch": right under its title and above the chart, add one small grey line: "A count of GPUs: each one counts as 1, whatever its kind. Not H100 equivalents."
+
+3. The table "Every host": give the "GPUS" column header an (i), like the ones on WEIGHT and SHARE OF THE NETWORK, that says: "The GPUs this host reports, each counted as 1 whatever its kind, not H100 equivalents. Hosts report their own hardware, and the network does not check it."
+
+Use the same small grey text and the same (i) style the page already uses. Add the new words to every language the site offers, in the same plain style as the rest of the page (in Russian, "H100 equivalents" is "пересчёт на H100": "Число GPU, а не пересчёт на H100", "В пересчёте на H100: примерно {n}").
+
+Change nothing else on the site.

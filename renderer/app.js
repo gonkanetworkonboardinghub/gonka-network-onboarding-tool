@@ -475,6 +475,8 @@ const TIPS = {
   voteShare: "This choice's part of all the weight that voted.",
   machineWeight: "What this machine proved in Proof of Compute, before its model's rate.",
   machineCounts: "What this machine counts for in the epoch: what it proved times its model's rate. Each model has its own rate, which the network adjusts every epoch so each model gets its share of the weight. These add up to the node's weight.",
+  hostGpus: "The GPUs this host reports, each counted as 1 whatever its kind, not H100 equivalents. Hosts report their own hardware, and the network does not check it.",
+  h100Equivalent: "All the network's weight, divided by what a typical H100 makes. Unlike the GPU count, it does not depend on what hosts report.",
   hostWeight: "What the host's machines proved this epoch, each times its model's rate. The epoch's reward is shared out by it.",
   epochNeed: "The node's own upper estimate of the fees it may pay this epoch: a small fee for each Proof of Compute and hardware report.",
   canSpend: "What the node can spend on fees: your wallet's balance, capped by what is left of the fee allowance you gave it.",

@@ -725,7 +725,8 @@ function monNetworkTop(o) {
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs hosts report, epoch {n}", { n: o.epoch.index }))}${tip(TIPS.gpusReported)}</div>
         <div class="mon-tile-num">${g ? esc(monNum(g.total)) : "—"}</div>
         <div class="mon-tile-sub">${g ? esc(t("{n} working", { n: monNum(g.working) })) : "&nbsp;"}</div>
-        ${g && g.h100 ? `<div class="mon-tile-h100">${esc(t("All the weight equals about {n} H100s", { n: monNum(g.h100.equivalent) }))}</div>` : ""}
+        ${g ? `<div class="mon-tile-unit">${esc(t("A count of GPUs, not H100 equivalents"))}</div>` : ""}
+        ${g && g.h100 ? `<div class="mon-tile-h100">${esc(t("In H100 equivalents: about {n}", { n: monNum(g.h100.equivalent) }))}${tip(TIPS.h100Equivalent)}</div>` : ""}
         ${kindsNow.length ? `<div class="mon-tile-kinds">${kindsNow.slice(0, 6).map(([k, n]) => `<span><b>${esc(monNum(n))}</b> ${esc(k)}</span>`).join("")}${kindsNow.length > 6 ? `<span>+${esc(monNum(kindsNow.slice(6).reduce((a, x) => a + x[1], 0)))} ${esc(t("other"))}</span>` : ""}</div>` : ""}</div>
       <button class="mon-tile mon-tile-link" data-go="votes"><div class="mon-tile-label">${esc(t("Open votes"))}</div>
         <div class="mon-tile-num">${open === null ? "—" : esc(monNum(open))}</div>
@@ -820,7 +821,7 @@ function monGpusCard(o) {
       tip: [t("{n} GPUs reported", { n: monNum(c.gpus) }), monKindsLine(c.kinds), monEpochWhen(c)]
     }))
   });
-  return `<div class="card">${head}${plot}
+  return `<div class="card">${head}<p class="small mon-unit">${esc(t("A count of GPUs: each one counts as 1, whatever its kind. Not H100 equivalents."))}</p>${plot}
     <p class="small">${esc(t("{a} GPUs then, {b} in epoch {n}. Point at an epoch to see which kinds.", { a: monNum(cap[0].gpus), b: monNum(now.gpus), n: now.epoch }))}</p>
     ${more("What does this count?", `
       <p>${esc(t("Every card the hosts report on the machines that did work in that epoch. The hosts report their own hardware; the network does not check it. GPUs differ a great deal, so the mix matters as much as the number."))}</p>
@@ -856,7 +857,7 @@ function monHostRows(rows) {
   const topShare = Math.max(0.0001, ...rows.map((h) => h.share));
   return `
     <div class="mon-table mon-hosts-table">
-      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}</span><span>${esc(t("Models"))}</span><span class="r">${esc(t("Weight"))}${tip(TIPS.hostWeight)}</span><span>${esc(t("Share of the network"))}${tip(TIPS.share)}</span><span class="r">${esc(t("Last epoch"))}${tip(TIPS.lastEpochPaid)}</span><span class="r">${esc(t("Missed"))}${tip(TIPS.missedShare)}</span></div>
+      <div class="mon-row mon-row-head"><span>#</span><span>${esc(t("Host"))}</span><span class="r">${esc(t("GPUs"))}${tip(TIPS.hostGpus)}</span><span>${esc(t("Models"))}</span><span class="r">${esc(t("Weight"))}${tip(TIPS.hostWeight)}</span><span>${esc(t("Share of the network"))}${tip(TIPS.share)}</span><span class="r">${esc(t("Last epoch"))}${tip(TIPS.lastEpochPaid)}</span><span class="r">${esc(t("Missed"))}${tip(TIPS.missedShare)}</span></div>
       ${rows.map((h) => {
         const mine = MON.nodes.find((n) => n.address === h.address);
         return `
