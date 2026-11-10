@@ -1,4 +1,4 @@
-PROMPT FOR BASE44 — "Not answering": say when it was checked
+PROMPT FOR BASE44 — "Not answering": say when it was checked; Mine or buy: "/h" once
 (no pictures; paste everything below and publish)
 
 PART 1. REPLACE THE WHOLE CODE of the backend function gnot-monitor with EXACTLY the code below, unchanged — not rewritten, not shortened, not split, not reformatted. It is generated from the app's own code.
@@ -1340,5 +1340,7 @@ PART 2. Wherever the site says a host is not answering, add when that was checke
 2. A node's page (/monitor/node/...): the "Not answering" notice ends with the same "Checked {ago}."
 3. My nodes, if a followed node shows "not answering" there: the same.
 {ago} comes from checkedAt (view=answers) or standing.answersCheckedAt (view=node): when it is a time, write how long ago in the visitor's language, like "1 h 20 min ago" or "25 min ago"; when it is null, write "just now".
+
+PART 3. On Mine or buy (/mine-or-buy), RENT BELOW, for the rigs that show a range: write "/h" once, at the end, like "$10.94 – $15.49/h" (today it reads "$10.94/h – $15.49/h", which wraps badly on phones). The small per-GPU line under it already does this ("$1.37 – $1.94/h per GPU") and stays as it is.
 
 Add the new words to every language the site offers. Change nothing else on the site.
