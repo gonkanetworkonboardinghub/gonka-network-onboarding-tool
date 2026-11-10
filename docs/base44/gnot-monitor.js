@@ -688,9 +688,12 @@ async function knockHere(url) {
 async function overview(seeds, address, { epochs = 30 } = {}) {
   const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const me = mem.hosts.find((h) => h.address === address);
-  const [hist, answering] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? answers(me.url, address) : null]);
+  const [hist, knocked] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? knock(me.url, address) : null]);
   const view = summarise({ address, now, mem, hist, raw });
-  view.standing.answers = answering;
+  view.standing.answers = knocked ? knocked.ok : null;
+  // When that was found out: null means just now; a time means the data job's check from GitHub
+  // (the website's server cannot reach most hosts itself), which can be hours old.
+  view.standing.answersCheckedAt = knocked && knocked.seenAt ? knocked.seenAt : null;
   view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight
@@ -1303,7 +1306,9 @@ Deno.serve(async (req) => {
         epoch: mem.epoch,
         answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].ok : null])),
         // The HTTP status each address answered last, null for none: what this server's gateway hands back.
-        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null]))
+        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null])),
+        // When each answer was found out: null = just now, by this server; a time = the data job's check from GitHub.
+        checkedAt: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] && got[i].seenAt ? got[i].seenAt : null]))
       };
     });
   } else if (view === "vote") {

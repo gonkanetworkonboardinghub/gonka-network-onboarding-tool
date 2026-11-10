@@ -169,7 +169,9 @@ Deno.serve(async (req) => {
         epoch: mem.epoch,
         answers: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].ok : null])),
         // The HTTP status each address answered last, null for none: what this server's gateway hands back.
-        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null]))
+        status: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] ? got[i].status : null])),
+        // When each answer was found out: null = just now, by this server; a time = the data job's check from GitHub.
+        checkedAt: Object.fromEntries(mem.hosts.map((h, i) => [h.address, got[i] && got[i].seenAt ? got[i].seenAt : null]))
       };
     });
   } else if (view === "vote") {

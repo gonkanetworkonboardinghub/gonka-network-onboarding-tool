@@ -601,9 +601,12 @@ async function knockHere(url) {
 async function overview(seeds, address, { epochs = 30 } = {}) {
   const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const me = mem.hosts.find((h) => h.address === address);
-  const [hist, answering] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? answers(me.url, address) : null]);
+  const [hist, knocked] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? knock(me.url, address) : null]);
   const view = summarise({ address, now, mem, hist, raw });
-  view.standing.answers = answering;
+  view.standing.answers = knocked ? knocked.ok : null;
+  // When that was found out: null means just now; a time means the data job's check from GitHub
+  // (the website's server cannot reach most hosts itself), which can be hours old.
+  view.standing.answersCheckedAt = knocked && knocked.seenAt ? knocked.seenAt : null;
   view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight
