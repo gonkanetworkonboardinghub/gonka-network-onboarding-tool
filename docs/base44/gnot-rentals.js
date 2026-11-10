@@ -1099,8 +1099,14 @@ function compare(earnings, offers) {
   for (const c of earnings.configs || []) {
     if (c.deployable === false || !(c.copies <= 1)) continue;
     setups.set(`${c.gpuClass}|${c.model}`, { gpuClass: c.gpuClass, model: c.model, per: c.gpuCount,
-      perGpuHour: perGpu(c.breakEvenPerHour, c.gpuCount), perGpuGnk: perGpu(c.gnkPerDay, c.gpuCount), perGpuUsd: perGpu(c.usdPerDay, c.gpuCount) });
+      perGpuHour: perGpu(c.breakEvenPerHour, c.gpuCount), perGpuGnk: perGpu(c.gnkPerDay, c.gpuCount), perGpuUsd: perGpu(c.usdPerDay, c.gpuCount),
+      // What the middle half of hosts running it earn (earnings.js range), per GPU in GNK a day.
+      perGpuLow: c.range ? c.range.low / c.gpuCount : null, perGpuHigh: c.range ? c.range.high / c.gpuCount : null });
   }
+  const gnkUsd = earnings.price && earnings.price.usd ? earnings.price.usd : null;
+  // What is left each day after the rent, for the middle half of hosts: { low, high } in dollars.
+  const gapRange = (range, best) => (range && best && gnkUsd
+    ? { low: range.low * gnkUsd - best.pricePerHour * 24, high: range.high * gnkUsd - best.pricePerHour * 24 } : null);
   for (const c of earnings.noHosts || []) {
     if (c.copies > 1 || setups.has(`${c.gpuClass}|${c.model}`)) continue;
     setups.set(`${c.gpuClass}|${c.model}`, { gpuClass: c.gpuClass, model: c.model, per: c.gpuCount, perGpuHour: null, perGpuGnk: null, perGpuUsd: null });
@@ -1119,7 +1125,8 @@ function compare(earnings, offers) {
   for (const [gpu, counts] of sizes) for (const n of counts) {
     const runs = [...setups.values()].filter((s) => s.gpuClass === gpu && n % s.per === 0)
       .map((s) => ({ model: s.model, copies: n / s.per, breakEvenPerHour: s.perGpuHour != null ? s.perGpuHour * n : null,
-        gnkPerDay: s.perGpuGnk != null ? s.perGpuGnk * n : null, usdPerDay: s.perGpuUsd != null ? s.perGpuUsd * n : null }))
+        gnkPerDay: s.perGpuGnk != null ? s.perGpuGnk * n : null, usdPerDay: s.perGpuUsd != null ? s.perGpuUsd * n : null,
+        range: s.perGpuLow != null ? { low: s.perGpuLow * n, high: s.perGpuHigh * n } : null }))
       .sort((a, b) => (b.breakEvenPerHour || 0) - (a.breakEvenPerHour || 0));
     if (!runs.length) continue;
     const here = offers.filter((o) => o.gpu === gpu && o.gpus === n).map((o) => ({ ...o, short: shortOf(o) }))
@@ -1133,7 +1140,8 @@ function compare(earnings, offers) {
       // Nothing with all a node needs: the cheapest anyway, with what it lacks.
       cheapest: best ? null : here[0] || null,
       // What the best-earning model leaves after the rent, per day.
-      gapPerDay: best && top != null ? (top - best.pricePerHour) * 24 : null
+      gapPerDay: best && top != null ? (top - best.pricePerHour) * 24 : null,
+      gapRange: gapRange(runs[0].range, best)
     });
   }
   // Cheapest first: what can be rented as it is, then offers lacking something,
@@ -1152,17 +1160,19 @@ function compare(earnings, offers) {
  * with its own row, after the rigs GNOT can set up.
  */
 function compareOwn(earnings, offers) {
+  const price = earnings.price && earnings.price.usd ? earnings.price.usd : null;
   return (earnings.configs || []).filter((c) => c.deployable === false).map((c) => {
     const here = offers.filter((o) => o.gpu === c.gpuClass && o.gpus === c.gpuCount).map((o) => ({ ...o, short: shortOf(o) }))
       .sort((a, b) => a.pricePerHour - b.pricePerHour);
     const best = here.find((o) => !o.short.length) || null;
     return {
       gpuClass: c.gpuClass, gpuCount: c.gpuCount, own: true,
-      runs: [{ model: c.model, copies: c.copies, breakEvenPerHour: c.breakEvenPerHour, gnkPerDay: c.gnkPerDay, usdPerDay: c.usdPerDay }],
+      runs: [{ model: c.model, copies: c.copies, breakEvenPerHour: c.breakEvenPerHour, gnkPerDay: c.gnkPerDay, usdPerDay: c.usdPerDay, range: c.range ? { low: c.range.low, high: c.range.high } : null }],
       offers: here.length,
       best,
       cheapest: best ? null : here[0] || null,
-      gapPerDay: best && c.breakEvenPerHour != null ? (c.breakEvenPerHour - best.pricePerHour) * 24 : null
+      gapPerDay: best && c.breakEvenPerHour != null ? (c.breakEvenPerHour - best.pricePerHour) * 24 : null,
+      gapRange: c.range && best && price ? { low: c.range.low * price - best.pricePerHour * 24, high: c.range.high * price - best.pricePerHour * 24 } : null
     };
   });
 }

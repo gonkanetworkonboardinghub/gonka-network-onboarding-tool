@@ -3516,9 +3516,21 @@ function renderRent() {
           + small(t("cheapest: {price}, {lacks}", { price: fmtUsd(row.cheapest.pricePerHour) + "/h", lacks: lacks(row.cheapest.short) }))
       : dim(t("No dedicated offer now"));
     // What it mines a day, and under it what that is worth.
-    const gnk = top.gnkPerDay == null ? dim(t("not measured")) : esc(fmtGnk(top.gnkPerDay)) + (top.usdPerDay == null ? "" : small("≈ " + fmtUsd(top.usdPerDay)));
-    const under = top.breakEvenPerHour == null ? "—" : esc(fmtUsd(top.breakEvenPerHour)) + "/h";
-    const day = row.gapPerDay == null ? "—"
+    // Where the middle half of hosts running it is measured, every money figure is that range.
+    const r = top.range, price = top.gnkPerDay ? top.usdPerDay / top.gnkPerDay : null;
+    const both = (a, b, f) => `${f(a)} – ${f(b)}`;
+    const gnk = top.gnkPerDay == null ? dim(t("not measured"))
+      : r && price ? esc(both(r.low, r.high, fmtGnk)) + small("≈ " + both(r.low * price, r.high * price, fmtUsd)) + small(t("the middle half of hosts"))
+      : esc(fmtGnk(top.gnkPerDay)) + (top.usdPerDay == null ? "" : small("≈ " + fmtUsd(top.usdPerDay)));
+    const under = top.breakEvenPerHour == null ? "—"
+      : r && price ? esc(both(r.low * price / 24, r.high * price / 24, fmtUsd)) + "/h" : esc(fmtUsd(top.breakEvenPerHour)) + "/h";
+    const g = row.gapRange;
+    const day = g
+      // Short at both ends, ahead at both ends, or short for some and ahead for others.
+      ? g.high < 0 ? `<b class="behind">${esc(both(-g.high, -g.low, fmtUsd))}</b>` + small(t("short each day"))
+        : g.low >= 0 ? `<b class="ahead">${esc(both(g.low, g.high, fmtUsd))}</b>` + small(t("left each day"))
+        : `<b>${esc("−" + fmtUsd(-g.low) + " – +" + fmtUsd(g.high))}</b>` + small(t("short for some, left for others, each day"))
+      : row.gapPerDay == null ? "—"
       : `<b class="${row.gapPerDay >= 0 ? "ahead" : "behind"}">${esc((row.gapPerDay >= 0 ? "+" : "−") + fmtUsd(Math.abs(row.gapPerDay)))}</b>`
         + small(row.gapPerDay >= 0 ? t("left each day") : t("short each day"));
     return `<tr><td class="mono">${rig}</td><td>${model}</td><td class="num">${gnk}</td><td class="num">${under}</td><td class="num">${offer}</td><td class="num">${day}</td></tr>`;
@@ -3595,7 +3607,7 @@ function earnCells(c, price) {
   const span = (a, b, f) => `${esc(f(a))} – ${esc(f(b))}`;
   if (r && price) {
     return `<td class="num">${span(r.low, r.high, fmtGnk)}<span class="per-gpu">${esc(t("the middle half of hosts"))}</span></td>
-      <td class="num">${span(r.low * price, r.high * price, fmtUsd)}</td>
+      <td class="num">${span(r.low * price, r.high * price, fmtUsd)}<span class="per-gpu">${esc(t("the middle half of hosts"))}</span></td>
       <td class="num">${span(r.low * price / 24, r.high * price / 24, fmtUsd)}/h<span class="per-gpu">${span(r.low * price / 24 / c.gpuCount, r.high * price / 24 / c.gpuCount, fmtUsd)}${esc(t("/h per GPU"))}</span></td>`;
   }
   return `<td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>

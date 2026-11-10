@@ -51,7 +51,7 @@ async function appEarnings() {
 const rig = (c) => `${c.gpuCount}x ${c.gpuClass} ${c.model.split("/").pop()}`;
 const near = (a, b) => (a === b) || (a > 0 && b > 0 && Math.abs(a - b) / Math.max(a, b) < 0.005);
 const line = (r) => `${r.gpuCount}x ${r.gpuClass}: ${r.best ? "$" + r.best.pricePerHour + " " + r.best.region
-  : r.cheapest ? "lacks " + r.cheapest.short.join("+") + " ($" + r.cheapest.pricePerHour + ")" : "none"} | pays under ${r.runs[0].breakEvenPerHour == null ? "n/m" : r.runs[0].breakEvenPerHour.toFixed(4)} | day ${r.gapPerDay == null ? "-" : r.gapPerDay.toFixed(2)}`;
+  : r.cheapest ? "lacks " + r.cheapest.short.join("+") + " ($" + r.cheapest.pricePerHour + ")" : "none"} | pays under ${r.runs[0].breakEvenPerHour == null ? "n/m" : r.runs[0].breakEvenPerHour.toFixed(4)} | day ${r.gapPerDay == null ? "-" : r.gapPerDay.toFixed(2)} | range ${r.runs[0].range ? r.runs[0].range.low.toFixed(1) + "-" + r.runs[0].range.high.toFixed(1) : "-"} | days ${r.gapRange ? r.gapRange.low.toFixed(2) + ".." + r.gapRange.high.toFixed(2) : "-"}`;
 
 (async () => {
   for (let attempt = 1; attempt <= 2; attempt++) {
