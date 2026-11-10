@@ -1,7 +1,7 @@
-PROMPT FOR BASE44 — Mine or buy: show where half the hosts fall
+PROMPT FOR BASE44 — Mine or buy: show what the middle half of hosts earn
 (no pictures; paste everything below and publish)
 
-Machines running the same setup earn different amounts, and the table only shows the middle machine. So, where the network measures that exact setup on enough hosts, the table shows the range half the hosts running it fall in instead of one number (today 8× H200: $262 – $371 a day), and the note above the table says what it is and why.
+Machines running the same setup earn different amounts, and the table only shows the middle machine. So, where the network measures that exact setup on enough hosts, the table shows what the middle half of the hosts running it earn instead of one number (today 8× H200: $262 – $371 a day), and the note above the table says what it is and why.
 
 PART 1. REPLACE THE WHOLE CODE of the backend function gnot-rentals with EXACTLY the code below, unchanged — not rewritten, not shortened, not split, not reformatted. It is generated from the app's own code.
 
@@ -1358,14 +1358,14 @@ Deno.serve(async (req) => {
 ----- code for gnot-rentals (end) -----
 
 PART 2. On Mine or buy (/mine-or-buy), in the rig table at the top (and in its phone cards), for each rig that has a range, the range takes the place of the single figure in all three money columns:
-1. GNK A DAY: "{low} – {high}" (rounded like the GNK a day figure, e.g. "1,543 – 2,183"), with a small grey line under it, the same style as "$1.83/h per GPU" under RENT BELOW: "half the hosts".
+1. GNK A DAY: "{low} – {high}" (rounded like the GNK a day figure, e.g. "1,543 – 2,183"), with a small grey line under it, the same style as "$1.83/h per GPU" under RENT BELOW: "the middle half of hosts".
 2. WORTH: "{low × price} – {high × price}" in dollars at today's price (the same price the WORTH column uses), e.g. "$262.31 – $371.11".
 3. RENT BELOW: "{low × price ÷ 24} – {high × price ÷ 24}/h", e.g. "$10.93 – $15.46/h", and its small per-GPU line the same way divided by the rig's GPU count: "$1.37 – $1.93/h per GPU".
 4. A rig with no range (null) keeps its single figures exactly as now. The rows with "No host runs this right now" stay as they are.
 5. The note above the table, "Measured on the machines running each setup now. Hosts report their own hardware and the network does not check it, and setups and tuning differ, so what your rig earns can be different. Before you rent, look at the hosts that run it.", becomes:
-   "Measured on the machines running each setup now. A range is where half the hosts running that setup fall, leaving aside the lowest and highest quarter, and hosts that report far fewer GPUs than their weight takes; a single figure is the middle machine, where too few hosts run it for a range. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."
+   "Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where too few hosts run it for a range. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."
    The "See every host →" link after it stays.
 
 The "Compare with providers" section and the calculator stay as they are.
 
-Add the new words to every language the site offers (in Russian: "половина хостов"). Change nothing else on the site.
+Add the new words to every language the site offers (in Russian: "средняя половина хостов"). Change nothing else on the site.

@@ -3594,7 +3594,7 @@ function earnCells(c, price) {
   const r = c.range;
   const span = (a, b, f) => `${esc(f(a))} – ${esc(f(b))}`;
   if (r && price) {
-    return `<td class="num">${span(r.low, r.high, fmtGnk)}<span class="per-gpu">${esc(t("half the hosts"))}</span></td>
+    return `<td class="num">${span(r.low, r.high, fmtGnk)}<span class="per-gpu">${esc(t("the middle half of hosts"))}</span></td>
       <td class="num">${span(r.low * price, r.high * price, fmtUsd)}</td>
       <td class="num">${span(r.low * price / 24, r.high * price / 24, fmtUsd)}/h<span class="per-gpu">${span(r.low * price / 24 / c.gpuCount, r.high * price / 24 / c.gpuCount, fmtUsd)}${esc(t("/h per GPU"))}</span></td>`;
   }
@@ -3642,7 +3642,7 @@ function renderEarnBody(d) {
 
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
-    <div class="rent-check">${esc(t("Measured on the machines running each setup now. A range is where half the hosts running that setup fall, leaving aside the lowest and highest quarter, and hosts that report far fewer GPUs than their weight takes; a single figure is the middle machine, where too few hosts run it for a range. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}
+    <div class="rent-check">${esc(t("Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where too few hosts run it for a range. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}
       <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
