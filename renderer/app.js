@@ -3605,6 +3605,15 @@ async function refreshPrice(known) {
 /** A range on one line, "3,057 – 3,862", kept whole; the words that explain it go on the small lines under it. */
 const stacked = (low, high) => `<span class="range-line">${esc(low)} – ${esc(high)}</span>`;
 
+/** Under a single figure, why it is not a range: "only 2 hosts run it", or measured on other models. */
+function whyOne(c) {
+  if (c.range) return "";
+  if (c.basis === "class") return t("measured on {gpu} running other models", { gpu: c.gpuClass });
+  if (c.measuredHosts == null) return "";
+  if (c.measuredHosts < 4) return c.measuredHosts === 1 ? t("measured on 1 host") : t("measured on {n} hosts", { n: c.measuredHosts });
+  return t("too few hosts for a range");
+}
+
 function earnCells(c, price) {
   const r = c.range;
   const span = (a, b, f) => `${esc(f(a))} – ${esc(f(b))}`;
@@ -3614,7 +3623,8 @@ function earnCells(c, price) {
       <td class="num">${stacked(fmtUsd(r.low * price), fmtUsd(r.high * price))}${half}</td>
       <td class="num">${stacked(fmtUsd(r.low * price / 24), fmtUsd(r.high * price / 24) + "/h")}<span class="per-gpu">${span(r.low * price / 24 / c.gpuCount, r.high * price / 24 / c.gpuCount, fmtUsd)}${esc(t("/h per GPU"))}</span></td>`;
   }
-  return `<td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
+  const why = whyOne(c);
+  return `<td class="num">${esc(fmtGnk(c.gnkPerDay))}${why ? `<span class="per-gpu">${esc(why)}</span>` : ""}</td>
       <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
       <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"
         // Rigs differ in size, so the per-GPU rate is what makes rows comparable.
@@ -3658,7 +3668,7 @@ function renderEarnBody(d) {
 
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
-    <div class="rent-check">${esc(t("Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where too few hosts run it for a range. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}
+    <div class="rent-check">${esc(t("Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where fewer than four hosts run that setup or where it is measured on the same GPUs running other models; the small line under it says which. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}
       <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
@@ -3762,12 +3772,30 @@ function renderEarnBody(d) {
     if (!c || !isFinite(paid) || paid <= 0) { out.innerHTML = ""; return; }
     const perDayCost = paid * Number(unit.value);
     const earnUsd = c.usdPerDay;
-    const lines = [t("It mines {gnk} GNK a day{usd}.", {
-      gnk: fmtGnk(c.gnkPerDay), usd: earnUsd == null ? "" : ", " + t("worth {usd}", { usd: fmtUsd(earnUsd) })
-    })];
+    const r = c.range && d.price.usd ? { low: c.range.low, high: c.range.high, lowUsd: c.range.low * d.price.usd, highUsd: c.range.high * d.price.usd } : null;
+    const two = (a, b, f) => `${f(a)} – ${f(b)}`;
+    const lines = [r
+      ? t("It mines {gnk} GNK a day{usd}.", { gnk: two(r.low, r.high, fmtGnk), usd: ", " + t("worth {usd}", { usd: two(r.lowUsd, r.highUsd, fmtUsd) }) })
+      : t("It mines {gnk} GNK a day{usd}.", { gnk: fmtGnk(c.gnkPerDay), usd: earnUsd == null ? "" : ", " + t("worth {usd}", { usd: fmtUsd(earnUsd) }) })];
+    if (r) lines.push(t("That range is what the middle half of the hosts running it earn."));
+    else if (c.basis === "class") lines.push(t("One figure, not a range: no host runs this model on {gpu}, so it is measured on {gpu} running other models.", { gpu: c.gpuClass }));
+    else if (c.measuredHosts != null) lines.push(c.measuredHosts === 1 ? t("One figure, not a range: it is measured on only 1 host.")
+      : c.measuredHosts < 4 ? t("One figure, not a range: it is measured on only {n} hosts.", { n: c.measuredHosts })
+      : t("One figure, not a range: too few hosts for one, once hosts that report far fewer GPUs than their weight takes are left out."));
     if (c.machines != null) lines.push(t("Machines running this now: {m} · hosts: {h}", { m: c.machines, h: c.hosts }));
     lines.push(t("You pay {usd} a day.", { usd: fmtUsd(perDayCost) }));
-    if (earnUsd != null) {
+    if (earnUsd != null && r) {
+      // The same answer for the middle half of hosts: behind at both ends, ahead at both, or either.
+      const lo = r.lowUsd - perDayCost, hi = r.highUsd - perDayCost;
+      lines.push(`<b>${esc(hi < 0
+        ? t("Behind by {usd} a day, {month} over 30 days.", { usd: two(-hi, -lo, fmtUsd), month: two(-hi * 30, -lo * 30, fmtUsd) })
+        : lo >= 0
+          ? t("Ahead by {usd} a day, {month} over 30 days.", { usd: two(lo, hi, fmtUsd), month: two(lo * 30, hi * 30, fmtUsd) })
+          : t("From behind by {short} to ahead by {left} a day, depending on the host.", { short: fmtUsd(-lo), left: fmtUsd(hi) }))}</b>`);
+      lines.push(t("That is {price} per GNK, against {market} to buy it right now.", {
+        price: two(perDayCost / r.high, perDayCost / r.low, fmtPrice), market: fmtPrice(d.price.usd)
+      }));
+    } else if (earnUsd != null) {
       const diff = earnUsd - perDayCost;
       lines.push(`<b>${esc(diff >= 0
         ? t("Ahead by {usd} a day, {month} over 30 days.", { usd: fmtUsd(diff), month: fmtUsd(diff * 30) })
@@ -3777,6 +3805,8 @@ function renderEarnBody(d) {
       lines.push(t("That is {price} per GNK, against {market} to buy it right now.", {
         price: fmtPrice(perDayCost / c.gnkPerDay), market: fmtPrice(d.price.usd)
       }));
+    }
+    if (earnUsd != null) {
       // Rent is due now; the coins trickle out over the vesting period, so the
       // first month pays a fraction of what it earns.
       if (d.vesting.epochs > 0) {

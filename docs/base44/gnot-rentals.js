@@ -810,7 +810,8 @@ async function estimate(seed, { force = false } = {}) {
   };
   const spread = (entry) => {
     const perHost = [...entry.byHost.entries()].filter(([h]) => !facts.overReporters.has(h)).map(([, list]) => median(list)).sort((a, b) => a - b);
-    return perHost.length ? { lo: quantile(perHost, 0.25), hi: quantile(perHost, 0.75), n: perHost.length } : { lo: 0, hi: 0, n: 0 };
+    const all = entry.byHost.size;
+    return perHost.length ? { lo: quantile(perHost, 0.25), hi: quantile(perHost, 0.75), n: perHost.length, all } : { lo: 0, hi: 0, n: 0, all };
   };
   const rangeOf = (lo, hi, n, gpuCount) => (n >= 4 && hi > lo ? {
     low: lo * gpuCount * facts.gnkPerWeight * perDay,
@@ -854,6 +855,8 @@ async function estimate(seed, { force = false } = {}) {
       // kind's other models (basis "class") mixes models, and its range landed below the figure.
       // The range reaches the figure itself when the biggest hosts sit at one end (8 x B300, Nov 2026).
       range: per.basis === "model" ? hug(rangeOf(per.lo, per.hi, per.n, gpuCount), per.w * gpuCount * facts.gnkPerWeight * perDay) : null,
+      // Every host behind the figure (over-reporters too): the page says so when it is too few for a range.
+      measuredHosts: per.all,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       // What the whole rig may cost per hour before it stops paying for itself.
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
@@ -901,6 +904,7 @@ async function estimate(seed, { force = false } = {}) {
       weight: Math.round(w * gpuCount),
       gnkPerDay,
       range: (({ lo, hi, n }) => hug(rangeOf(lo, hi, n, gpuCount), gnkPerDay))(spread(v)),
+      measuredHosts: spread(v).all,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
       basis: "model",
