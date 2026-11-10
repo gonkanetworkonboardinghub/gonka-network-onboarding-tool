@@ -580,9 +580,12 @@ async function chainFacts(seed) {
   // "H100|model|8" -> { machines, hosts }. Only machines with one kind of GPU.
   const sizes = new Map();
   const bump = (map, key, gpus, weight, nodeGpus, host) => {
-    const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [], hosts: new Set() };
+    const cur = map.get(key) || { gpus: 0, perGpu: [], nodeGpus: [], hosts: new Set(), byHost: new Map() };
     cur.gpus += gpus;
-    if (gpus > 0) { cur.perGpu.push(weight / gpus); cur.nodeGpus.push(nodeGpus || gpus); cur.hosts.add(host); }
+    if (gpus > 0) {
+      cur.perGpu.push(weight / gpus); cur.nodeGpus.push(nodeGpus || gpus); cur.hosts.add(host);
+      (cur.byHost.get(host) || cur.byHost.set(host, []).get(host)).push(weight / gpus);
+    }
     map.set(key, cur);
   };
 
@@ -788,11 +791,27 @@ async function estimate(seed, { force = false } = {}) {
   if (typical && facts.totalWeight) facts.gnkPerWeight = facts.mintedGnk / facts.totalWeight * typical.share;
   else if (paid && facts.totalWeight) facts.gnkPerWeight = paid.gnk / facts.totalWeight;
 
+  // Machines reporting the same setup earn very different amounts (Nov 2026: one
+  // 8 x H200 at about 600 GNK a day, others of that kind three to four times as
+  // much): hosts report their own hardware and the network does not check it, and
+  // tuning and time on the network differ. So each figure, the middle machine,
+  // also carries the range across the hosts that run it: from the host earning
+  // least with it to the host earning most, each host by its middle machine, so
+  // one half-broken machine does not stand for a whole host.
+  const spread = (entry) => {
+    const perHost = [...entry.byHost.values()].map(median);
+    return { lo: Math.min(...perHost), hi: Math.max(...perHost), n: perHost.length };
+  };
+  const rangeOf = (lo, hi, n, gpuCount) => (n >= 2 && hi > lo ? {
+    low: lo * gpuCount * facts.gnkPerWeight * perDay,
+    high: hi * gpuCount * facts.gnkPerWeight * perDay,
+    hosts: n
+  } : null);
   const weightPerGpu = (gpuClass, model) => {
     const pair = facts.byClassModel.get(gpuClass + "|" + model);
-    if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), gpus: pair.gpus, basis: "model" };
+    if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), ...spread(pair), gpus: pair.gpus, basis: "model" };
     const cls = facts.byClass.get(gpuClass);
-    if (cls && cls.gpus > 0) return { w: median(cls.perGpu), gpus: cls.gpus, basis: "class" };
+    if (cls && cls.gpus > 0) return { w: median(cls.perGpu), ...spread(cls), gpus: cls.gpus, basis: "class" };
     return null;
   };
 
@@ -819,6 +838,8 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(row.gpuClass, row.model, gpuCount),
       weight: Math.round(per.w * gpuCount),
       gnkPerDay,
+      // GNK a day, at this rig's size, for the host earning least with it and the host earning most.
+      range: rangeOf(per.lo, per.hi, per.n, gpuCount),
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       // What the whole rig may cost per hour before it stops paying for itself.
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
@@ -865,6 +886,7 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(gpuClass, model, gpuCount),
       weight: Math.round(w * gpuCount),
       gnkPerDay,
+      range: (({ lo, hi, n }) => rangeOf(lo, hi, n, gpuCount))(spread(v)),
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
       basis: "model",

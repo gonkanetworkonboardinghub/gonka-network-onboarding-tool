@@ -72,6 +72,8 @@ const line = (r) => `${r.gpuCount}x ${r.gpuClass}: ${r.best ? "$" + r.best.price
       for (const c of mine.configs) {
         const s = theirs.get(rig(c));
         if (!s) { diffs.push(`${rig(c)}: missing from the function`); continue; }
+        const rangeOff = !c.range !== !s.range || (c.range && (!near(c.range.low, s.range.low) || !near(c.range.high, s.range.high) || c.range.hosts !== s.range.hosts));
+        if (rangeOff) diffs.push(`${rig(c)}: range app ${JSON.stringify(c.range)}, function ${JSON.stringify(s.range)}`);
         if (!near(c.gnkPerDay, s.gnkPerDay) || c.machines !== s.machines || c.hosts !== s.hosts || c.sampleGpus !== s.sampleGpus)
           diffs.push(`${rig(c)}: app ${c.gnkPerDay.toFixed(1)} GNK/day, ${c.machines} machines, ${c.hosts} hosts, ${c.sampleGpus} GPUs; function ${s.gnkPerDay.toFixed(1)}, ${s.machines}, ${s.hosts}, ${s.sampleGpus}`);
         theirs.delete(rig(c));
