@@ -3602,8 +3602,8 @@ async function refreshPrice(known) {
  * setup on enough hosts, each is a range: where half the hosts running it fall
  * (src/services/earnings.js, range). Otherwise the middle machine, as before.
  */
-/** A range on two lines: "3,057", then "to 3,862" — it fits a narrow column and never breaks at a dash. */
-const stacked = (low, high) => `<span class="range-line">${esc(low)}</span><span class="range-line">${esc(t("to {n}", { n: high }))}</span>`;
+/** A range on one line, "3,057 – 3,862", kept whole; the words that explain it go on the small lines under it. */
+const stacked = (low, high) => `<span class="range-line">${esc(low)} – ${esc(high)}</span>`;
 
 function earnCells(c, price) {
   const r = c.range;
