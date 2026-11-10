@@ -1,7 +1,9 @@
-PROMPT FOR BASE44 — Mine or buy: ranges that read well, and the same ranges in "Compare with providers"
+PROMPT FOR BASE44 — Mine or buy: the table fits the page again, ranges on two lines, and ranges in "Compare with providers"
 (no pictures; paste everything below and publish)
 
-PART 1. REPLACE THE WHOLE CODE of the backend function gnot-rentals with EXACTLY the code below, unchanged — not rewritten, not shortened, not split, not reformatted. It is generated from the app's own code.
+The last change made the Mine or buy table wider than the page: its right side (WORTH, RENT BELOW) now runs off the screen. Put that back, and show each range on two short lines instead.
+
+PART 1. REPLACE THE WHOLE CODE of the backend function gnot-rentals with EXACTLY the code below, unchanged — not rewritten, not shortened, not split, not reformatted. It is generated from the app's own code. (The last paste did not reach it: its answer still lacks the two fields below.)
 
 What is new in its answer, in providers[].rows[] (and ownRows[]):
 - runs[].range: { "low", "high" } — GNK a day for that server, what the middle half of hosts running it earn (null when there is no range).
@@ -1368,18 +1370,22 @@ Deno.serve(async (req) => {
 });
 ----- code for gnot-rentals (end) -----
 
-PART 2. Mine or buy, the rig table at the top — make the ranges read well:
-1. A range never breaks across two lines: "3,057 – 3,862", "$516.78 – $652.73" and "$21.53 – $27.20/h" each stay on one line, and so does each small line under them ("$2.69 – $3.40/h per GPU", "the middle half of hosts"). Give the GNK A DAY, WORTH and RENT BELOW columns the room this needs: the table can use the full width of the page, and the MODEL column may wrap instead.
-2. Put the small grey line "the middle half of hosts" under WORTH too (today it is only under GNK A DAY), for the rigs that show a range.
-3. Everything else in the table stays as it is.
+PART 2. Mine or buy, the rig table at the top:
+1. The table is exactly as wide as the note box above it, as it was before the last change. Nothing runs off the right side, and there is no sideways scrolling on any screen size.
+2. A range is shown on two lines, right-aligned like the other numbers, the same size and weight as a single figure:
+       3,057
+       to 3,862
+   then, under it, the small grey line "the middle half of hosts". The same in WORTH ("$516.63" / "to $652.68" / "the middle half of hosts") and in RENT BELOW ("$21.53" / "to $27.19/h", then the small grey per-GPU line "$2.69 – $3.40/h per GPU").
+   Each of the two lines stays whole (never break "to 3,862" in the middle); the small grey lines may wrap if the column is narrow.
+3. Rigs without a range keep their single figures exactly as now.
 
-PART 3. Mine or buy → "Compare with providers" (each provider's card, its table and its phone cards): for a row whose runs[0].range is there, use the range in all three money columns, exactly like the table at the top:
-1. GNK A DAY: "{low} – {high}", the small line under it "≈ {low × price} – {high × price}" in dollars (the same GNK price the page uses for WORTH), and under that the small line "the middle half of hosts".
-2. RENT BELOW: "{low × price ÷ 24} – {high × price ÷ 24}/h", e.g. "$64.71 – $91.60/h".
+PART 3. Mine or buy → "Compare with providers" (each provider's card: its table and its phone cards), for a row whose runs[0].range is there, the same two-line ranges:
+1. GNK A DAY: "{low}" / "to {high}", then the small grey line "≈ {low × price} – {high × price}" in dollars (the same GNK price the page uses for WORTH), then the small grey line "the middle half of hosts".
+2. RENT BELOW: "{low × price ÷ 24}" / "to {high × price ÷ 24}/h".
 3. EACH DAY, from gapRange:
-   - both low and high below zero: in red, "{−high} – {−low}" as positive dollars, smaller first (e.g. "$689.91 – $799.01"), with the small line "short each day";
-   - both zero or above: in green, "{low} – {high}" (e.g. "$12.40 – $55.10"), with the small line "left each day";
-   - low below zero and high above: "−{−low} – +{high}" (e.g. "−$40.20 – +$25.10"), not coloured, with the small line "short for some, left for others, each day".
-4. A row without a range keeps its single figures exactly as now. The same one-line rule as in PART 2 applies here.
+   - both low and high below zero: in red, "{−high}" / "to {−low}" as positive dollars (e.g. "$689.91" / "to $799.01"), then the small line "short each day";
+   - both zero or above: in green, "{low}" / "to {high}", then "left each day";
+   - low below zero and high above: "−{−low}" / "to +{high}", not coloured, then "short for some, left for others, each day".
+4. A row without a range keeps its single figures exactly as now. The table fits its card; nothing runs off the side.
 
-Add the new words to every language the site offers (in Russian: "у одних не хватает, у других остаётся, каждый день"). Change nothing else on the site.
+Add the new words to every language the site offers (in Russian: "до {n}" for "to {n}", and "у одних не хватает, у других остаётся, каждый день"). Change nothing else on the site.

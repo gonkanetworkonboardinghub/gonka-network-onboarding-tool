@@ -3520,16 +3520,16 @@ function renderRent() {
     const r = top.range, price = top.gnkPerDay ? top.usdPerDay / top.gnkPerDay : null;
     const both = (a, b, f) => `${f(a)} – ${f(b)}`;
     const gnk = top.gnkPerDay == null ? dim(t("not measured"))
-      : r && price ? esc(both(r.low, r.high, fmtGnk)) + small("≈ " + both(r.low * price, r.high * price, fmtUsd)) + small(t("the middle half of hosts"))
+      : r && price ? stacked(fmtGnk(r.low), fmtGnk(r.high)) + small("≈ " + both(r.low * price, r.high * price, fmtUsd)) + small(t("the middle half of hosts"))
       : esc(fmtGnk(top.gnkPerDay)) + (top.usdPerDay == null ? "" : small("≈ " + fmtUsd(top.usdPerDay)));
     const under = top.breakEvenPerHour == null ? "—"
-      : r && price ? esc(both(r.low * price / 24, r.high * price / 24, fmtUsd)) + "/h" : esc(fmtUsd(top.breakEvenPerHour)) + "/h";
+      : r && price ? stacked(fmtUsd(r.low * price / 24), fmtUsd(r.high * price / 24) + "/h") : esc(fmtUsd(top.breakEvenPerHour)) + "/h";
     const g = row.gapRange;
     const day = g
       // Short at both ends, ahead at both ends, or short for some and ahead for others.
-      ? g.high < 0 ? `<b class="behind">${esc(both(-g.high, -g.low, fmtUsd))}</b>` + small(t("short each day"))
-        : g.low >= 0 ? `<b class="ahead">${esc(both(g.low, g.high, fmtUsd))}</b>` + small(t("left each day"))
-        : `<b>${esc("−" + fmtUsd(-g.low) + " – +" + fmtUsd(g.high))}</b>` + small(t("short for some, left for others, each day"))
+      ? g.high < 0 ? `<b class="behind">${stacked(fmtUsd(-g.high), fmtUsd(-g.low))}</b>` + small(t("short each day"))
+        : g.low >= 0 ? `<b class="ahead">${stacked(fmtUsd(g.low), fmtUsd(g.high))}</b>` + small(t("left each day"))
+        : `<b>${stacked("−" + fmtUsd(-g.low), "+" + fmtUsd(g.high))}</b>` + small(t("short for some, left for others, each day"))
       : row.gapPerDay == null ? "—"
       : `<b class="${row.gapPerDay >= 0 ? "ahead" : "behind"}">${esc((row.gapPerDay >= 0 ? "+" : "−") + fmtUsd(Math.abs(row.gapPerDay)))}</b>`
         + small(row.gapPerDay >= 0 ? t("left each day") : t("short each day"));
@@ -3602,13 +3602,17 @@ async function refreshPrice(known) {
  * setup on enough hosts, each is a range: where half the hosts running it fall
  * (src/services/earnings.js, range). Otherwise the middle machine, as before.
  */
+/** A range on two lines: "3,057", then "to 3,862" — it fits a narrow column and never breaks at a dash. */
+const stacked = (low, high) => `<span class="range-line">${esc(low)}</span><span class="range-line">${esc(t("to {n}", { n: high }))}</span>`;
+
 function earnCells(c, price) {
   const r = c.range;
   const span = (a, b, f) => `${esc(f(a))} – ${esc(f(b))}`;
   if (r && price) {
-    return `<td class="num">${span(r.low, r.high, fmtGnk)}<span class="per-gpu">${esc(t("the middle half of hosts"))}</span></td>
-      <td class="num">${span(r.low * price, r.high * price, fmtUsd)}<span class="per-gpu">${esc(t("the middle half of hosts"))}</span></td>
-      <td class="num">${span(r.low * price / 24, r.high * price / 24, fmtUsd)}/h<span class="per-gpu">${span(r.low * price / 24 / c.gpuCount, r.high * price / 24 / c.gpuCount, fmtUsd)}${esc(t("/h per GPU"))}</span></td>`;
+    const half = `<span class="per-gpu">${esc(t("the middle half of hosts"))}</span>`;
+    return `<td class="num">${stacked(fmtGnk(r.low), fmtGnk(r.high))}${half}</td>
+      <td class="num">${stacked(fmtUsd(r.low * price), fmtUsd(r.high * price))}${half}</td>
+      <td class="num">${stacked(fmtUsd(r.low * price / 24), fmtUsd(r.high * price / 24) + "/h")}<span class="per-gpu">${span(r.low * price / 24 / c.gpuCount, r.high * price / 24 / c.gpuCount, fmtUsd)}${esc(t("/h per GPU"))}</span></td>`;
   }
   return `<td class="num">${esc(fmtGnk(c.gnkPerDay))}</td>
       <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}</td>
