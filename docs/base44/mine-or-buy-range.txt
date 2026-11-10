@@ -1,11 +1,11 @@
-PROMPT FOR BASE44 — Mine or buy: show the range, from the host earning least to the host earning most
+PROMPT FOR BASE44 — Mine or buy: show where half the hosts fall
 (no pictures; paste everything below and publish)
 
-Machines running the same setup earn very different amounts: today one host's 8× H200 makes about $114 a day while other hosts' make up to $759, and the table only shows the middle machine ($352). So each figure gets a small line with the range, and the note above the table says why.
+Machines running the same setup earn different amounts, and the table only shows the middle machine. So, where the network measures that exact setup, each figure gets a small line with the range half the hosts running it fall in (today 8× H200: $262 – $371 around a middle of $350), and the note above the table says what it is and why.
 
 PART 1. REPLACE THE WHOLE CODE of the backend function gnot-rentals with EXACTLY the code below, unchanged — not rewritten, not shortened, not split, not reformatted. It is generated from the app's own code.
 
-What is new in its answer: each rig in earnings.configs may carry "range": { "low", "high", "hosts" } — GNK a day, at that rig's size, for the host earning least with it and the host earning most (each host by its middle machine). It is null when fewer than two hosts run it, or when they earn the same. Everything else in the answer is unchanged.
+What is new in its answer: each rig in earnings.configs may carry "range": { "low", "high", "hosts" } — GNK a day, at that rig's size, where half the hosts running it fall (each host by its middle machine, the lowest and highest quarter left aside, hosts that report far fewer GPUs than their weight takes left out). It is null when fewer than four such hosts run it, or when the figure is measured on other machines of that GPU. Everything else in the answer is unchanged.
 
 ----- code for gnot-rentals (start) -----
 // gnot-rentals — the website's live Mine or buy: what each rig earns and what renting one costs.
@@ -691,7 +691,12 @@ async function chainFacts(seed) {
     gnkPerWeight: totalWeight ? mintedGnk / totalWeight : 0,
     rewardParams: params.bitcoin_reward_params || null,
     api,
-    byClass, byClassModel, sizes, leftOut
+    byClass, byClassModel, sizes, leftOut,
+    // Hosts with any machine left out above: the same rule (3 x the middle machine of
+    // its kind) by which the network page marks a host that reports far fewer GPUs
+    // than its weight takes. Their other machines still count in the figures; they
+    // are only kept out of the range.
+    overReporters: new Set([...leftOut.values()].flatMap((x) => [...x.hosts]))
   };
 }
 
@@ -805,18 +810,24 @@ async function estimate(seed, { force = false } = {}) {
   // 8 x H200 at about 600 GNK a day, others of that kind three to four times as
   // much): hosts report their own hardware and the network does not check it, and
   // tuning and time on the network differ. So each figure, the middle machine,
-  // also carries the range across the hosts that run it: from the host earning
-  // least with it to the host earning most, each host by its middle machine, so
-  // one half-broken machine does not stand for a whole host.
-  const spread = (entry) => {
-    const perHost = [...entry.byHost.values()].map(median);
-    return { lo: Math.min(...perHost), hi: Math.max(...perHost), n: perHost.length };
+  // also carries where half the hosts running it fall: each host by its middle
+  // machine, the lowest and highest quarter of hosts left aside, and hosts that
+  // report far fewer GPUs than their weight takes left out. Lowest-to-highest was
+  // tried first and was 3-5 x wide, each end a single host (the user, 2026-11-10).
+  const quantile = (sorted, q) => {
+    const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
   };
-  const rangeOf = (lo, hi, n, gpuCount) => (n >= 2 && hi > lo ? {
+  const spread = (entry) => {
+    const perHost = [...entry.byHost.entries()].filter(([h]) => !facts.overReporters.has(h)).map(([, list]) => median(list)).sort((a, b) => a - b);
+    return perHost.length ? { lo: quantile(perHost, 0.25), hi: quantile(perHost, 0.75), n: perHost.length } : { lo: 0, hi: 0, n: 0 };
+  };
+  const rangeOf = (lo, hi, n, gpuCount) => (n >= 4 && hi > lo ? {
     low: lo * gpuCount * facts.gnkPerWeight * perDay,
     high: hi * gpuCount * facts.gnkPerWeight * perDay,
     hosts: n
   } : null);
+  const hug = (r, mid) => (r ? { ...r, low: Math.min(r.low, mid), high: Math.max(r.high, mid) } : null);
   const weightPerGpu = (gpuClass, model) => {
     const pair = facts.byClassModel.get(gpuClass + "|" + model);
     if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), ...spread(pair), gpus: pair.gpus, basis: "model" };
@@ -848,8 +859,11 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(row.gpuClass, row.model, gpuCount),
       weight: Math.round(per.w * gpuCount),
       gnkPerDay,
-      // GNK a day, at this rig's size, for the host earning least with it and the host earning most.
-      range: rangeOf(per.lo, per.hi, per.n, gpuCount),
+      // Where half the hosts running it fall, in GNK a day at this rig's size (see spread above).
+      // Only where this exact model is measured on this kind of GPU: a figure borrowed from the
+      // kind's other models (basis "class") mixes models, and its range landed below the figure.
+      // The range reaches the figure itself when the biggest hosts sit at one end (8 x B300, Nov 2026).
+      range: per.basis === "model" ? hug(rangeOf(per.lo, per.hi, per.n, gpuCount), per.w * gpuCount * facts.gnkPerWeight * perDay) : null,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       // What the whole rig may cost per hour before it stops paying for itself.
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
@@ -896,7 +910,7 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(gpuClass, model, gpuCount),
       weight: Math.round(w * gpuCount),
       gnkPerDay,
-      range: (({ lo, hi, n }) => rangeOf(lo, hi, n, gpuCount))(spread(v)),
+      range: (({ lo, hi, n }) => hug(rangeOf(lo, hi, n, gpuCount), gnkPerDay))(spread(v)),
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
       basis: "model",
@@ -1345,14 +1359,14 @@ Deno.serve(async (req) => {
 
 PART 2. On Mine or buy (/mine-or-buy), in the rig table at the top (and in its phone cards):
 1. GNK A DAY: when the rig has a range, add a small grey line under the number, the same style as "$1.83/h per GPU" under RENT BELOW:
-   "from {low} to {high}"   — low and high rounded like the GNK a day figure, e.g. "from 673 to 4,466"
+   "half the hosts: {low} – {high}"   — low and high rounded like the GNK a day figure, e.g. "half the hosts: 1,543 – 2,183"
 2. WORTH: when the rig has a range, the same small grey line under the dollar figure, in dollars at today's price (the same price the WORTH column uses):
-   "from {low × price} to {high × price}"   — e.g. "from $114.32 to $758.67"
+   "half the hosts: {low × price} – {high × price}"   — e.g. "half the hosts: $262.08 – $370.84"
 3. No range (null): show nothing extra. The rows with "No host runs this right now" stay as they are.
 4. The note above the table, "Measured on the machines running each setup now. Hosts report their own hardware and the network does not check it, and setups and tuning differ, so what your rig earns can be different. Before you rent, look at the hosts that run it.", becomes:
-   "Measured on the machines running each setup now. Each figure is the middle machine; the small line under it runs from the host that earns least with it to the host that earns most. They differ a lot: hosts report their own hardware and the network does not check it, so some may run more GPUs than they report, and setups, tuning and time on the network differ too. What your rig earns can be anywhere in that range. Before you rent, look at the hosts that run it."
+   "Measured on the machines running each setup now. Each figure is the middle machine; the small line under it is where half the hosts running it fall, leaving aside the lowest and highest quarter, and hosts that report far fewer GPUs than their weight takes. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ from the figure. Before you rent, look at the hosts that run it."
    The "See every host →" link after it stays.
 
 The "Compare with providers" section and the calculator stay as they are.
 
-Add the new words to every language the site offers (in Russian: "от {low} до {high}"). Change nothing else on the site.
+Add the new words to every language the site offers (in Russian: "половина хостов: {low} – {high}"). Change nothing else on the site.

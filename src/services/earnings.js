@@ -261,7 +261,12 @@ async function chainFacts(seed) {
     gnkPerWeight: totalWeight ? mintedGnk / totalWeight : 0,
     rewardParams: params.bitcoin_reward_params || null,
     api,
-    byClass, byClassModel, sizes, leftOut
+    byClass, byClassModel, sizes, leftOut,
+    // Hosts with any machine left out above: the same rule (3 x the middle machine of
+    // its kind) by which the network page marks a host that reports far fewer GPUs
+    // than its weight takes. Their other machines still count in the figures; they
+    // are only kept out of the range.
+    overReporters: new Set([...leftOut.values()].flatMap((x) => [...x.hosts]))
   };
 }
 
@@ -375,18 +380,24 @@ async function estimate(seed, { force = false } = {}) {
   // 8 x H200 at about 600 GNK a day, others of that kind three to four times as
   // much): hosts report their own hardware and the network does not check it, and
   // tuning and time on the network differ. So each figure, the middle machine,
-  // also carries the range across the hosts that run it: from the host earning
-  // least with it to the host earning most, each host by its middle machine, so
-  // one half-broken machine does not stand for a whole host.
-  const spread = (entry) => {
-    const perHost = [...entry.byHost.values()].map(median);
-    return { lo: Math.min(...perHost), hi: Math.max(...perHost), n: perHost.length };
+  // also carries where half the hosts running it fall: each host by its middle
+  // machine, the lowest and highest quarter of hosts left aside, and hosts that
+  // report far fewer GPUs than their weight takes left out. Lowest-to-highest was
+  // tried first and was 3-5 x wide, each end a single host (the user, 2026-11-10).
+  const quantile = (sorted, q) => {
+    const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
   };
-  const rangeOf = (lo, hi, n, gpuCount) => (n >= 2 && hi > lo ? {
+  const spread = (entry) => {
+    const perHost = [...entry.byHost.entries()].filter(([h]) => !facts.overReporters.has(h)).map(([, list]) => median(list)).sort((a, b) => a - b);
+    return perHost.length ? { lo: quantile(perHost, 0.25), hi: quantile(perHost, 0.75), n: perHost.length } : { lo: 0, hi: 0, n: 0 };
+  };
+  const rangeOf = (lo, hi, n, gpuCount) => (n >= 4 && hi > lo ? {
     low: lo * gpuCount * facts.gnkPerWeight * perDay,
     high: hi * gpuCount * facts.gnkPerWeight * perDay,
     hosts: n
   } : null);
+  const hug = (r, mid) => (r ? { ...r, low: Math.min(r.low, mid), high: Math.max(r.high, mid) } : null);
   const weightPerGpu = (gpuClass, model) => {
     const pair = facts.byClassModel.get(gpuClass + "|" + model);
     if (pair && pair.gpus >= MIN_SAMPLE_GPUS) return { w: median(pair.perGpu), ...spread(pair), gpus: pair.gpus, basis: "model" };
@@ -418,8 +429,11 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(row.gpuClass, row.model, gpuCount),
       weight: Math.round(per.w * gpuCount),
       gnkPerDay,
-      // GNK a day, at this rig's size, for the host earning least with it and the host earning most.
-      range: rangeOf(per.lo, per.hi, per.n, gpuCount),
+      // Where half the hosts running it fall, in GNK a day at this rig's size (see spread above).
+      // Only where this exact model is measured on this kind of GPU: a figure borrowed from the
+      // kind's other models (basis "class") mixes models, and its range landed below the figure.
+      // The range reaches the figure itself when the biggest hosts sit at one end (8 x B300, Nov 2026).
+      range: per.basis === "model" ? hug(rangeOf(per.lo, per.hi, per.n, gpuCount), per.w * gpuCount * facts.gnkPerWeight * perDay) : null,
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       // What the whole rig may cost per hour before it stops paying for itself.
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
@@ -466,7 +480,7 @@ async function estimate(seed, { force = false } = {}) {
       ...runningNow(gpuClass, model, gpuCount),
       weight: Math.round(w * gpuCount),
       gnkPerDay,
-      range: (({ lo, hi, n }) => rangeOf(lo, hi, n, gpuCount))(spread(v)),
+      range: (({ lo, hi, n }) => hug(rangeOf(lo, hi, n, gpuCount), gnkPerDay))(spread(v)),
       usdPerDay: price.usd ? gnkPerDay * price.usd : null,
       breakEvenPerHour: price.usd ? (gnkPerDay * price.usd) / 24 : null,
       basis: "model",

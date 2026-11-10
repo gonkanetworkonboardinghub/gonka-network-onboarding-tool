@@ -3601,8 +3601,8 @@ function renderEarnBody(d) {
       ${rigCell(c)}
       <td>${esc(shortModel(c.model))}</td>
       ${nowCell(c)}
-      <td class="num">${esc(fmtGnk(c.gnkPerDay))}${c.range ? `<span class="per-gpu">${esc(t("from {low} to {high}", { low: fmtGnk(c.range.low), high: fmtGnk(c.range.high) }))}</span>` : ""}</td>
-      <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}${c.range && c.usdPerDay != null && d.price && d.price.usd ? `<span class="per-gpu">${esc(t("from {low} to {high}", { low: fmtUsd(c.range.low * d.price.usd), high: fmtUsd(c.range.high * d.price.usd) }))}</span>` : ""}</td>
+      <td class="num">${esc(fmtGnk(c.gnkPerDay))}${c.range ? `<span class="per-gpu">${esc(t("half the hosts: {low} – {high}", { low: fmtGnk(c.range.low), high: fmtGnk(c.range.high) }))}</span>` : ""}</td>
+      <td class="num">${c.usdPerDay == null ? "—" : esc(fmtUsd(c.usdPerDay))}${c.range && c.usdPerDay != null && d.price && d.price.usd ? `<span class="per-gpu">${esc(t("half the hosts: {low} – {high}", { low: fmtUsd(c.range.low * d.price.usd), high: fmtUsd(c.range.high * d.price.usd) }))}</span>` : ""}</td>
       <td class="num">${c.breakEvenPerHour == null ? "—" : esc(fmtUsd(c.breakEvenPerHour)) + "/h"
         // Rigs differ in size, so the per-GPU rate is what makes rows comparable.
         + `<span class="per-gpu">${esc(fmtUsd(c.breakEvenPerHour / c.gpuCount))}${esc(t("/h per GPU"))}</span>`}</td>
@@ -3626,7 +3626,7 @@ function renderEarnBody(d) {
 
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
-    <div class="rent-check">${esc(t("Measured on the machines running each setup now. Each figure is the middle machine; the small line under it runs from the host that earns least with it to the host that earns most. They differ a lot: hosts report their own hardware and the network does not check it, so some may run more GPUs than they report, and setups, tuning and time on the network differ too. What your rig earns can be anywhere in that range. Before you rent, look at the hosts that run it."))}
+    <div class="rent-check">${esc(t("Measured on the machines running each setup now. Each figure is the middle machine; the small line under it is where half the hosts running it fall, leaving aside the lowest and highest quarter, and hosts that report far fewer GPUs than their weight takes. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ from the figure. Before you rent, look at the hosts that run it."))}
       <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
