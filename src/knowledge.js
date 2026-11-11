@@ -32,11 +32,13 @@ const overridable = {
   // architecture preflight now says so plainly instead of failing obscurely.
   repo: { url: "https://github.com/gonka-ai/gonka.git", branch: "main", joinDir: "gonka/deploy/join" },
 
-  // Public seed / genesis nodes. First reachable one is used.
+  // Public seed / genesis nodes. First reachable one is used. node3.gonka.ai
+  // stopped answering on 2026-11-09 (no answer from here, Cloudflare 521 from
+  // the website's server) and was still down on 11-12, so it is left out; a
+  // manifest.json "seedNodes" can put it back without a release.
   seedNodes: [
     "http://node2.gonka.ai:8000",
-    "http://node1.gonka.ai:8000",
-    "http://node3.gonka.ai:8000"
+    "http://node1.gonka.ai:8000"
   ],
   seedP2P: "tcp://node2.gonka.ai:5000",
 
