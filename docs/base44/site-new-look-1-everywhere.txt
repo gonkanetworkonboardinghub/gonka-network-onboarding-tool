@@ -1,0 +1,53 @@
+PROMPT FOR BASE44 — The site's new look, part 1: depth, light and motion, on every page
+(no pictures; paste everything below and publish)
+
+This is a design pass only. The GNOT app has a new look and the website should match it. Do NOT change any words, numbers, links, data, backend functions, page addresses, languages or the order of things. Nothing that people can see today is removed. Only how it looks and moves changes. Apply all of it to every page: Home, Get a node, Register a node, Mine or buy, Monitor/Vote (and its pages: My nodes, The network, a host's page, Votes, a proposal's page), FAQ, Download.
+
+Keep the typefaces (Inter for text, JetBrains Mono for the small spaced labels and numbers) and the dark grey colours the site has now.
+
+1. LIGHT BEHIND THE PAGE
+Behind all content, fixed to the window (it does not scroll), two very soft glows:
+- top left: radial-gradient(900px 600px at 12% -8%, rgba(255,255,255,0.055), transparent 70%)
+- bottom right: radial-gradient(900px 700px at 100% 108%, rgba(127,176,148,0.07), transparent 70%)
+They must sit under everything and never make text harder to read.
+
+2. SURFACES (every card, box, panel, table wrapper, FAQ row, the Spheron card, the Monitor/Vote doors, the stat tiles)
+- Corners: 12px (14px for the big cards and the two doors on Home).
+- Background: a faint top-to-bottom gradient instead of one flat colour: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)) over the card's current colour.
+- A lit top edge: box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 1px 2px rgba(0,0,0,0.28).
+- Cards that can be clicked (the doors on Home, the three numbered steps on Get a node, the Monitor/Vote doors, provider cards, host rows, proposal cards, FAQ rows): on hover they lift 2px, the border gets lighter (rgba(255,255,255,0.20)) and the shadow becomes inset 0 1px 0 rgba(255,255,255,0.055), 0 14px 36px rgba(0,0,0,0.42). Transition 180ms cubic-bezier(0.2,0.7,0.2,1). The arrow inside such a card slides 4px to the right on hover.
+- A spotlight that follows the pointer on those clickable cards: a radial-gradient(420px circle at the pointer's position, rgba(255,255,255,0.06), transparent 60%) laid over the card, shown only while the pointer is over it. Desktop only.
+
+3. BUTTONS AND LINKS
+- Main buttons (Download GNOT, "Download GNOT" in the top bar, Follow your node, and the like): 10px corners; background linear-gradient(180deg, #f0f0ec, #d6d6d2); text #131316, weight 600; shadow 0 1px 0 rgba(255,255,255,0.5) inset, 0 6px 18px rgba(0,0,0,0.35). Hover: 1px up and a little brighter. Pressed: scale 0.98. Transition 140ms.
+- Second-level buttons (Refresh, "See every step", the language picker): transparent, 1px border rgba(255,255,255,0.14), 10px corners; hover: background rgba(255,255,255,0.06), border rgba(255,255,255,0.24).
+- Text links inside paragraphs: underline 1px, 3px below the text, colour rgba(255,255,255,0.35); on hover the underline turns white. No colour change of the words.
+- Everything that can be focused with the keyboard gets a clear ring: outline 2px solid rgba(127,176,148,0.9), offset 2px. Only for keyboard focus (focus-visible).
+
+4. THE TOP BAR
+- It stays at the top while scrolling, with a glass look: background rgba(19,19,22,0.72), backdrop-filter: blur(14px) saturate(1.2), a 1px bottom line rgba(255,255,255,0.08).
+- The page you are on is marked in the menu by a small 2px line under its name that slides from the old page's name to the new one (200ms), in addition to the brighter text it has now.
+- The thin strip above it ("GNK is … right now" / "Mine it or buy it? →") keeps its words; give the arrow the same 4px slide on hover.
+
+5. MOTION WHEN A PAGE OPENS AND WHEN YOU SCROLL
+- When a page opens, its heading block and then each section rise in: from opacity 0 and 12px lower to their place, 420ms cubic-bezier(0.16,1,0.3,1), each one 60ms after the one before (no more than 8 steps of delay). Once, not on every scroll.
+- Sections further down the page do the same when they first come into view (IntersectionObserver, once).
+- Numbers that are the point of a tile (hosts, GPUs, open votes, GNK figures on Monitor/Vote and Mine or buy, the price in the top strip) count up from 0 to their value in 700ms the first time they are shown. The final value must be exactly the value shown today, in the same format.
+- Bars (the epoch bar, vote bars, the "GNK: how much there is" bar, the paid bar) grow from the left to their width in 600ms when first shown. The epoch bar's filled part gets a slow sheen passing over it every 4 seconds.
+- Line charts draw themselves from left to right in 900ms when first shown; bar charts grow up from the baseline, 20ms apart.
+- Anything that opens or closes (FAQ answers, "What this checks", any "show more") opens smoothly in 240ms instead of jumping, and its little arrow turns.
+- While data is loading, show soft grey placeholder shapes of the same size as what will come (a slow shimmer), never an empty gap and never a layout jump when the data arrives.
+
+6. SMALL THINGS
+- Scrollbars: thin, dark (thumb rgba(255,255,255,0.16), 8px wide, round), on the page and inside any scrolling box.
+- Text selection colour: rgba(127,176,148,0.35).
+- Tables: the header row stays visible while the table scrolls; rows get a faint highlight on hover (rgba(255,255,255,0.03)); numbers use tabular figures so columns line up.
+- Green dots that mean "live" (e.g. "Serving inference") get a soft ring that pulses outward every 2 seconds.
+- Tick marks in lists (Get a node "What your server needs", Register a node's list) become a small green circle (16px, #7fb094) with a dark tick inside.
+
+7. RESPECT PEOPLE AND PHONES
+- If the visitor's device asks for reduced motion (prefers-reduced-motion: reduce), switch off every animation in this prompt: things simply appear, numbers show their final value at once.
+- On phones nothing may be wider than the screen. No hover effects on touch screens. Keep text sizes at least what they are now.
+- Do not slow the site down: no animation libraries heavier than what the site already uses, no videos, no new images.
+
+Change nothing else on the site. Every language keeps working exactly as now.

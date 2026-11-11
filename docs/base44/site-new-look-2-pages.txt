@@ -1,0 +1,44 @@
+PROMPT FOR BASE44 — The site's new look, part 2: page by page, and the new step pictures
+(attach the 14 pictures from the folder "step-pictures-2026-11-11" to this message — 01-welcome.webp to 14-finished.webp — then paste everything below and publish. Do part 1 first.)
+
+Part 1 gave every page depth, light and motion. This part is the page-by-page work. As before: no words, numbers, links, data, backend functions or page addresses change, and nothing people can see today is removed, except where a point below says to fold a long note behind one line. Every animation here is switched off under prefers-reduced-motion, and nothing may be wider than a phone's screen.
+
+HOME
+1. The two doors (Get a Node, Register a Node): when the page opens they rise in, the left one first, the right one 90ms later. On hover, the door's picture slowly grows to 104% (600ms) and gets slightly brighter, the door's title moves 2px up, and the line of "ENTER ——→" grows longer by 16px. The thin line between the two doors gets a soft light that follows which door the pointer is on.
+2. Between the top bar and the two doors, show the same epoch strip that the Monitor/Vote page has under its title (Epoch number · the phase with its green dot · the bar · the percent · "Next Proof of Compute …"). Same component, same data, same words, so nothing new to translate. It shows at a glance that the network is running.
+
+GET A NODE
+3. The three numbered steps at the top (Pick a setup → Rent a dedicated server, anywhere → Set it up with GNOT): join them with a thin line that runs through the three numbers, so they read as one path. The numbers sit in small circles (28px, 1px border). On hover a step lifts as in part 1 and its number's circle fills white with a dark number.
+4. "What your server needs": keep the two columns. Each point's tick is the green circle from part 1; the points come in one after another (40ms apart) the first time the box is seen.
+5. The Spheron card: the heading row gets the same lift on hover as other cards; "Right now at Spheron" prices sit in small tiles with tabular figures, and a tile whose price changed since the visitor's last look flashes its border once (green, 600ms).
+
+REGISTER A NODE
+6. Replace the 14 step pictures with the 14 attached pictures, in the same order, with the same captions, headings, anchors and lightbox as now:
+   1 — 01-welcome.webp, 2 — 02-welcome-needs.webp, 3 — 03-your-server.webp, 4 — 04-connect.webp, 5 — 05-health-check.webp, 6 — 06-wallet.webp, 7 — 07-network.webp, 8 — 08-model.webp, 9 — 09-review.webp, 10 — 10-weights.webp, 11 — 11-launch.webp, 12 — 12-collateral.webp, 13 — 13-verify.webp, 14 — 14-finished.webp.
+   The picture in the card "GNOT — Gonka Host Setup" at the top of the page is the new 01-welcome.webp too. Remove the old picture files; none of the old ones may still show anywhere.
+7. Pictures: 12px corners, a 1px border rgba(255,255,255,0.10), shadow 0 14px 36px rgba(0,0,0,0.42). On hover the cursor is a zoom cursor and the picture lifts 2px. In the lightbox the picture fades and grows in (from 96%, 220ms); left/right arrow keys move between steps, Esc closes.
+8. The row of step chips ("Step by step with GNOT"): while the visitor scrolls through the steps, this row stays stuck under the top bar (glass background as the top bar), the chip of the step now in view is highlighted (white text, lighter border), and a 2px line along the bottom of the row fills from left to right as the visitor moves from step 1 to step 14. Clicking a chip scrolls smoothly to that step.
+
+MINE OR BUY
+9. The long note in the box above the table (it starts "Measured on the machines running each setup now.") is folded behind one line, exactly as the app does it: a row with a small arrow and the words "How to read these figures" on the left and the link "See every host →" on the right, always visible. Clicking the row opens the note (smoothly, part 1 rule) with the same words as now, unchanged, as short paragraphs. Closed when the page opens. "How to read these figures" in the site's languages:
+   ru "Как читать эти цифры", zh "如何解读这些数字", hi "इन आंकड़ों को कैसे पढ़ें", es "Cómo leer estas cifras", ar "كيف تُقرأ هذه الأرقام", fr "Comment lire ces chiffres", pt "Como ler estes números", de "So liest du diese Zahlen", it "Come leggere queste cifre", pl "Jak czytać te liczby".
+   The † note and every other small note stay where they are, as they are.
+10. The table keeps its columns and widths. The header row sticks under the top bar while the table scrolls past (part 1). When a figure refreshes, it fades to the new value (150ms); it never jumps or shifts the row.
+11. "Will it pay for itself?": when the visitor changes the rig or the cost, the answer below fades to the new answer (150ms) instead of snapping. The answer box gets a thin green left edge when the rig is ahead and a thin red one when it is behind; the words do not change.
+12. "Compare with providers": each provider's row opens and closes smoothly; an open provider keeps the lighter border.
+
+MONITOR/VOTE
+13. The tabs "My nodes · The network · Votes": the white pill slides from the old tab to the new one (220ms) instead of jumping.
+14. The three doors on the Monitor/Vote front page: the big line in each door ("28 hosts", "2 open votes", …) counts up as in part 1; the small icon squares get the lit top edge.
+15. The network page and a host's page: tiles come in one after another; charts draw and bars grow as in part 1; in the hosts table a row lifts slightly on hover and its arrow slides 4px.
+16. Votes and a proposal's page: each vote bar grows to its width when first seen, with the quorum mark fading in after it; a proposal card that is open for voting has the soft pulsing ring on its "VOTING NOW" label.
+
+FAQ
+17. A question opens and closes smoothly; the open one keeps the lighter border and its arrow is turned. The search box gets the focus ring from part 1 and, while the visitor types, the questions that do not match fade out (120ms) and the rest move up smoothly.
+
+DOWNLOAD
+18. Windows and Mac columns: the one that matches the visitor's computer gets a 1px green border (#7fb094) and a small label above its title, "This computer". On a phone neither is marked. "This computer" in the site's languages:
+   ru "Этот компьютер", zh "这台电脑", hi "यह कंप्यूटर", es "Este ordenador", ar "هذا الحاسوب", fr "Cet ordinateur", pt "Este computador", de "Dieser Computer", it "Questo computer", pl "Ten komputer".
+19. The command boxes: JetBrains Mono, a darker inset background (#0e0e11), 10px corners. The COPY button turns into "✓" with the green circle for 2 seconds after a click, then back. The three numbered steps under each system are joined by a thin vertical line through their numbers.
+
+Change nothing else on the site.
