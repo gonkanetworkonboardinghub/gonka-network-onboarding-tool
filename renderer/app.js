@@ -166,6 +166,27 @@ function renderRail() {
     if (errorSteps.has(i)) cls.push("error");
     return `<div class="${cls.join(" ")}"><span class="screws"></span><span class="led"></span><span>${esc(t(st.label))}</span></div>`;
   }).join("");
+  // How far along: the steps done, of all of them.
+  const fill = $("#rail-progress-fill"), n = $("#rail-progress-n");
+  if (fill) fill.style.width = (doneSteps.size / STEPS.length * 100).toFixed(1) + "%";
+  if (n) n.textContent = `${doneSteps.size} / ${STEPS.length}`;
+  // The step being done stays in sight in a short window.
+  const now = el.querySelector(".rack-unit.active");
+  if (now && now.scrollIntoView) now.scrollIntoView({ block: "nearest" });
+}
+
+/**
+ * A page that has just been opened comes up piece by piece (polish.css, .enter).
+ * Set for the move itself and taken off again, so a page that only redraws its
+ * figures does not jump.
+ */
+function enterPage(el) {
+  if (!el) return;
+  el.classList.remove("enter");
+  void el.offsetWidth;                       // start the animation again from the top
+  el.classList.add("enter");
+  clearTimeout(el._enterTimer);
+  el._enterTimer = setTimeout(() => el.classList.remove("enter"), 1700);
 }
 function go(i) {
   S.step = Math.max(0, Math.min(STEPS.length - 1, i));
@@ -183,6 +204,7 @@ function go(i) {
   RENDER[STEPS[S.step].id]();
   if (S.revisitOf === S.step) revisitGuard(S.step);
   $("#stage").scrollTop = 0;
+  enterPage($("#stage"));
   saveSession();
 }
 
@@ -3168,6 +3190,7 @@ RENDER.done = () => {
   S.setupFinished = true;
   // "Live" only once the node is in the epoch; until then it is ready and waiting for its round.
   stage(`
+    <div class="done-mark" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="ring" cx="32" cy="32" r="29" pathLength="1"/><path class="tick" d="M19 33.5l9 9 17-19" pathLength="1"/></svg></div>
     ${S.verifyEarning
       ? header("Complete", "Your node is live", "Registration is done, permissions are granted, and your services are running.")
       : header("Complete", "Your node is ready", "Registration is done, permissions are granted, and your services are running. It joins the network at the next Proof of Compute — the countdown at the top — and is live once it has passed it.")}
@@ -3436,7 +3459,7 @@ function openEarnings() {
   const el = document.createElement("div");
   el.id = "sheet";
   el.innerHTML = `<div class="sheet-box wide" role="dialog" aria-modal="true" aria-label="${esc(t("Mine it or buy it?"))}">
-      <div class="sheet-top"><span class="tool-name">${esc(t("Mine it or buy it?"))}</span></div>
+      <div class="sheet-top"><span class="tool-name">${esc(t("Mine it or buy it?"))}</span><button class="sheet-x" id="sheet-x" aria-label="${esc(t("Close"))}">×</button></div>
       <div class="earn-now" id="earn-now"></div>
       <p class="sheet-lead">${esc(t("What each rig mined over the last epoch, measured from the chain, against what that much GNK costs to buy."))}</p>
       <div class="fetched-line" id="earn-fetched"></div>
@@ -3450,6 +3473,7 @@ function openEarnings() {
   el.onclick = (e) => { if (e.target === el) close(); };
   document.body.appendChild(el);
   $("#sheet-close").onclick = close;
+  $("#sheet-x").onclick = close;
   document.addEventListener("keydown", onKey);
   $("#sheet-close").focus();
   startChainSteps($("#earn-body"));
@@ -3668,7 +3692,15 @@ function renderEarnBody(d) {
 
   body.innerHTML = `
     <a href="#" class="earn-jump" id="earn-jump">${esc(t("Skip to the calculator ↓"))}</a>
-    <div class="rent-check">${esc(t("Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where fewer than four hosts run that setup or where it is measured on the same GPUs running other models; the small line under it says which. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}
+    <div class="rent-check">
+      ${more("How to read these figures", `
+        <p>${esc(t("Measured on the machines running each setup now. A range is what the middle half of the hosts running that setup earn: the lowest quarter and the highest quarter are left aside, and so are hosts that report far fewer GPUs than their weight takes. A single figure is the middle machine, where fewer than four hosts run that setup or where it is measured on the same GPUs running other models; the small line under it says which. Hosts report their own hardware and the network does not check it, and setups, tuning and time on the network differ, so what your rig earns can differ. Before you rent, look at the hosts that run it."))}</p>
+        <p>${esc(d.withoutData.length
+          ? t("Only rigs this app can set up, for models the network is paying for today. Left out: {list}.",
+              { list: d.withoutData.map(shortModel).join(", ") })
+          : t("Only rigs this app can set up, for models the network is paying for today."))}</p>
+        <p>${esc(t("Machines now: the machines on the network running exactly that rig and model right now, as their hosts report them, and how many hosts they belong to."))}</p>
+        ${leftOut ? `<p>${esc(t("Left out of these figures: {list}. Their weight per GPU is more than {x} times that of a typical machine with the same GPUs, so they cannot be the hardware their hosts report.", { list: leftOut, x: d.leftOutAbove || 3 }))}</p>` : ""}`)}
       <a href="#" id="earn-hosts">${esc(t("See every host →"))}</a></div>
     <table class="earn-table">
       <thead><tr>
@@ -3681,12 +3713,6 @@ function renderEarnBody(d) {
     </table>
     ${d.configs.some((c) => c.deployable === false) ? `<div class="earn-scope">${esc(
       t("† The network runs this and pays for it, but no ready-made configuration has been published, so this app cannot set it up for you — you would have to write your own node-config."))}</div>` : ""}
-    <div class="earn-scope">${esc(d.withoutData.length
-      ? t("Only rigs this app can set up, for models the network is paying for today. Left out: {list}.",
-          { list: d.withoutData.map(shortModel).join(", ") })
-      : t("Only rigs this app can set up, for models the network is paying for today."))}</div>
-    <div class="earn-scope">${esc(t("Machines now: the machines on the network running exactly that rig and model right now, as their hosts report them, and how many hosts they belong to."))}</div>
-    ${leftOut ? `<div class="earn-scope">${esc(t("Left out of these figures: {list}. Their weight per GPU is more than {x} times that of a typical machine with the same GPUs, so they cannot be the hardware their hosts report.", { list: leftOut, x: d.leftOutAbove || 3 }))}</div>` : ""}
 
     <div class="earn-calc">
       <div class="earn-calc-title">${esc(t("Will it pay for itself?"))}</div>
@@ -3832,6 +3858,93 @@ function renderEarnBody(d) {
   }
 }
 
+/* The two tools' pictures on the home screen: a server being set up, and a network being watched. */
+const HOME_ICONS = {
+  host: `<svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="6.5" rx="2"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="2"/><circle cx="7.5" cy="7.25" r="1"/><circle cx="7.5" cy="16.75" r="1"/><path d="M12 7.25h5M12 16.75h5"/></svg>`,
+  monitor: `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="17.5" r="2.2"/><circle cx="19" cy="17.5" r="2.2"/><circle cx="12" cy="12.5" r="1.6"/><path d="M12 7.2v3.7M10.7 13.5 6.8 16.2M13.3 13.5l3.9 2.7M7.2 17.5h9.6"/></svg>`
+};
+/** "Start →" with its arrow as a piece of its own, so the arrow can move when the card is pointed at. */
+function goLabel(text) {
+  const m = /^(.*?)\s*([→←])$/.exec(text);
+  return m ? `${esc(m[1])} <i aria-hidden="true">${m[2]}</i>` : esc(text);
+}
+
+/*
+ * The home screen's backdrop: a slow constellation, machines joined into a
+ * network, with a spark of work crossing it now and then. Drawn on one canvas
+ * behind the page, only while the home screen is showing; still, when the
+ * computer asks for less motion.
+ */
+const HOME_NET = { raf: 0, nodes: [], sparks: [], w: 0, h: 0, last: 0, nextSpark: 0 };
+function homeNetStart() {
+  const cv = $("#home-net");
+  if (!cv || !cv.getContext) return;
+  const ctx = cv.getContext("2d");
+  const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const size = () => {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    HOME_NET.w = window.innerWidth; HOME_NET.h = window.innerHeight;
+    cv.width = Math.round(HOME_NET.w * dpr); cv.height = Math.round(HOME_NET.h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const want = Math.max(24, Math.min(80, Math.round(HOME_NET.w * HOME_NET.h / 21000)));
+    while (HOME_NET.nodes.length < want) HOME_NET.nodes.push({ x: Math.random() * HOME_NET.w, y: Math.random() * HOME_NET.h, vx: (Math.random() - 0.5) * 9, vy: (Math.random() - 0.5) * 9, r: 1 + Math.random() * 1.6 });
+    HOME_NET.nodes.length = want;
+  };
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const draw = (now) => {
+    HOME_NET.raf = 0;
+    if (!document.body.classList.contains("on-home")) return;      // stopped until the home screen is back
+    const dt = Math.min(0.05, (now - (HOME_NET.last || now)) / 1000); HOME_NET.last = now;
+    const { w, h, nodes, sparks } = HOME_NET;
+    const ink = css("--text") || "#eaeae8", glow = css("--glow") || "127, 176, 148";
+    ctx.clearRect(0, 0, w, h);
+    for (const n of nodes) {
+      n.x += n.vx * dt; n.y += n.vy * dt;
+      if (n.x < -20) n.x = w + 20; else if (n.x > w + 20) n.x = -20;
+      if (n.y < -20) n.y = h + 20; else if (n.y > h + 20) n.y = -20;
+    }
+    const REACH = 150, links = [];
+    ctx.lineWidth = 1; ctx.strokeStyle = ink;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d > REACH) continue;
+      links.push([a, b]);
+      ctx.globalAlpha = (1 - d / REACH) * 0.24;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.fillStyle = ink;
+    for (const n of nodes) { ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.2832); ctx.fill(); }
+    // a spark of work crossing one link
+    if (!still && now > HOME_NET.nextSpark && links.length) {
+      const [a, b] = links[Math.floor(Math.random() * links.length)];
+      sparks.push({ a, b, t: 0 }); HOME_NET.nextSpark = now + 500 + Math.random() * 900;
+    }
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i]; s.t += dt / 0.9;
+      if (s.t >= 1) { sparks.splice(i, 1); continue; }
+      const x = s.a.x + (s.b.x - s.a.x) * s.t, y = s.a.y + (s.b.y - s.a.y) * s.t, fade = Math.sin(s.t * Math.PI);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 9);
+      g.addColorStop(0, `rgba(${glow}, ${0.9 * fade})`); g.addColorStop(1, `rgba(${glow}, 0)`);
+      ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.2832); ctx.fill(); ctx.fillStyle = ink;
+    }
+    ctx.globalAlpha = 1;
+    if (!still) HOME_NET.raf = requestAnimationFrame(draw);
+  };
+  if (!HOME_NET.sized) { HOME_NET.sized = true; window.addEventListener("resize", () => { size(); if (!HOME_NET.raf) HOME_NET.raf = requestAnimationFrame(draw); }); }
+  size();
+  HOME_NET.last = 0;
+  if (!HOME_NET.raf) HOME_NET.raf = requestAnimationFrame(draw);
+}
+
+/* The light that follows the pointer across a card you can press: polish.css reads --mx and --my. */
+document.addEventListener("pointermove", (e) => {
+  const card = e.target.closest && e.target.closest(".tool-card, .mon-door, .mon-node-card, .mon-action, .choice, .rent-provider");
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty("--mx", (e.clientX - r.left) + "px");
+  card.style.setProperty("--my", (e.clientY - r.top) + "px");
+}, { passive: true });
+
 function renderHome() {
   const el = $("#home");
   if (!el) return;
@@ -3843,24 +3956,29 @@ function renderHome() {
   const progress = stepIdx && !finished ? t(STEPS[stepIdx].label) : "";
   el.innerHTML = `
     <div class="home-wrap">
-      <header class="home-brand">
-        <div class="gnot-mark home"><b>GNOT</b><span>The Gonka Network Onboarding Tool</span></div>
-        <div class="sub">${esc(t("by GNOH · The Gonka Network Onboarding Hub"))}</div>
-      </header>
-      <button class="earn-strip" id="earn-strip" hidden></button>
+      <div class="home-top">
+        <header class="home-brand">
+          <div class="gnot-mark home"><b>GNOT</b><span>The Gonka Network Onboarding Tool</span></div>
+          <div class="sub">${esc(t("by GNOH · The Gonka Network Onboarding Hub"))}</div>
+        </header>
+        <button class="earn-strip" id="earn-strip" hidden></button>
+      </div>
+      <div class="home-epoch" id="home-epoch" hidden></div>
       <div class="tool-grid home-choices">
         <button class="tool-card big" id="tool-host">
+          <span class="tool-icon" aria-hidden="true">${HOME_ICONS.host}</span>
           <span class="tool-kicker">Gonka Host Setup</span>
           <span class="tool-name">${esc(t("Set up a node"))}</span>
           ${progress ? `<span class="tool-badge live">${esc(t("In progress: {step}", { step: progress }))}</span>` : finished ? `<span class="tool-badge live">${esc(t("Your node is set up"))}</span>` : ""}
           <span class="tool-desc">${esc(t("From a rented GPU server to a registered, earning node. Step by step, no command line."))}</span>
-          <span class="tool-go">${esc(progress || finished ? t("Continue →") : t("Start →"))}</span>
+          <span class="tool-go">${goLabel(progress || finished ? t("Continue →") : t("Start →"))}</span>
         </button>
         <button class="tool-card big" id="tool-monitor">
+          <span class="tool-icon" aria-hidden="true">${HOME_ICONS.monitor}</span>
           <span class="tool-kicker">Gonka Host Monitor/Vote</span>
           <span class="tool-name">${esc(t("Watch nodes and vote"))}</span>
           <span class="tool-desc">${esc(t("Your node, every host, the whole network and what it is voting on, at a glance."))}</span>
-          <span class="tool-go">${esc(t("Open →"))}</span>
+          <span class="tool-go">${goLabel(t("Open →"))}</span>
         </button>
       </div>
       <footer class="home-foot">
@@ -3884,6 +4002,8 @@ function renderHome() {
   };
   $("#tool-monitor").onclick = () => showMonitor();
   renderEarnStrip();
+  if (typeof monRenderEpoch === "function") monRenderEpoch();   // the epoch's clock, here too
+  homeNetStart();
   $("#home-lang").onchange = (e) => setLanguage(e.target.value);
   const ht = $("#home-theme");
   ht.value = THEME.get();

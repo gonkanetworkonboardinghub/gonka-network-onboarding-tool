@@ -6,9 +6,11 @@
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <title>The Gonka Network Onboarding Tool</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="polish.css" />
 </head>
 <body class="on-home">
   <!-- Home: the tool picker. Rendered by renderHome() in app.js. -->
+  <canvas id="home-net" aria-hidden="true"></canvas>
   <section id="home"></section>
   <!-- Gonka Host Monitor/Vote: a node somebody already runs. Rendered by monitor.js. -->
   <section id="monitor"></section>
@@ -19,6 +21,7 @@
         <a href="#" id="link-home" class="rail-home"><span aria-hidden="true">←</span> All tools</a>
         <div class="title">Gonka Host Setup</div>
         <div class="sub" id="t-sub">from zero to earning node</div>
+        <div class="rail-progress" aria-hidden="true"><span class="rail-progress-track"><i id="rail-progress-fill"></i></span><span class="rail-progress-n" id="rail-progress-n"></span></div>
       </div>
       <div id="rail-steps"></div>
       <div class="footer">

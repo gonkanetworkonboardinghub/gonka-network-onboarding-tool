@@ -157,6 +157,7 @@ function monGo(view, address, from) {
   monRenderMain();
   const main = $("#mon-main");
   if (main) main.scrollTop = 0;
+  enterPage(main);
   // The start page and My nodes show figures from the network page's reading too.
   if ((view === "hub" || view === "mine" || view === "network" || view === "votes") && (!MON.overview || Date.now() - MON.overviewAt > MON_REFRESH_MS)) monLoadOverview();
   // Open votes are counted on the start page, the network page and your own node's Vote button.
@@ -220,30 +221,34 @@ function monShowFetched() {
  * app.js calls this each second along with its own.
  */
 function monRenderEpoch() {
-  const el = document.getElementById("mon-epoch");
-  if (!el || typeof pocState === "undefined" || !pocState) return;
+  if (typeof pocState === "undefined" || !pocState) return;
+  for (const id of ["mon-epoch", "home-epoch"]) monRenderEpochIn(document.getElementById(id));
+}
+function monRenderEpochIn(el) {
+  if (!el) return;
   if (!el.firstChild) {
     el.innerHTML = `
-      <span class="mon-ep-n" id="mon-ep-n"></span>
-      <span class="mon-ep-phase" id="mon-ep-phase"></span>
-      <span class="mon-ep-track" aria-hidden="true"><i id="mon-ep-fill"></i></span>
-      <span class="mon-ep-pct" id="mon-ep-pct"></span>
-      <span class="mon-ep-next" id="mon-ep-next"></span>`;
+      <span class="mon-ep-n"></span>
+      <span class="mon-ep-phase"></span>
+      <span class="mon-ep-track" aria-hidden="true"><i></i></span>
+      <span class="mon-ep-pct"></span>
+      <span class="mon-ep-next"></span>`;
     el.hidden = false;
   }
+  const part = (cls) => el.querySelector(cls);
   const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
   const totalMs = pocState.totalBlocks * pocState.secPerBlock * 1000;
   const frac = totalMs > 0 ? Math.min(1, Math.max(0, 1 - remain / totalMs)) : 0;
   const poc = /poc/i.test(pocState.phase || "");
   const hh = Math.floor(remain / 3600000), mm = Math.floor((remain % 3600000) / 60000), ss = Math.floor((remain % 60000) / 1000);
   const at = new Date(Date.now() + remain).toLocaleString(monLang(), { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-  document.getElementById("mon-ep-n").textContent = pocState.epoch ? t("Epoch {n}", { n: pocState.epoch }) : "";
-  const phase = document.getElementById("mon-ep-phase");
+  part(".mon-ep-n").textContent = pocState.epoch ? t("Epoch {n}", { n: pocState.epoch }) : "";
+  const phase = part(".mon-ep-phase");
   phase.textContent = poc ? t("Proof of Compute now") : t("Serving inference");
   phase.classList.toggle("poc", poc);
-  document.getElementById("mon-ep-fill").style.width = (frac * 100).toFixed(2) + "%";
-  document.getElementById("mon-ep-pct").textContent = (frac * 100).toLocaleString(monLang(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + "%";
-  document.getElementById("mon-ep-next").innerHTML = remain > 0
+  part(".mon-ep-track i").style.width = (frac * 100).toFixed(2) + "%";
+  part(".mon-ep-pct").textContent = (frac * 100).toLocaleString(monLang(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + "%";
+  part(".mon-ep-next").innerHTML = remain > 0
     ? `${esc(t("Next Proof of Compute"))} <b>${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s</b> · ${esc(at)}`
     : esc(t("Proof of Compute is starting"));
 }
@@ -554,7 +559,7 @@ function monDrawPlots(root) {
         };
         pts.forEach((p, i) => { const v = valOf(p, lane); if (p.gap || v == null) flush(); else run.push([xOf(i), yOf(v)]); });
         flush();
-        s += `${lane === 0 ? `<path class="mon-plot-area" d="${area}"/>` : ""}<path class="mon-plot-line s${lane}" d="${line}"/>`;
+        s += `${lane === 0 ? `<path class="mon-plot-area" d="${area}"/>` : ""}<path class="mon-plot-line s${lane}"${lane === 0 ? ' pathLength="1"' : ""} d="${line}"/>`;
         // With only a few points, each one is marked, so a short line still reads as measurements.
         if (n <= 30) pts.forEach((p, i) => { const v = valOf(p, lane); if (!p.gap && v != null) s += `<circle class="mon-plot-mark s${lane}" r="3" cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}"/>`; });
       }
@@ -1496,7 +1501,7 @@ function monAttentionCard(d) {
       case "excluded": return t("The network left this node out of the current epoch: {why}.", { why: monReason(a.reason) });
       case "not-in-epoch": return t("The node is registered but is not in the current epoch, so it is earning nothing.");
       case "no-answer": return t("Its public address, {url}, does not answer. Until it does, it misses the work the network sends it, and that can cost this epoch's reward.", { url: a.url });
-      case "machines-down": return t(a.machines.length === 1 ? "One of its {of} machines is not working: {list}." : "{n} of its {of} machines are not working: {list}.", { n: a.machines.length, of: a.of, list: a.machines.map((m) => `${m.id} (${m.status || "?"})`).join(", ") });
+      case "machines-down": return t(a.machines.length === 1 ? "One of its {of} machines is not working: {list}." : "{n} of its {of} machines are not working: {list}.", { n: a.machines.length, of: a.of, list: a.machines.slice(0, 6).map((m) => `${m.id} (${m.status || "?"})`).join(", ") + (a.machines.length > 6 ? ` … +${monNum(a.machines.length - 6)} ${t("other")}` : "") });
       case "no-allowance": return t("The wallet has no fee allowance for the node. Since Gonka v0.2.16 the node cannot pay its fees without one.");
       case "allowance-low": return t("Only {left} is left of the fee allowance. When it runs out the node cannot pay its fees until the allowance is renewed.", { left: monGnk(a.left) });
       case "wallet-low": return t("The wallet holds only {balance}. The node's fees are paid from it.", { balance: monGnk(a.balance) });
