@@ -1,15 +1,19 @@
-PROMPT FOR BASE44 — after GNOT 1.8.20: new step pictures, six captions and three FAQ answers
-(attach the 14 pictures from the folder "step-pictures-2026-11-13-png" to this message — 01-welcome.png to 14-finished.png — then paste everything below and publish)
+PROMPT FOR BASE44 — after GNOT 1.8.21: new step pictures, one intro line, six captions and three FAQ answers
+(attach the 14 pictures from the folder "step-pictures-v1.8.21-png" to this message — 01-welcome.png to 14-finished.png — then paste everything below and publish)
 
-GNOT 1.8.20 changed a few things in Host Setup, and the website should say the same. This is words and pictures only: nothing about the site's look, layout or motion changes, and no other word, number, link, data, backend function or page address changes. Nothing people can see today is removed.
+GNOT 1.8.20 and 1.8.21 changed a few things in Host Setup, and the website should say the same. This is words and pictures only: nothing about the site's look, layout or motion changes, and no other word, number, link, data, backend function or page address changes. Nothing people can see today is removed.
 
 1. REGISTER A NODE — THE 14 STEP PICTURES
 Replace the 14 step pictures with the 14 attached PNG pictures, in the same order, with the same headings, anchors, picture styling and lightbox as now:
    1 — 01-welcome.png, 2 — 02-welcome-needs.png, 3 — 03-your-server.png, 4 — 04-connect.png, 5 — 05-health-check.png, 6 — 06-wallet.png, 7 — 07-network.png, 8 — 08-model.png, 9 — 09-review.png, 10 — 10-weights.png, 11 — 11-launch.png, 12 — 12-collateral.png, 13 — 13-verify.png, 14 — 14-finished.png.
 The picture in the card "GNOT — Gonka Host Setup" at the top of the page is the new 01-welcome.png too. Remove the old picture files; none of the old ones may still show anywhere.
-How to tell them apart: the new pictures say "v1.8.20" and "Updated Nov 13, 2026" at the bottom of the app's left column (the old ones say "v1.8.18" and "Updated Nov 11, 2026"), and the new picture 14 has a "Finish" button.
+How to tell them apart: the new pictures say "v1.8.21" and "Updated Nov 13, 2026" at the bottom of the app's left column (the old ones say "v1.8.18" and "Updated Nov 11, 2026"), pictures 3 to 14 have a "Start over" button in the left column, and the new picture 14 has a "Finish" button.
 
-2. REGISTER A NODE — SIX CAPTIONS
+2. REGISTER A NODE — THE LINE ABOVE THE STEPS
+Under the heading "Step by step with GNOT", replace the intro line with exactly this (the first two sentences are the ones there now; the third is new):
+"Every step of Gonka Host Setup, as the app shows it. The pictures use an example 8 × H100 server; the addresses in them are examples. On every step, "Start over" in the left column stops the setup you are in and takes you back to the first step: it asks first, and nothing on your server is removed or stopped."
+
+3. REGISTER A NODE — SIX CAPTIONS
 Replace the text under these six steps with exactly this. The other eight captions, the note "Your provider asks for an SSH key?" and everything else on the page stay as they are.
 
 Step 5 ("Health check"):
@@ -30,7 +34,7 @@ Step 13 ("Verify"):
 Step 14 ("Your node is live"):
 "GNOT now follows your node in My nodes, in Gonka Host Monitor/Vote inside the same app: see how it is doing, vote with it, use a command line on its server, or shut it down safely. From here: keep the server on, keep your 24 words safe, and never delete the .tmkms folder on the server. Finish closes the setup; Set up another node starts the next one."
 
-3. FAQ — THREE ANSWERS
+4. FAQ — THREE ANSWERS
 Replace the answers to these three questions with exactly this. The questions themselves, their order, and the other 29 questions and answers stay as they are.
 
 a. "What does it cost?":
@@ -42,9 +46,9 @@ b. "How much does registering cost?":
 c. "How do I vote on a proposal?":
 "A host votes with its node, and the vote counts by the node's weight. Open Monitor/Vote in GNOT, link your node's wallet once, and vote on the Votes page. A node that is not in the current epoch can still vote, but its vote only counts if the node is in the epoch when voting ends. The app keeps a record of how you voted. The website shows every proposal and how the vote stands, but it never asks for your wallet, so voting happens in the app."
 
-4. CHECK BEFORE YOU PUBLISH
-- Register a node shows the 14 new pictures (v1.8.20) and none of the old ones.
-- Only the six captions and the three FAQ answers above are different; every other word and number on the site is as before.
+5. CHECK BEFORE YOU PUBLISH
+- Register a node shows the 14 new pictures (v1.8.21) and none of the old ones.
+- Only the intro line, the six captions and the three FAQ answers above are different; every other word and number on the site is as before.
 - Every language shows the new texts in its own words, and keeps working exactly as now.
 - The look, the motion and the phone layout are untouched.
 
