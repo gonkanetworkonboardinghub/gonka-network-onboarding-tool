@@ -37,6 +37,9 @@ GNOT reads, and changes nothing:
   the driver (a GPU that is listed but doesn't answer is a faulty one)
 - whether any of Gonka's internal ports (26657, 9100, 9200, 5050, 8080) are
   open to the internet
+- whether another program on the server already uses a port Gonka needs
+  (5000, your API port, 8443, 9200, 30303, and 9100, 8080, 5050), and which
+  program it is
 - the server's public address, by asking `api.ipify.org` once, to suggest the
   node's address
 
@@ -58,6 +61,7 @@ gives you the command to run yourself.
 | Hugging Face tool | installs it with `pipx`, or into its own Python environment in your home folder (`~/.local/hfcli`, adding `python3-venv` first if it is missing) |
 | NVIDIA driver too old | removes the installed NVIDIA packages, installs driver 580 (CUDA 13; 575 or 570 if 580 won't install), and **restarts the server** |
 | Model cache folder | creates the folder on your largest disk |
+| A port Gonka needs is taken | stops the program that holds it: switches its service off (`systemctl disable --now`), or stops the process if it is not a service. Never the SSH service, Docker or the system itself |
 
 Code: `src/services/fixes.js`.
 
@@ -104,9 +108,17 @@ Code: `src/services/fixes.js`.
     (a broken `/dev/dri` link step): rewrites NVIDIA's GPU file for
     containers without that step, and keeps a backup beside it
     (`*.gonka-backup`).
-13. **Launch.** Starts everything (`docker compose ... up -d`) and downloads
+13. **A port another program holds.** Before the launch, if another program
+    on the server already uses 9100, 8080 or 5050 (a provider's monitoring
+    agent often sits on 9100), GNOT changes that one line in Gonka's compose
+    file so the port is published on a spare one instead (19100, 18080,
+    15050). Gonka only uses these three inside Docker, so the node works the
+    same; the other program is not touched. A port that has to be the one it
+    is (5000, your API port, 8443, 9200, 30303) is never moved: GNOT names
+    the program that holds it and the command that stops it.
+14. **Launch.** Starts everything (`docker compose ... up -d`) and downloads
     the model's weights from Hugging Face into the model cache folder.
-14. **Collateral, if you choose it.** Signed on your computer with your
+15. **Collateral, if you choose it.** Signed on your computer with your
     wallet.
 
 Code: `src/services/deploy.js`, `src/services/configgen.js`, `src/services/keys.js`.

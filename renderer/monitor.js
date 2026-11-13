@@ -393,6 +393,8 @@ async function monLoadProposals() {
   try {
     MON.gov = await api("monitorProposals");
     MON.govAt = Date.now();
+    // The votes cast from this computer: the chain forgets a vote once voting ends.
+    try { MON.myVotes = await api("monitorMyVotes"); } catch (_) { MON.myVotes = MON.myVotes || []; }
     MON.votes = {};
     for (const p of MON.gov.proposals.filter((x) => x.status === "VOTING_PERIOD")) {
       MON.votes[p.id] = [];
@@ -1849,6 +1851,12 @@ function monVotesHtml() {
     const turnout = p.turnout === null ? null : Math.min(1, p.turnout);
     // Your own nodes vote right here; the others kept here only show their vote.
     const mine = (MON.votes[p.id] || []).filter((v) => !monOwn(MON.nodes.find((n) => n.address === v.address)));
+    // What was voted from this computer on a proposal that has ended (kept here; the chain no longer has it).
+    const cast_here = (MON.myVotes || []).filter((v) => Number(v.id) === Number(p.id)).map((v) => {
+      const n = MON.nodes.find((x) => x.address === v.address);
+      return { name: n ? monName(n) : monShort(v.address), option: v.option,
+        when: new Date(v.at).toLocaleDateString(monLang(), { month: "short", day: "numeric", year: "numeric" }) };
+    });
     const open = isLive || MON.open.has(p.id);
     const why = !isLive && p.status === "REJECTED" && p.yesShare > p.threshold && turnout !== null && turnout < p.quorum
       ? t("Most votes were yes, but too few voted for it to count.") : "";
@@ -1894,7 +1902,8 @@ function monVotesHtml() {
           ${p.upgradeTo && p.upgradeTo.height ? `<p class="small">${esc(t("At block {h}.", { h: monNum(p.upgradeTo.height) }))}</p>` : ""}
           ${p.summary ? `<div class="mon-prop-text"><p>${esc(p.summary)}</p>
             ${links(p.summary).map((u) => `<a href="#" data-open="${esc(u)}">${esc(u.length > 70 ? u.slice(0, 70) + "…" : u)}</a>`).join("<br>")}</div>` : ""}
-          ${isLive && mine.length ? `<div class="mon-myvote">${mine.map((v) => `${esc(v.name)}: <b>${v.vote ? esc(voteWord[v.vote] || v.vote) : esc(t("has not voted"))}</b>`).join(" · ")}</div>` : ""}
+          ${isLive && mine.length ? `<div class="mon-myvote">${esc(t("Other nodes you follow:"))} ${mine.map((v) => `${esc(v.name)}: <b>${v.vote ? esc(voteWord[v.vote] || v.vote) : esc(t("has not voted"))}</b>`).join(" · ")}</div>` : ""}
+          ${!isLive && cast_here.length ? `<div class="mon-myvote">${cast_here.map((v) => esc(t("{name} voted {option} from this computer, {when}.", { name: v.name, option: voteWord[v.option] || v.option, when: v.when }))).join(" ")}</div>` : ""}
         </div>
       </div>`;
   };
@@ -1956,7 +1965,7 @@ function monBallotHtml(p) {
         <div class="mon-ballot-head"><b>${esc(t("Vote with {name}", { name: monName(n) }))}</b>
           <span class="small">${now ? esc(t("Its vote now: {vote}", { vote: monVoteWord(now) })) : esc(t("It has not voted."))}</span></div>
         <div class="mon-ballot-opts">${MON_OPTIONS.map((o) => `<button data-option="${o}" class="${b && b.option === o ? "on" : now === o ? "cast" : ""}" ${busy ? "disabled" : ""}>${esc(monVoteWord(o))}</button>`).join("")}</div>
-        ${outOfEpoch ? `<p class="small">${esc(t("This node is not in the current epoch. Its vote only counts if it is in the epoch when the vote ends."))}</p>` : ""}
+        ${outOfEpoch ? `<p class="small mon-noweight"><b>${esc(t("This node has no weight right now: it is not in the current epoch."))}</b> ${esc(t("You can still vote. The vote is recorded, and it counts only if the node is in the epoch when the vote ends."))}</p>` : ""}
         ${flow}
       </div>`;
   }).join("");
@@ -1996,6 +2005,7 @@ function monWireBallots(main) {
       const list = MON.votes[b.id] || (MON.votes[b.id] = []);
       const had = list.find((v) => v.address === b.address);
       if (had) had.vote = b.option; else list.push({ address: b.address, name: monName(node), vote: b.option });
+      try { MON.myVotes = await api("monitorRememberVote", { id: b.id, address: b.address, option: b.option, txhash: b.txhash }); } catch (_) { /* the chain has it while the vote is open */ }
       // Then read the tally again, once the message has been seen.
       setTimeout(() => { if (MON.ballot === b) { MON.ballot = null; monLoadProposals(); } }, 20000);
     } catch (e) { b.stage = "confirm"; b.error = e.message; }

@@ -136,6 +136,21 @@ function planFix(id, facts) {
       };
     }
 
+    case "ports-free": {
+      // The programs the health check found on ports Gonka needs (scan.js),
+      // each with the command that stops it: its service, or the process.
+      const taken = facts.takenPorts || [];
+      const stops = [...new Set(taken.map((b) => b.stop).filter((s) => /^sudo (systemctl disable --now [A-Za-z0-9@_.:-]+\.service|kill \d+)$/.test(s || "")))];
+      if (!taken.length || stops.length === 0 || taken.some((b) => !b.stop)) {
+        return manualOnly("Stop the program that uses the port, or use a server where the port is not taken.");
+      }
+      const who = [...new Set(taken.map((b) => `${b.program || "the program"} on port ${b.port}`))].join(", ");
+      return {
+        description: `Stop ${who}, so Gonka can use the port`,
+        cmd: sudo + stops.map((s) => s.replace(/^sudo /, "$SUDO ")).join("; ") + "; sleep 1; echo OK"
+      };
+    }
+
     default:
       return null;
   }

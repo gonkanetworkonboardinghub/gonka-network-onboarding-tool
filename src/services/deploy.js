@@ -7,6 +7,7 @@
  */
 const K = require("../knowledge");
 const { shq } = require("../executor");
+const Ports = require("./ports");
 
 const JOIN = () => K.get().repo.joinDir; // e.g. gonka/deploy/join
 
@@ -350,7 +351,14 @@ async function startCore(driver, onData, { pollMs = 6000, stallMs = 60 * 1000, w
     // A node stuck on a download from before the fix has to start again to use it.
     (fit && fit.changed ? ` && docker compose up -d --force-recreate --no-deps node 2>&1` : ""),
     { onData, timeoutMs: 600000 });
-  if (up.code !== 0) throw new Error("Couldn't start tmkms and the chain node:\n" + (up.stdout + up.stderr).slice(-600));
+  if (up.code !== 0) {
+    // Port 5000 already taken on the server is said in plain words.
+    let plain = null;
+    try { plain = await portClashMessage(driver, up.stdout + up.stderr); } catch (_) { /* keep Docker's own words */ }
+    // The plain sentence goes on the first line: the part the page shows unfolded.
+    throw new Error(plain ? "Couldn't start tmkms and the chain node: " + plain
+      : "Couldn't start tmkms and the chain node:\n" + (up.stdout + up.stderr).slice(-600));
+  }
 
   const WAIT_MS = waitMs, STALL_MS = stallMs, CRASHES = 6;
   const started = Date.now(), tried = new Set();
@@ -449,6 +457,9 @@ async function diagnostics(driver) {
     `echo; echo "## disk"; df -h . / 2>&1 | head -6; echo; echo "## memory"; free -g 2>&1 | head -3; ` +
     `echo; echo "## GPUs"; nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>&1 | head -10; ` +
     `echo; echo "## network"; ip -o link show 2>/dev/null | awk '{print $2, "mtu", $5}'; iptables -t mangle -S FORWARD 2>/dev/null | grep TCPMSS; ` +
+    // Which program holds each port Gonka publishes: a launch dies on one another program has.
+    `echo; echo "## what listens on Gonka's ports"; (sudo -n ss -lntpH 2>/dev/null || ss -lntpH 2>/dev/null) | ` +
+    `grep -E ":(5000|\${API_PORT:-8000}|\${API_SSL_PORT:-8443}|9100|9200|\${PORT:-8080}|\${INFERENCE_PORT:-5050}|30303|19100|18080|15050) " | awk '{print $4, $6}' | head -20; ` +
     `echo; echo "## public Gonka nodes, from this server"; ` +
     seeds.map((s) => `echo "${s}: $(curl -s -m 15 -o /dev/null -w '%{http_code} in %{time_total}s' ${shq(s + "/chain-rpc/status")} 2>/dev/null || echo 'no answer')"`).join("; "),
     { timeoutMs: 120000 });
@@ -675,6 +686,65 @@ async function ensureGpuRuntime(driver, onData) {
   return { fixed: false, state: (out.match(/NO_CTK|NO_SPEC|SPEC_OK|REGEN_FAILED|STILL_PRESENT/) || ["unknown"])[0] };
 }
 
+/**
+ * Publish Gonka's convenience ports somewhere else when another program on
+ * the server already holds theirs (see ports.js: 9100 is also the default
+ * port of the monitoring agent many providers install).
+ *
+ * Only the three ports nothing on the server itself needs are moved: the
+ * containers reach each other by name inside Docker's network, so the node
+ * works exactly the same. A port Docker itself holds is a node already
+ * running here and is left alone, which also makes a second launch a no-op.
+ */
+async function stepAroundTakenPorts(driver, onData) {
+  const moved = [];
+  const seen = await Ports.look(driver, JOIN());
+  if (!seen.listeners.length) return { moved };
+  const abs = (await driver.exec(`cd ${JOIN()} && pwd`)).stdout.trim();
+  if (!abs) return { moved };
+  for (const g of Ports.gonkaPorts(seen.env)) {
+    if (!g.movable) continue;
+    const text = (await driver.exec(`cat ${shq(JOIN() + "/" + g.movable.file)} 2>/dev/null`)).stdout;
+    const now = Ports.publishedOn(text, g.movable.container, seen.env);
+    if (!now) continue;
+    const h = Ports.holder(seen.listeners, now, "127.0.0.1", seen.published);
+    if (!h || h.docker) continue;
+    const to = Ports.sparePort(seen.listeners, g.movable.spare, moved.map((m) => m.to));
+    const next = to ? Ports.movePublished(text, g.movable.container, to) : text;
+    if (next === text) continue;
+    await driver.writeFile(abs + "/" + g.movable.file, next);
+    moved.push({ from: now, to, program: h.program || null });
+    onData && onData(`Port ${now} on this server is already used by ${Ports.nameOf(h)}. Gonka only needs that port inside Docker, so GNOT publishes it on ${to} instead. Nothing else changes.\n`);
+  }
+  return { moved };
+}
+
+/**
+ * A launch Docker refused because a port on the server was taken, said in
+ * plain words: which port, who holds it, and the command that stops it.
+ * null when the failure is anything else.
+ */
+async function portClashMessage(driver, text) {
+  const port = Ports.refusedPort(text);
+  if (!port) return null;
+  const seen = await Ports.look(driver, JOIN());
+  const g = Ports.gonkaPorts(seen.env).find((x) => x.port === port);
+  const h = Ports.holder(seen.listeners, port, g ? g.bind : "0.0.0.0", seen.published);
+  let who = Ports.nameOf(h), stop = null;
+  if (h && h.docker) {
+    const ps = await driver.exec(`docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -E ':${port}(-[0-9]+)?->' | head -3; true`);
+    const names = String(ps.stdout || "").split("\n").map((l) => l.trim().split(/\s+/)[0]).filter((n) => /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(n));
+    if (names.length) { who = `another Docker container (${names.join(", ")})`; stop = `docker stop ${names.join(" ")}`; }
+  } else {
+    stop = await Ports.stopCommand(driver, h);
+  }
+  return `Port ${port} on your server is already used by ${who}, and Gonka needs it${g ? ": it is " + g.use : ""}.\n\n` +
+    `Stop that program, then press "Run launch sequence" again; it skips everything already done. ` +
+    `In the command line under the activity log:\n\n` +
+    (stop || `sudo ss -ltnp | grep -w ${port}`) +
+    (stop ? "" : `\n\nThat shows the program holding the port.`);
+}
+
 async function launchAll(driver, onData, gpuCount) {
   // Self-heal before launching: these are the two compose defaults that fail
   // on real hardware, and a user hitting "Run launch sequence" again after a
@@ -685,10 +755,18 @@ async function launchAll(driver, onData, gpuCount) {
   // Host-level: repair a CDI spec whose /dev/dri symlink hook breaks every GPU
   // container on this machine. No-op when the host is healthy.
   await ensureGpuRuntime(driver, onData);
+  // A port another program holds would stop a container a minute in. Never
+  // let this look-ahead itself be what fails the launch.
+  try { await stepAroundTakenPorts(driver, onData); } catch (_) { /* the launch below says what is wrong */ }
   const r = await driver.exec(
     `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && docker compose -f docker-compose.yml -f docker-compose.mlnode.yml up -d`,
     { onData, timeoutMs: 900000 });
-  if (r.code !== 0) throw new Error("Full launch failed:\n" + (r.stderr || "").slice(-600));
+  if (r.code !== 0) {
+    let plain = null;
+    try { plain = await portClashMessage(driver, (r.stderr || "") + "\n" + (r.stdout || "")); } catch (_) { /* keep Docker's own words */ }
+    // The plain sentence goes on the first line: the part the page shows unfolded.
+    throw new Error(plain ? "Full launch failed: " + plain : "Full launch failed:\n" + (r.stderr || "").slice(-600));
+  }
   return { ok: true };
 }
 
@@ -830,6 +908,6 @@ module.exports = {
   cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName, serverKeyringLine, withKeyringLine,
   listComposeImages, serverArch,
   pullImages, startCore, reachableSeeds, switchSeed, diagnostics, warmKeyExists, createWarmKey, getConsensusKey,
-  registerHost, launchAll, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
+  registerHost, launchAll, stepAroundTakenPorts, portClashMessage, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
   feeBudget
 };

@@ -1,0 +1,48 @@
+PROMPT FOR BASE44 — The site's new look, part 3: one fault on phones, and what parts 1 and 2 left undone
+(attach the 14 pictures from the folder "step-pictures-2026-11-11-png" to this message — 01-welcome.png to 14-finished.png — then paste everything below and publish)
+
+Parts 1 and 2 were applied only partly. I checked the live site on November 11, 2026; below is exactly what is still missing. The rules are the same as before: no words, numbers, links, data, backend functions or page addresses change, and nothing people can see today is removed. Every animation is switched off under prefers-reduced-motion. Nothing may be wider than a phone's screen.
+
+1. DOWNLOAD PAGE ON PHONES — A FAULT, FIX FIRST
+At phone width (360px, 375px) the Download page is about 1,090px wide instead of the width of the screen. The two cards (Windows, Mac) stretch to the full length of the command line, their text is cut off on the right, and the menu button in the top bar is pushed out of view.
+Cause: the command sits in <code class="... whitespace-nowrap"> inside <div class="overflow-x-auto max-w-full">, but the boxes around it have no minimum width of zero, so the long line pushes them wide.
+Fix:
+- The grid "grid md:grid-cols-2 gap-6": use columns of minmax(0, 1fr) (Tailwind: grid-cols-1 md:grid-cols-2, with min-w-0 on both cards).
+- Add min-w-0 to each card ("border rounded bg-card/50 p-6 md:p-8 flex flex-col"), to the wrapper "relative space-y-8 flex-1" inside it, and to each step's row "flex gap-4".
+- The command box keeps overflow-x: auto, so the long command scrolls sideways inside its own box and nothing else moves.
+- After the fix, at 360px and 375px wide, document.documentElement.scrollWidth must equal the window's width on Download and on every other page.
+Also on Download, on desktop: the small label "This computer" pushes the title "Windows" lower than the title "Mac". Keep both titles on the same line: reserve the label's height in both cards.
+
+2. REGISTER A NODE — THE 14 STEP PICTURES ARE STILL THE OLD ONES
+The pictures on the page today are still the old files (829e5698c_01-welcome.png, 85db4289c_02-welcome-needs.png, 02cd9e0d9_03-your-server.png … 3ba190960_14-finished.png). Replace them with the 14 attached PNG pictures, in the same order, with the same captions, headings, anchors and lightbox as now:
+   1 — 01-welcome.png, 2 — 02-welcome-needs.png, 3 — 03-your-server.png, 4 — 04-connect.png, 5 — 05-health-check.png, 6 — 06-wallet.png, 7 — 07-network.png, 8 — 08-model.png, 9 — 09-review.png, 10 — 10-weights.png, 11 — 11-launch.png, 12 — 12-collateral.png, 13 — 13-verify.png, 14 — 14-finished.png.
+The picture in the card "GNOT — Gonka Host Setup" at the top of the page is the new 01-welcome.png too. Remove the old picture files; none of the old ones may still show anywhere.
+How to tell them apart: in the new pictures the app's left column has a progress bar with a count out of 13 (such as "3 / 13") under "Gonka Host Setup", green ticks joined by a line, and "Updated Nov 11, 2026" at the bottom. The old ones say "Updated Oct … 2026".
+
+3. REGISTER A NODE — THE REST OF THE PAGE (nothing from parts 1 and 2 reached this page)
+- Pictures: 12px corners, a 1px border rgba(255,255,255,0.10), shadow 0 14px 36px rgba(0,0,0,0.42). On hover the cursor is a zoom cursor (zoom-in) and the picture lifts 2px. In the lightbox the picture fades and grows in (from 96%, 220ms); left/right arrow keys move between steps, Esc closes.
+- The row of 14 step chips under "Step by step with GNOT" ("flex flex-wrap gap-2 mt-5"): while the visitor scrolls through the steps, this row stays stuck under the top bar (position: sticky, glass background like the top bar), the chip of the step now in view is highlighted (white text, lighter border), and a 2px line along the bottom of the row fills from left to right as the visitor moves from step 1 to step 14. Clicking a chip scrolls smoothly to that step. On a phone the row may scroll sideways inside itself; it must not make the page wider.
+- The 14 step cards (<article class="scroll-mt-24 border border-border rounded bg-card p-5">), the card "GNOT — Gonka Host Setup", and the note boxes on this page: give them the same surface look as in point 4.
+
+4. THE SURFACE LOOK IS MISSING ON MOST BOXES
+Part 1 asked for every card, box, panel and table wrapper to get: 12px corners, the faint gradient linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015)) over its colour, and the lit top edge box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 1px 2px rgba(0,0,0,0.28). Today only a few have it (the classes "surface" and "surface-clickable": the two doors on Home, the three steps on Get a node, the three doors on Monitor/Vote, four tiles on The network, the FAQ rows). Every other box still has the old flat look with 4px corners ("border border-border rounded bg-card" or "bg-card/50"). Give the same "surface" class (and "surface-clickable", with the lift, lighter border, sliding arrow and pointer spotlight, where the box can be clicked) to all of these:
+- Get a node: "What your server needs", "When a node can join", the Spheron card and its price tiles.
+- Register a node: everything in point 3.
+- Mine or buy: the table's wrapper, the "Will it pay for itself?" box, the "Compare with providers" box and each provider's row.
+- Monitor/Vote → My nodes: every box on the page; the dashed ones (Status, Earnings, Fees and collateral, …) keep their dashed border.
+- Monitor/Vote → The network: "What hosts were paid", "GNK: how much there is, and where", every chart box, "What the hosts run", "Models served", the hosts table's wrapper. The amber warning box keeps its amber colour and gets only the 12px corners.
+- Monitor/Vote → a host's page: every tile and box that still has the old flat look.
+- Monitor/Vote → Votes and a proposal's page: "Vote with your node in GNOT", every proposal card (clickable: surface-clickable), the vote table's wrapper.
+- Download: the two cards (the green border on "This computer" stays) and the video box.
+Colours with a meaning (amber warnings, red, green, the dashed borders) stay as they are.
+
+5. TICK MARKS
+Every tick in a list is still a plain tick (Get a node: "What your server needs" and "Before you rent at Spheron"; Register a node: the list in the top card). Make each one the small green circle from part 1: 16px, background #7fb094, with a dark tick inside. On Get a node the points of "What your server needs" come in one after another (40ms apart) the first time the box is seen.
+
+6. CHECK BEFORE YOU PUBLISH
+- Phone widths 360px and 375px: no page scrolls sideways (Home, Get a node, Register a node, Mine or buy, Monitor/Vote and its pages, FAQ, Download).
+- Register a node shows the 14 new pictures and none of the old ones.
+- With prefers-reduced-motion: reduce, everything simply appears and numbers show their final value at once.
+- No word and no number on any page is different from before.
+
+Change nothing else on the site. Every language keeps working exactly as now.

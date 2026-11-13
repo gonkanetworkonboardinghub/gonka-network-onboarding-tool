@@ -4,6 +4,7 @@
  * that fixes.js knows how to repair.
  */
 const K = require("../knowledge");
+const Ports = require("./ports");
 
 function verLte(a, b) {
   const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
@@ -230,17 +231,43 @@ async function runScan(driver) {
     facts.hfCli ? "" : "Needed to pre-download model weights.", !facts.hfCli);
 
   // --- Dangerous ports publicly bound? ---
-  const listen = await driver.exec("ss -lntH 2>/dev/null || netstat -lnt 2>/dev/null");
-  const bad = [];
-  for (const p of k.ports.internalOnly) {
-    const re = new RegExp(`(0\\.0\\.0\\.0|\\*|::):${p}\\b`);
-    if (re.test(listen.stdout)) bad.push(p);
-  }
+  // Only what Docker publishes counts here: a node set up on this server
+  // before, with its internal ports left open. Another program that happens
+  // to use one of these numbers is the next check's business.
+  // A server that cannot be asked is not a failed health check: nothing is listed, nothing is flagged.
+  let seen = { listeners: [], published: new Set(), env: {} };
+  try { seen = await Ports.look(driver, k.repo && k.repo.joinDir); } catch (_) { /* as if nothing listens */ }
+  const open = (l) => l.addr === "0.0.0.0" || l.addr === "*" || l.addr === "::";
+  const bad = k.ports.internalOnly.filter((p) => seen.listeners.some((l) => l.port === p && open(l) &&
+    (l.program === "docker-proxy" || (!l.program && seen.published.has(p)))));
   facts.publicInternalPorts = bad;
   add("ports", "Internal ports not publicly exposed", bad.length ? "fail" : "pass",
     bad.length
       ? `Ports ${bad.join(", ")} are listening on all interfaces. These must be localhost-only — a third party could overload your node or knock it out of an epoch. The wizard binds them to 127.0.0.1 in the compose files it writes.`
       : "No internal Gonka ports are currently exposed.");
+
+  // --- A port Gonka needs, already held by another program? ---
+  // Docker refuses to start a container whose port is taken, a minute into
+  // the launch. Three of Gonka's ports GNOT can publish elsewhere (ports.js);
+  // the others have to be free, and here is where to find that out.
+  const { blocked, stepped } = Ports.clashes(seen.listeners, seen.env, seen.published);
+  for (const b of blocked) b.stop = await Ports.stopCommand(driver, b);
+  facts.takenPorts = blocked;
+  facts.steppedPorts = stepped;
+  const canStop = blocked.length > 0 && blocked.every((b) => b.stop);
+  add("ports-free", "Ports Gonka needs are free",
+    blocked.length ? "fail" : "pass",
+    blocked.length
+      ? blocked.map((b) => `Port ${b.port} is already used by ${Ports.nameOf(b)} on this server, and Gonka needs it: it is ${b.use}.`).join(" ") +
+        " The launch would fail. " +
+        (canStop ? "The Fix stops " + (blocked.length > 1 ? "those programs" : "that program") + "; or use a server where the port is not taken."
+                 : "Stop " + (blocked.length > 1 ? "those programs" : "that program") + ", or use a server where the port is not taken.")
+      : stepped.length
+        ? stepped.map((s) => `Port ${s.port} is used by ${Ports.nameOf(s)} on this server.`).join(" ") +
+          " Gonka only needs " + (stepped.length > 1 ? "those ports" : "that port") + " inside Docker, so GNOT publishes " +
+          (stepped.length > 1 ? "them" : "it") + " on another port at launch. Nothing to do."
+        : "No other program on this server uses them.",
+    canStop);
 
   // --- Public IP (for PUBLIC_URL suggestion) ---
   const ip = await driver.exec("curl -s --max-time 8 https://api.ipify.org || true");

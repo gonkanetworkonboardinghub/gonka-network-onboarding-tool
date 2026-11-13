@@ -87,6 +87,9 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // The countdown to the Proof of Compute and every "still working" clock
+      // must keep the second, also while the window sits behind another one.
+      backgroundThrottling: false,
       zoomFactor: size.zoom
     }
   });
@@ -246,6 +249,14 @@ ipcMain.handle("app:installUpdate", wrap(async () => {
 }));
 ipcMain.handle("app:platform", wrap(async () => ({ platform: process.platform })));
 ipcMain.handle("app:openExternal", wrap(async ({ url }) => { shell.openExternal(url); return true; }));
+// Is this the path of a file on this computer? A pasted "ssh -i KEY user@host" names
+// a key that is often only a placeholder; Connect uses it when it is real.
+ipcMain.handle("app:fileExists", wrap(async ({ path: p }) => {
+  let f = String(p || "").trim().replace(/^["']|["']$/g, "");
+  if (!f || f.length > 1000) return false;
+  if (/^~(?=$|[\\/])/.test(f)) f = path.join(require("os").homedir(), f.slice(1));
+  try { return fs.statSync(f).isFile(); } catch (_) { return false; }
+}));
 ipcMain.handle("app:pickFile", wrap(async () => {
   const r = await dialog.showOpenDialog(win, { properties: ["openFile", "showHiddenFiles"] });
   return r.canceled ? null : r.filePaths[0];
@@ -429,6 +440,9 @@ ipcMain.handle("monitor:overview", wrap(async ({ address, epochs }) => {
 ipcMain.handle("monitor:nodes", wrap(async () => monitor.loadNodes(monitorDir())));
 ipcMain.handle("monitor:saveNodes", wrap(async ({ nodes }) => monitor.saveNodes(monitorDir(), nodes)));
 ipcMain.handle("monitor:proposals", wrap(async () => monitor.proposals(await seedForMonitor())));
+// The votes cast from this computer: the chain forgets a vote once voting ends.
+ipcMain.handle("monitor:myVotes", wrap(async () => monitor.loadVotes(monitorDir())));
+ipcMain.handle("monitor:rememberVote", wrap(async (v) => monitor.rememberVote(monitorDir(), v)));
 ipcMain.handle("monitor:voteOf", wrap(async ({ id, address }) => {
   if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
   return monitor.voteOf(await seedForMonitor(), Number(id), String(address).trim());

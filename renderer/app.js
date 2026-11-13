@@ -98,6 +98,12 @@ const STEPS = [
 ];
 const doneSteps = new Set();
 const errorSteps = new Set();
+/** Each step's place in the list, by its id. A step marks itself done or failed by
+ *  name, never "the page showing now": someone looking back at an earlier page
+ *  while a later step runs must not get that page marked instead. */
+const STEP = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
+/** Is this step's page the one on screen? What runs for minutes asks before it touches the page. */
+const onStep = (id) => S.step === STEP[id];
 
 /* ------------------------------------------------------------------ */
 /* Console                                                             */
@@ -122,6 +128,9 @@ function reportRunning() {
   if (window.gonka && window.gonka.setRunning) window.gonka.setRunning(label);
 }
 function setBusy(b, title) {
+  // The step whose button started this: its page shows it as running when opened again.
+  if (b && !S.consoleBusy) S.busyStep = S.step;
+  if (!b) S.busyStep = null;
   S.consoleBusy = b;
   $("#console-dot").className = "dot" + (b ? " busy" : "");
   if (title) busyLabel = title;
@@ -203,9 +212,43 @@ function go(i) {
   S.revisitOf = doneSteps.has(S.step) && S.furthest > S.step && !resuming ? S.step : null;
   RENDER[STEPS[S.step].id]();
   if (S.revisitOf === S.step) revisitGuard(S.step);
+  stillRunning();
+  // What went wrong here while another page was showing is said here, now.
+  const problem = S.problems && S.problems[S.step];
+  if (problem) { delete S.problems[S.step]; showProblem(STEPS[S.step].id === "deploy" ? $("#deploy-extra") : null, problem); }
   $("#stage").scrollTop = 0;
   enterPage($("#stage"));
   saveSession();
+}
+
+/* The button that starts each step's long work. */
+const RUNS = { connect: "#b-conn", scan: "#b-scan", review: "#b-write", weights: "#b-dl", deploy: "#b-run", collateral: "#b-dep" };
+/**
+ * A page opened again while its own work is still running (someone looked
+ * back at an earlier page meanwhile): it says so, and its button cannot start
+ * the same work a second time on top of the first.
+ */
+function stillRunning() {
+  if (!S.consoleBusy || S.busyStep !== S.step) return;
+  const sel = RUNS[STEPS[S.step].id];
+  const b = sel && $(sel);
+  if (b) b.disabled = true;
+  const note = document.createElement("div");
+  note.className = "info-banner running-note";
+  note.textContent = t("This step is still running. The activity log below shows what it is doing, and this page updates when it finishes.");
+  const lede = $("#stage .lede");
+  if (lede) lede.after(note); else $("#stage").prepend(note);
+}
+/**
+ * A step's failure belongs to that step. Its page showing: said there, now.
+ * Another page showing: kept for when its page is opened again (go), and
+ * written to the activity log meanwhile, so it is never said on the wrong page.
+ */
+function stepProblem(id, box, info) {
+  if (onStep(id)) return showProblem(box, info);
+  S.problems = S.problems || {};
+  S.problems[STEP[id]] = info;
+  logLine("\n" + t("Stopped at: {step}", { step: t(STEPS[STEP[id]].label) }) + ". " + String(info.message || "").split("\n")[0] + "\n", "stderr");
 }
 
 /* The buttons that change the server, by step. Pressed while looking back at
@@ -412,23 +455,78 @@ function stage(html) { $("#stage").innerHTML = html; }
 /* Epoch bar — always-visible countdown to the next Proof of Compute,  */
 /* with a fill showing how much of the current epoch has passed.       */
 /* ------------------------------------------------------------------ */
-let pocState = null;
+let pocState = null;   // the countdown as shown: every reader takes etaMs - (now - at)
+let pocTrue = null;    // the latest reading from the chain: where the shown one is steered to
+let pocFullAt = 0;     // when the chain was last read in full
 
+/**
+ * Read the chain for the countdown. In full: the epoch, the next Proof of
+ * Compute's block and the pace of the blocks (several questions). Between two
+ * full readings, a quick look at the newest block is enough to know how many
+ * blocks are left; near the Proof of Compute that happens every ten seconds.
+ */
 async function syncEpochBar() {
   try {
     if (!S.seed) S.seed = await api("seed");
-    const p = await api("nextPoc", { seed: S.seed });
-    pocState = { ...p, at: Date.now() };
+    const left = pocTrue ? pocTrue.etaMs - (Date.now() - pocTrue.at) : null;
+    const quick = pocTrue && pocTrue.nextStart && left > 0 && left < 30 * 60000 && Date.now() - pocFullAt < 120000;
+    let p;
+    if (quick) {
+      const tip = await api("chainHeight", { seed: S.seed });
+      const now = Date.now(), per = pocTrue.secPerBlockNow || pocTrue.secPerBlock;
+      const blocksLeft = pocTrue.nextStart - tip.height;
+      // As netdata.pocEta: the part of a block already gone since the newest one is taken off.
+      const sinceTip = tip.time ? Math.min(per * 1000, Math.max(0, now - tip.time)) : 0;
+      p = { ...pocTrue, blocksLeft, height: tip.height, etaMs: blocksLeft > 0 ? Math.max(0, blocksLeft * per * 1000 - sinceTip) : 0 };
+    } else {
+      p = await api("nextPoc", { seed: S.seed });
+      pocFullAt = Date.now();
+    }
+    pocTrue = { ...p, at: Date.now() };
+    // The first reading is shown as it is; later ones steer the shown clock (renderEpochBar).
+    if (!pocState) pocState = { ...pocTrue };
+    else pocState = { ...pocTrue, etaMs: pocState.etaMs, at: pocState.at };
     if (!$("#epochbar")) return;
     $("#epochbar").style.display = "flex";
-    renderEpochBar();
+    renderEpochBar(true);
   } catch (_) { /* offline — keep whatever we had; bar stays hidden if never synced */ }
 }
+/** How soon to read the chain again: every 2 minutes, every 30 s in the last half hour, every 10 s in the last 5 minutes and until the new epoch shows. */
+function epochSyncWait() {
+  if (!pocTrue) return 15000;
+  const left = pocTrue.etaMs - (Date.now() - pocTrue.at);
+  return left > 30 * 60000 ? 120000 : left > 5 * 60000 ? 30000 : 10000;
+}
+function startEpochBar() {
+  const again = async () => { await syncEpochBar(); setTimeout(again, epochSyncWait()); };
+  again();
+  // Four looks a second, so each second changes on time; the page is only
+  // written to when the second shown changes.
+  setInterval(renderEpochBar, 250);
+}
 
-function renderEpochBar() {
+let pocShownKey = "", pocTickAt = 0;
+function renderEpochBar(force) {
   // Not there behind the update screen, which replaces the whole window.
   if (!pocState || !$("#epoch-fill")) return;
-  const remain = Math.max(0, pocState.etaMs - (Date.now() - pocState.at));
+  // Steer the shown clock to the chain's, a little at a time: a new reading
+  // that differs by some seconds makes the seconds run slightly faster or
+  // slower for a while. It never stands still and never jumps back. Only a
+  // big difference (another epoch, a long sleep) is taken at once.
+  const now = Date.now();
+  if (pocTrue) {
+    const shown = pocState.etaMs - (now - pocState.at);
+    const real = pocTrue.etaMs - (now - pocTrue.at);
+    const err = real - shown;
+    const dt = pocTickAt ? Math.min(2000, Math.max(0, now - pocTickAt)) : 0;
+    if (Math.abs(err) > 20000) { pocState.etaMs = pocTrue.etaMs; pocState.at = pocTrue.at; }
+    else pocState.etaMs += Math.max(-0.25 * dt, Math.min(0.25 * dt, err));
+  }
+  pocTickAt = now;
+  const remain = Math.max(0, pocState.etaMs - (now - pocState.at));
+  const key = Math.floor(remain / 1000) + "|" + (pocState.epoch || "") + "|" + (pocState.phase || "");
+  if (!force && key === pocShownKey) return;
+  pocShownKey = key;
   const totalMs = pocState.totalBlocks * pocState.secPerBlock * 1000;
   const frac = totalMs > 0 ? Math.min(1, Math.max(0, 1 - remain / totalMs)) : 0;
   $("#epoch-fill").style.width = (frac * 100).toFixed(2) + "%";
@@ -437,10 +535,12 @@ function renderEpochBar() {
   const ss = Math.floor((remain % 60000) / 1000);
   // timeZoneName makes the displayed zone explicit — it's always the viewer's
   // own OS clock/timezone (never detected from the network, VPN-immune).
-  const at = new Date(Date.now() + remain).toLocaleString(undefined,
+  const at = new Date(now + remain).toLocaleString(undefined,
     { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-  $("#epoch-text").textContent =
-    `⏱ ${t("Next Proof of Compute")}: ${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s · ${at} · ${(frac * 100).toFixed(1)}%`;
+  // At zero the round is starting: say so, instead of a clock standing at 0.
+  $("#epoch-text").textContent = remain > 0
+    ? `⏱ ${t("Next Proof of Compute")}: ${hh}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s · ${at} · ${(frac * 100).toFixed(1)}%`
+    : `⏱ ${t("Proof of Compute is starting")} · ${(frac * 100).toFixed(1)}%`;
   $("#epochbar").title = t("A new node can only join when this countdown reaches zero.");
   renderPocAdvice();   // the first step's "best time to start" (only there when it is shown)
   if (typeof monRenderEpoch === "function") monRenderEpoch();   // and the same clock along the top of Monitor/Vote
@@ -930,7 +1030,7 @@ RENDER.welcome = () => {
       <button class="primary" id="b-start">Start setup</button>
     </div>`);
   // Starting while an earlier setup is on offer is a new one: the offer goes.
-  $("#b-start").onclick = () => { if (S.sessionOffered) forgetOffered(); markDone(); go(1); };
+  $("#b-start").onclick = () => { if (S.sessionOffered) forgetOffered(); markDone(STEP.welcome); go(1); };
   wireSshEarly();
   $("#stage").querySelectorAll(".check-links a").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); api("openExternal", { url: a.dataset.url }); };
@@ -950,14 +1050,16 @@ RENDER.welcome = () => {
     // A finished setup has nothing left to do: it opens on its last page,
     // with no connecting and no passphrase.
     const finished = resumeTarget === STEPS.length - 1;
-    // Pinned at the very top of the stage so it's seen without scrolling.
+    // The question comes first and on its own: the rest of this first page
+    // stays out of sight until it is answered, so "continue where you left
+    // off?" is not a card to be found above a page that starts a new setup.
     const bar = document.createElement("div");
-    bar.className = "card resume-bar";
+    bar.className = "card resume-bar resume-first";
     bar.innerHTML = finished ? `
       <h3>${esc(t("Your last setup is finished"))}</h3>
       <p class="small">${esc(t("You finished it on {when}. The node runs on its own on your server, so nothing here needs doing again.", { when }))}</p>
       <div class="btn-row">
-        <button class="primary" id="b-resume">${esc(t("Show it"))}</button>
+        <button class="primary" id="b-resume">${esc(t("Continue where I left off"))}</button>
         <button id="b-fresh">${esc(t("Set up another node"))}</button>
       </div>` : `
       <h3>${esc(t("Continue your previous setup?"))}</h3>
@@ -967,6 +1069,8 @@ RENDER.welcome = () => {
         <button class="primary" id="b-resume">${esc(t("Continue where I left off"))}</button>
         <button id="b-fresh">${esc(t("Start over"))}</button>
       </div>`;
+    const rest = [...$("#stage").children];
+    rest.forEach((el) => { el.hidden = true; });
     $("#stage").insertBefore(bar, $("#stage").firstChild);
     $("#b-resume").onclick = () => {
       restoreOffered();
@@ -977,7 +1081,7 @@ RENDER.welcome = () => {
       S.resumeTo = resumeTarget;
       go(2);   // Connect first: everything downstream needs a live session
     };
-    $("#b-fresh").onclick = () => { forgetOffered(); bar.remove(); };
+    $("#b-fresh").onclick = () => { forgetOffered(); bar.remove(); rest.forEach((el) => { el.hidden = false; }); $("#stage").scrollTop = 0; };
   }
 
   (async () => {
@@ -1196,7 +1300,7 @@ RENDER.mode = () => {
   $("#c-ssh").onclick = () => sel("ssh");
   $("#c-local").onclick = () => sel("local");
   $("#b-back").onclick = () => go(0);
-  $("#b-next").onclick = () => { markDone(); go(2); };
+  $("#b-next").onclick = () => { markDone(STEP.mode); go(2); };
 };
 
 /* --- 2 Connect ------------------------------------------------------ */
@@ -1221,11 +1325,12 @@ RENDER.connect = () => {
         S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
         toast("Connected: " + r.info);
         refreshTermPrompt();   // the command line can work from here on
-        markDone();
+        markDone(STEP.connect);
+        if (!onStep("connect")) return;   // another page is showing by now: it stays
         // Same resume shortcut as the SSH path: skip ahead via the wallet stop.
         if (S.resumeTo && S.resumeTo > 3) { go(4); return; }
         go(3);
-      } catch (e) { markError(); alert(e.message); }
+      } catch (e) { markError(STEP.connect); alert(e.message); }
       finally { setBusy(false); }
     };
     return;
@@ -1313,16 +1418,27 @@ RENDER.connect = () => {
       $("#f-host").value = s.host;
     }
     if (pp) { s.port = parseInt(pp[1], 10); $("#f-port").value = s.port; }
-    // "ssh -i ~/.ssh/key root@…": the key file it names is the way in.
+    // "ssh -i ~/.ssh/key root@…": the key file it names is the way in, but
+    // only when it is a real file on this computer. Providers print a
+    // placeholder there for a key they never saw (Spheron: "ssh -i
+    // <private-key-path> ubuntu@…"), and taking that switched the login to a
+    // key file that does not exist. It never replaces the key made in GNOT
+    // either: that is the one that was pasted at the provider.
     const ki = v.match(/(?:^|\s)-i\s*("[^"]+"|'[^']+'|\S+)/);
-    if (ki) {
-      s.privateKeyPath = ki[1].replace(/^["']|["']$/g, "");
-      $("#f-keypath").value = s.privateKeyPath;
-      if (s.auth !== "key") {
-        s.auth = "key";
-        document.querySelectorAll("[data-auth]").forEach((b) => { const on = b.dataset.auth === "key"; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
-        ["key", "pass", "create"].forEach((k) => { $("#auth-" + k).style.display = k === "key" ? "block" : "none"; });
-      }
+    const named = ki ? ki[1].replace(/^["']|["']$/g, "") : "";
+    const keepMade = s.auth === "create" && !!s.generated;
+    if (named && !keepMade && !/[<>{}\[\]$*|]/.test(named)) {
+      api("fileExists", { path: named }).then((real) => {
+        const box = $("#f-sshcmd");
+        if (!real || !box || box.value !== v || !$("#f-keypath")) return;   // not a file, or the page moved on
+        s.privateKeyPath = named;
+        $("#f-keypath").value = named;
+        if (s.auth !== "key") {
+          s.auth = "key";
+          document.querySelectorAll("[data-auth]").forEach((b) => { const on = b.dataset.auth === "key"; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+          ["key", "pass", "create"].forEach((k) => { $("#auth-" + k).style.display = k === "key" ? "block" : "none"; });
+        }
+      }).catch(() => { /* the way of logging in stays as chosen */ });
     }
   };
   // Switching how to log in redraws the form; keep what was already typed.
@@ -1374,6 +1490,8 @@ RENDER.connect = () => {
       try { keyPath = (await api("sshKeySave", { text: keyPath })).privatePath; $("#f-keypath").value = keyPath; }
       catch (e) { return alert(e.message); }
     }
+    // A placeholder left in the box ("<private-key-path>") is not a key file.
+    if (/[<>]/.test(keyPath)) { keyPath = ""; $("#f-keypath").value = ""; }
     const made = s.generated ? s.generated.privatePath : "";
     const key = (s.auth === "create" ? made : keyPath) || keyPath || made;
     s.privateKeyPath = key;
@@ -1393,13 +1511,14 @@ RENDER.connect = () => {
       S.serverSeeds = null;   // a new server: ask it again which public nodes answer it
       toast("Connected: " + r.info);
       refreshTermPrompt();   // the command line can work from here on
-      markDone();
+      markDone(STEP.connect);
+      if (!onStep("connect")) return;   // another page is showing by now: it stays
       // Resuming: the wallet passphrase is never saved, so if the saved step is
       // past the wallet, stop there first — otherwise the config would be
       // written with an empty keyring password.
       if (S.resumeTo && S.resumeTo > 3) { go(4); return; }
       go(3);
-    } catch (e) { markError(); showProblem(null, { at: t("Connect"), message: t("Connection failed:") + " " + e.message, retry: () => $("#b-conn").click() }); }
+    } catch (e) { markError(STEP.connect); stepProblem("connect", null, { at: t("Connect"), message: t("Connection failed:") + " " + e.message, retry: () => $("#b-conn") && $("#b-conn").click() }); }
     finally { setBusy(false); }
   };
 };
@@ -1418,7 +1537,7 @@ RENDER.scan = () => {
       <button id="b-next" ${S.scan && S.scan.ok ? "" : "disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(2);
-  $("#b-next").onclick = () => { markDone(); go(4); };
+  $("#b-next").onclick = () => { markDone(STEP.scan); go(4); };
   $("#b-scan").onclick = runScan;
   if (S.scan) paintScan();
 
@@ -1436,9 +1555,9 @@ RENDER.scan = () => {
       paintScan();
       const nextBtn = $("#b-next");
       if (nextBtn) nextBtn.disabled = !S.scan.ok;
-      if (S.scan.ok) markDone();
+      if (S.scan.ok) markDone(STEP.scan);
     } catch (e) {
-      markError();
+      markError(STEP.scan);
       const card = $("#scan-card");
       if (card) card.innerHTML = `<span class="pill err">Scan failed</span> ${esc(e.message)}`;
     }
@@ -1674,11 +1793,11 @@ RENDER.wallet = () => {
           if (mn.split(" ").length < 12) return alert("That doesn't look like a full recovery phrase.");
           const r = await api("keyImport", { name, passphrase: p1, mnemonic: mn });
           w.address = r.address; w.pubkey = extractPubkey(r.pubkey); w.confirmed = true;
-          markDone(); walletDone();
+          markDone(STEP.wallet); walletDone();
         } else {
           const r = await api("keyShow", { name, passphrase: p1 });
           w.address = r.address; w.pubkey = extractPubkey(r.pubkey); w.confirmed = true;
-          markDone(); walletDone();
+          markDone(STEP.wallet); walletDone();
         }
       } catch (e) { alert(e.message); }
       finally { setBusy(false); }
@@ -1710,7 +1829,7 @@ RENDER.wallet = () => {
         const r = await api("keyShow", { name: w.name, passphrase: p });
         if (r.address !== w.address) return alert(t("That opens a different wallet ({addr}). Check the passphrase, or use a different wallet.", { addr: r.address }));
         w.passphrase = p; w.pubkey = extractPubkey(r.pubkey); w.confirmed = true;
-        markDone();
+        markDone(STEP.wallet);
         toast(t("Wallet unlocked"));
         // Both things are back: go straight to where the setup was left.
         const target = S.resumeTo && S.resumeTo > 5 ? S.resumeTo : 5;
@@ -1755,7 +1874,7 @@ RENDER.wallet = () => {
       const b = $("#q-b").value.trim().toLowerCase();
       if (a !== words[idxA] || b !== words[idxB]) return alert("One of the words doesn't match. Check your paper copy and try again.");
       S.wallet.confirmed = true;
-      markDone(); walletDone();
+      markDone(STEP.wallet); walletDone();
     };
   }
 
@@ -1791,6 +1910,24 @@ RENDER.wallet = () => {
     const docs = S.K.docs || {};
     const POLL_MS = 8000;
     let lastCheck = 0, lastBal = null, lastFailed = false, shown = "";
+    // What hosts with one 8-GPU server or less really paid in fees over the
+    // last epoch, measured from the chain (fees.json). The guide's 10 GNK is
+    // a reserve for a long time and reads as the price of entry; this says
+    // what a node like this one spends, and how long 1 GNK lasts at that rate.
+    let usual = null;
+    const perEpoch = () => (usual ? usual.small.typical : 0);
+    const epochsFor = (ngonka) => (perEpoch() > 0 ? Math.floor(ngonka / perEpoch()).toLocaleString(window.I18N.lang()) : null);
+    // Enough for fees: ten epochs at the most any host of that size paid, when
+    // that is known (GNOT sets up one server); else the guide's figure.
+    const feeEnough = () => (usual && usual.small.high > 0 ? Math.max(setupNeed, 10 * usual.small.high) : feeStart);
+    const stateOf = () => (lastBal === null ? "empty" : lastBal >= feeEnough() ? "funded" : lastBal >= setupNeed ? "setup" : "empty");
+    const guideLine = () => `<p class="small">${esc(t("Gonka's guide suggests keeping about {start} in the wallet: a reserve that lasts a long time, not what one epoch costs.", { start: gnk(feeStart) }))}</p>`;
+    api("typicalFees").then((u) => {
+      if (!u || !u.small || !(u.small.typical > 0) || !$("#bal-area")) return;
+      usual = u;
+      shown = stateOf(); draw(shown);
+      if (shown === "funded") stopWatching();
+    }).catch(() => { /* the guide's figure stays */ });
     function stopWatching() {
       S.balPoll && clearInterval(S.balPoll); S.balPoll = null;
       S.balTick && clearInterval(S.balTick); S.balTick = null;
@@ -1837,8 +1974,11 @@ RENDER.wallet = () => {
         <h3>${esc(t("Fund this wallet"))}</h3>
         ${tiles([
           { label: "To set up", value: "≈ 0.001 GNK", sub: t("send {n} to be safe", { n: gnk(setupNeed) }), tip: TIPS.toSetUp },
-          { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("Gonka's suggested start for the fees of each Proof of Compute; it lasts a long time") }
+          usual
+            ? { label: "To take part", value: `≈ ${gnk(perEpoch())}`, sub: t("an epoch in fees: what hosts with one 8-GPU server or less typically paid last epoch. {one} lasts about {n} epochs.", { one: gnk(NGONKA_PER_GNK), n: epochsFor(NGONKA_PER_GNK) }) }
+            : { label: "To take part", value: `≈ ${gnk(feeStart)}`, sub: t("Gonka's suggested start for the fees of each Proof of Compute; it lasts a long time") }
         ])}
+        ${usual ? guideLine() : ""}
         <p class="lead-line" style="margin-top:14px">${esc(t("Send GNK to"))}</p>
         ${copyLine(w.address, "fund-addr")}
         <div class="fund-watch" id="fund-watch" role="status"></div>
@@ -1861,7 +2001,10 @@ RENDER.wallet = () => {
         <p>${t("This wallet has {n}: enough to set up, so you can Continue now.", { n: `<b>${gnk(lastBal)}</b>` })}</p>
         <p class="lead-line">${esc(t("What else it needs"))}</p>
         <ul class="fund-steps">
-          <li>${esc(t("Fees for every Proof of Compute, paid from this wallet: a little each epoch, more for a bigger node. Gonka's guide suggests about {start} to start with, which lasts a long time.", { start: gnk(feeStart) }))}</li>
+          <li>${usual
+            ? esc(t("Fees for every Proof of Compute, paid from this wallet: a little each epoch, more for a bigger node. Last epoch, hosts with one 8-GPU server or less typically paid {typical}, so {one} lasts about {n} epochs.", { typical: gnk(perEpoch()), one: gnk(NGONKA_PER_GNK), n: epochsFor(NGONKA_PER_GNK) }))
+              + " " + esc(t("Gonka's guide suggests keeping about {start} in the wallet: a reserve that lasts a long time, not what one epoch costs.", { start: gnk(feeStart) }))
+            : esc(t("Fees for every Proof of Compute, paid from this wallet: a little each epoch, more for a bigger node. Gonka's guide suggests about {start} to start with, which lasts a long time.", { start: gnk(feeStart) }))}</li>
           <li>${esc(t("They must be here before the next Proof of Compute, or the node stays registered but sits that epoch out."))}${when ? " " + esc(t("The next one: {when}.", { when })) : ""}</li>
           <li>${esc(t("The Verify step reads from your server exactly what your node will need."))}</li>
         </ul>
@@ -1873,7 +2016,9 @@ RENDER.wallet = () => {
       </div>`;
     };
 
-    const fundedHtml = () => `<div class="info-banner"><span class="pill ok">FUNDED</span> ${t("Balance: {n}. Enough to set up, and by Gonka's guide enough for the node's fees in its first epochs.", { n: `<b>${gnk(lastBal)}</b>` })}</div>`;
+    const fundedHtml = () => `<div class="info-banner"><span class="pill ok">FUNDED</span> ${usual && lastBal < feeStart
+      ? t("Balance: {n}. Enough to set up, and for about {epochs} epochs of fees at what hosts with one 8-GPU server or less typically paid last epoch.", { n: `<b>${gnk(lastBal)}</b>`, epochs: epochsFor(lastBal) })
+      : t("Balance: {n}. Enough to set up, and by Gonka's guide enough for the node's fees in its first epochs.", { n: `<b>${gnk(lastBal)}</b>` })}</div>`;
 
     function draw(state) {
       const area = $("#bal-area");
@@ -1894,7 +2039,7 @@ RENDER.wallet = () => {
       lastCheck = Date.now();
       lastFailed = bal === null;
       if (bal !== null) lastBal = bal;
-      const state = lastBal === null ? "empty" : lastBal >= feeStart ? "funded" : lastBal >= setupNeed ? "setup" : "empty";
+      const state = stateOf();
       if (state !== shown) { shown = state; draw(state); } else tickWatch();
       if (state === "funded") stopWatching();
     }
@@ -1980,7 +2125,7 @@ RENDER.network = () => {
       const prov = K.dnsProviders.find((p) => p.id === n.dnsProviderId);
       for (const v of prov.env) if (!n.dnsEnv[v.key]) return alert(`"${v.label}" is required for ${prov.label}.`);
     }
-    markDone(); go(6);
+    markDone(STEP.network); go(6);
   };
 };
 
@@ -1995,7 +2140,7 @@ RENDER.model = () => {
       <button class="primary" id="b-next" ${S.chosenConfigFile ? "" : "disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(5);
-  $("#b-next").onclick = () => { markDone(); go(7); };
+  $("#b-next").onclick = () => { markDone(STEP.model); go(7); };
 
   async function load() {
     try {
@@ -2018,7 +2163,7 @@ RENDER.model = () => {
       const ranked = await api("rankConfigs", { files });
       paint(ranked, repoRows);
     } catch (e) {
-      markError();
+      markError(STEP.model);
       $("#model-card").innerHTML = `
         <span class="pill err">Failed</span> ${esc(e.message)}
         <div class="btn-row" style="margin-top:12px"><button id="b-retry-model" class="primary">Try again</button></div>
@@ -2353,14 +2498,18 @@ RENDER.review = () => {
       await api("hardenPorts");
       await api("writeConfigs", { configEnv, nodeConfigJson: S.nodeConfigText });
       toast("Configuration written to the server.");
-      markDone(); go(8);
-    } catch (e) { markError(); showProblem(null, { at: t("Review config"), message: e.message, retry: () => $("#b-write").click() }); }
+      markDone(STEP.review);
+      if (onStep("review")) go(8);
+    } catch (e) { markError(STEP.review); stepProblem("review", null, { at: t("Review config"), message: e.message, retry: () => $("#b-write") && $("#b-write").click() }); }
     finally { setBusy(false); }
   };
 };
 
 /* --- 8 Weights ------------------------------------------------------- */
 RENDER.weights = () => {
+  // The model has to be on the server before the node is launched: no skipping
+  // ahead. A setup picked up again has it already (the step is marked done).
+  const have = S.weightsDone || doneSteps.has(STEP.weights);
   stage(`
     ${header("Step 9", "Download model weights", `
       Your node needs the model files (hundreds of GB) before it can serve inference.
@@ -2374,10 +2523,11 @@ RENDER.weights = () => {
       <button id="b-back">Back</button>
       <button class="primary" id="b-dl" ${S.models.length ? "" : "disabled"}>${S.weightsDone ? "Download again" : "Start download"}</button>
       <span class="spacer"></span>
-      <button id="b-skip">${S.weightsDone ? "Continue" : "Skip for now"}</button>
+      <span class="small" id="weights-gate"${have ? " hidden" : ""}>${esc(t("Continue opens once the model is on your server."))}</span>
+      <button id="b-skip"${have ? "" : " disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(7);
-  $("#b-skip").onclick = () => { markDone(); go(9); };
+  $("#b-skip").onclick = () => { if (!(S.weightsDone || doneSteps.has(STEP.weights))) return; markDone(STEP.weights); go(9); };
   $("#b-dl").onclick = async () => {
     if ($("#problem-box")) $("#problem-box").innerHTML = "";
     try {
@@ -2386,8 +2536,13 @@ RENDER.weights = () => {
       await api("downloadWeights", { models: S.models });
       S.weightsDone = true;
       toast("All model weights downloaded.");
-      markDone(); RENDER.weights();
-    } catch (e) { markError(); showProblem(null, { at: t("Model weights"), message: e.message, retry: () => $("#b-dl").click() }); $("#b-dl").disabled = false; }
+      markDone(STEP.weights);
+      if (onStep("weights")) RENDER.weights();
+    } catch (e) {
+      markError(STEP.weights);
+      stepProblem("weights", null, { at: t("Model weights"), message: e.message, retry: () => $("#b-dl") && $("#b-dl").click() });
+      if (onStep("weights") && $("#b-dl")) $("#b-dl").disabled = false;
+    }
     finally { setBusy(false); }
   };
 };
@@ -2412,11 +2567,16 @@ function showProblem(box, { at, message, retry }) {
   const cut = text.indexOf("\n\n");
   const head = cut > 0 ? text.slice(0, cut) : text.split("\n")[0];
   const rest = cut > 0 ? text.slice(cut + 2) : text.split("\n").slice(1).join("\n");
+  // A few lines that say what to do (a command to run) are shown as they are;
+  // only a long log is folded away under "Details".
+  const brief = rest.length <= 600 && rest.split("\n").length <= 8;
   box.innerHTML = `
     <div class="card problem-card">
       <h3>${esc(at ? t("Stopped at: {step}", { step: at }) : t("Something went wrong"))}</h3>
       <p>${esc(head)}</p>
-      ${rest.trim() ? more("Details", `<pre class="preview mono" style="white-space:pre-wrap">${esc(rest)}</pre>`) : ""}
+      ${!rest.trim() ? "" : brief
+        ? `<pre class="preview mono" style="white-space:pre-wrap">${esc(rest.trim())}</pre>`
+        : more("Details", `<pre class="preview mono" style="white-space:pre-wrap">${esc(rest)}</pre>`)}
       <div class="btn-row" style="margin-top:10px">
         ${retry ? `<button class="primary" id="b-problem-retry">${esc(t("Try again"))}</button>` : ""}
         <button id="b-problem-copy">${esc(t("Copy the details"))}</button>
@@ -2457,6 +2617,7 @@ RENDER.deploy = () => {
     ${header("Step 10", "Launch and register", `
       The wizard now runs the official launch sequence, in the exact order Gonka requires.
       Watch the activity log below for details.`)}
+    <div class="info-banner">${t("<b>This step takes a while: usually 10 to 20 minutes.</b> Most of it is downloading Gonka's software, several GB, and starting the chain node. You can leave it running: each line below turns green as it finishes, and the clock in the activity log shows it is still working.")}</div>
     ${pocNoteHtml()}
     <div class="card">${tasks.map((tk) => `
       <div class="task" id="task-${tk.id}">
@@ -2470,18 +2631,34 @@ RENDER.deploy = () => {
       <button id="b-next" ${S.launched ? "" : "disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(8);
-  $("#b-next").onclick = () => { markDone(); go(10); };   // -> Collateral
+  $("#b-next").onclick = () => { if (!S.launched) return; markDone(STEP.deploy); go(10); };   // -> Collateral
   if (S.launched) tasks.forEach((tk) => set(tk.id, "done"));
+  else tasks.forEach((tk) => paint(tk.id));       // a sequence still running, or stopped: as far as it got
+  if (S.warmPending) S.warmPending();              // the server key's phrase, still waiting to be written down
 
+  // Each line's state is kept in S.tasks, not only on the page. Someone can
+  // look back at an earlier page while the sequence runs: it used to stop
+  // right there (the line it wanted to tick was gone, which threw), and the
+  // page then showing was marked red. Now it carries on, and this page shows
+  // where it is when it is opened again.
+  function paint(id) {
+    const st = S.tasks && S.tasks[id];
+    const el = st && onStep("deploy") && $("#task-" + id);
+    if (!el) return;
+    el.className = "task " + st.cls;
+    if (st.note !== undefined) el.querySelector(".t-note").textContent = st.note;
+  }
   function set(id, cls, note) {
-    const el = $("#task-" + id);
-    el.className = "task " + cls;
-    if (note !== undefined) el.querySelector(".t-note").textContent = note;
+    S.tasks = S.tasks || {};
+    S.tasks[id] = { cls, note: note !== undefined ? note : (S.tasks[id] || {}).note };
+    paint(id);
   }
 
   $("#b-run").onclick = async () => {
     $("#b-run").disabled = true;
     $("#deploy-extra").innerHTML = "";
+    S.tasks = {};
+    tasks.forEach((tk) => { const el = $("#task-" + tk.id); if (el) { el.className = "task"; el.querySelector(".t-note").textContent = ""; } });
     try {
       setBusy(true, "Checking image compatibility…");
       set("pull", "running");
@@ -2595,22 +2772,27 @@ RENDER.deploy = () => {
       await api("launchAll");
       set("launch", "done");
       S.launched = true;
-      $("#b-next").disabled = false;
-      markDone();
+      if (onStep("deploy") && $("#b-next")) $("#b-next").disabled = false;
+      markDone(STEP.deploy);
       toast("Node launched. Continue to verification.");
     } catch (e) {
-      markError();
-      const running = document.querySelector(".task.running");
-      if (running) running.className = "task err";
-      const at = running ? running.querySelector(".t-label").textContent : "";
-      showProblem($("#deploy-extra"), { at, message: e.message, retry: () => $("#b-run").click() });
-      $("#b-run").disabled = false;
+      markError(STEP.deploy);
+      const failed = Object.keys(S.tasks || {}).find((k) => S.tasks[k].cls === "running");
+      if (failed) set(failed, "err");
+      const at = failed ? t((tasks.find((x) => x.id === failed) || {}).label || "") : "";
+      stepProblem("deploy", $("#deploy-extra"), { at, message: e.message, retry: () => $("#b-run") && $("#b-run").click() });
+      if (onStep("deploy") && $("#b-run")) $("#b-run").disabled = false;
     } finally { setBusy(false); }
   };
 
   function warmMnemonicNotice(warm) {
     return new Promise((resolve) => {
-      $("#deploy-extra").innerHTML = `
+      // Shown on this step's page only. If another page is showing, it waits
+      // until this one is opened again (RENDER.deploy calls S.warmPending).
+      const show = () => {
+        const box = onStep("deploy") && $("#deploy-extra");
+        if (!box) return false;
+        box.innerHTML = `
         <div class="card">
           <h3>Server key backup phrase</h3>
           <p class="hint">The server got its own small operational key (address <code>${esc(warm.address)}</code>).
@@ -2619,7 +2801,11 @@ RENDER.deploy = () => {
             `<span class="word"><span class="idx">${i + 1}</span>${esc(w)}</span>`).join("")}</div>
           <div class="btn-row"><button class="primary" id="b-warm-ok">I wrote it down — continue</button></div>
         </div>`;
-      $("#b-warm-ok").onclick = () => { $("#deploy-extra").innerHTML = ""; resolve(); };
+        $("#b-warm-ok").onclick = () => { S.warmPending = null; if ($("#deploy-extra")) $("#deploy-extra").innerHTML = ""; resolve(); };
+        return true;
+      };
+      S.warmPending = show;
+      if (!show()) toast(t("The launch is waiting for you on the Launch & register page: the server key's backup phrase is shown there, to write down."));
     });
   }
 };
@@ -2652,9 +2838,8 @@ RENDER.verify = () => {
       ${copyLine(S.wallet.address || "—", "v-addr")}
       <div class="btn-row" style="margin-top:6px">
         <button id="b-dash-own">${t("Your node in Monitor/Vote")}</button>
-        <button id="b-dash-orig">${t("original network dashboard")}</button>
       </div>
-      ${more("Where can I follow it?", `<p>${t("Monitor/Vote, in this app, follows your node from here on: its weight, rewards, how well it worked each epoch and its GNK. The network's own dashboard lists every participant; search for your address there.")}</p>`)}
+      ${more("Where can I follow it?", `<p>${t("Monitor/Vote, in this app, follows your node from here on: its weight, rewards, how well it worked each epoch and its GNK.")}</p>`)}
     </div>
     <div class="card" id="v-card">${loadingHtml(t("Checking…"))}</div>
     <div class="card" id="fee-card">${loadingHtml(t("Checking…"))}</div>
@@ -2676,11 +2861,11 @@ RENDER.verify = () => {
       <button class="primary" id="b-next"${verifyOpen() ? "" : " disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } go(10); };
-  $("#b-next").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(); go(12); };
+  // No way on to "Finished" while this page is still watching the node get ready.
+  $("#b-next").onclick = () => { if (!verifyOpen()) return; if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(STEP.verify); go(12); };
   $("#b-re").onclick = check;
   wireCopy();
   $("#b-dash-own").onclick = () => showMonitor(S.wallet.address);
-  $("#b-dash-orig").onclick = () => api("openExternal", { url: (S.seed || S.K.seedNodes[0]) + "/dashboard/gonka/validator" });
   check();
 
   // Live sync meter: a fresh node must catch up with the chain before its API
@@ -2895,8 +3080,13 @@ RENDER.verify = () => {
           // Finished ("your node is live") only opens once it truly is ready, or already earning.
           S.verifyReady = earning || !!(synced && S.registeredVisible && ml && ml.gpuTotal > 0 && ml.gpuReady === ml.gpuTotal && ml.weightsReady);
           S.verifyEarning = earning;
-          if ($("#b-next")) $("#b-next").disabled = !verifyOpen();
-          if ($("#verify-gate")) $("#verify-gate").hidden = verifyOpen();
+          // Ticked once the node is ready, not before: this is what opens Continue.
+          if (S.verifyReady && !doneSteps.has(STEP.verify)) markDone(STEP.verify);
+          // Only this page's own buttons: another page may be showing by now.
+          if (onStep("verify")) {
+            if ($("#b-next")) $("#b-next").disabled = !verifyOpen();
+            if ($("#verify-gate")) $("#verify-gate").hidden = verifyOpen();
+          }
         } catch (_) { /* never block the meter on these probes */ }
 
         el.innerHTML = s1 + s2 + s3 + s4 + s5;
@@ -2965,7 +3155,7 @@ RENDER.verify = () => {
       if (pd && (pd.address || pd.status) && !urlStale) {
         S.registeredVisible = true;
         card.innerHTML = `
-          <p><span class="pill ok">REGISTERED</span> <span class="small">${t("Your address is on the chain — the dashboards above will show it.")}</span></p>
+          <p><span class="pill ok">REGISTERED</span> <span class="small">${t("Your address is on the chain. Monitor/Vote, above, shows it.")}</span></p>
           ${reachHtml}
           ${tiles([
             { label: "Address on the network", value: esc(pd.inferenceUrl || pd.inference_url || "—") },
@@ -2975,7 +3165,11 @@ RENDER.verify = () => {
           <p class="small">${t("Registering no longer waits for the node to finish syncing, so keep watching this until every line is ticked — your node can only take part in Proof of Compute once it's caught up.")}</p>
           <div id="sync-meter"><span class="small">${loadingInline(t("Reading your node's sync state…"))}</span></div>
           ${more("Containers on the server", `<pre class="preview mono" style="max-height:180px">${esc(containers || "(couldn't read)")}</pre>`)}`;
-        markDone();
+        // Registered is not ready: the step is ticked, and Continue opens, only
+        // once the node has caught up and its GPUs and model are ready (the meter below).
+        // The node goes into My nodes now, though: someone who closes the app
+        // here, while it is still catching up, finds it in Monitor/Vote all the same.
+        if (!S.addedToMine) { S.addedToMine = true; addToMyNodes(); }
         // Registration can now land BEFORE the node is synced (the wizard signs
         // it with the cold wallet, which needs no local node). So the progress
         // meter has to keep running after REGISTERED — otherwise the page looks
@@ -3089,7 +3283,7 @@ RENDER.collateral = () => {
       <button class="primary" id="b-next" style="display:none" id2="b-next">Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(9);
-  $("#b-skip").onclick = () => { markDone(); go(11); };
+  $("#b-skip").onclick = () => { markDone(STEP.collateral); go(11); };
   const laterLink = $("#c-later");
   if (laterLink) laterLink.onclick = (e) => {
     e.preventDefault();
@@ -3173,9 +3367,9 @@ RENDER.collateral = () => {
           }
           body.innerHTML = `<div class="info-banner">${t("<b>Collateral confirmed on-chain: {amt}.</b> From the next Proof of Compute round your node earns at full weight instead of 20%.",
             { amt: gnk(onChain.amount.amount) })}</div>`;
-          markDone();
-          setTimeout(() => go(11), 1200);   // -> Verify, where the waiting happens
-        } catch (e) { showProblem(null, { at: t("Collateral"), message: e.message, retry: () => $("#b-dep") && $("#b-dep").click() }); }
+          markDone(STEP.collateral);
+          setTimeout(() => { if (onStep("collateral")) go(11); }, 1200);   // -> Verify, where the waiting happens
+        } catch (e) { stepProblem("collateral", null, { at: t("Collateral"), message: e.message, retry: () => $("#b-dep") && $("#b-dep").click() }); }
         finally { setBusy(false); }
       };
     } catch (e) {
@@ -3206,7 +3400,7 @@ RENDER.done = () => {
         <li><b>${t("Keep your paper backup safe.")}</b> ${t("Those 24 words ARE your wallet and your earnings. This app never stored them, and nobody can recover them for you.")}</li>
         <li><b>${t("Never delete the {tmkms} folder on the server, and never re-create the operational key.", { tmkms: "<code>.tmkms</code>" })}</b> ${t("Both are unrecoverable and would cost you the node's identity.")}</li>
       </ul>
-      <p class="small">${t("Check on it any time:")} <a href="#" id="d-part">${t("your participant page")}</a> · <a href="#" id="d-dash">${t("network dashboard")}</a>.</p>
+      <p class="small">${t("Check on it any time:")} <a href="#" id="d-part">${t("your participant page")}</a>.</p>
     </div>
     <div class="card">
       ${more("Useful commands on the server", `
@@ -3221,9 +3415,13 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
     </div>
     <div class="btn-row">
       <button id="b-back">Back</button>
+      <span class="spacer"></span>
       <button id="b-again">Set up another node</button>
+      <button class="primary" id="b-finish">${esc(t("Finish"))}</button>
     </div>`);
   $("#b-back").onclick = () => go(11);
+  // The last step is done by being reached: 13 of 13.
+  if (!doneSteps.has(STEP.done)) { markDone(STEP.done); saveSession(); }
   // Opened again later: is it in the epoch by now? Then it says so.
   if (!S.verifyEarning && S.wallet.address) {
     api("epochParticipants", { seed: S.seed || S.K.seedNodes[0] }).then((list) => {
@@ -3236,7 +3434,6 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
   $("#b-watch").onclick = async () => { await added; showMonitor(S.wallet.address); };
   const seed = S.seed || S.K.seedNodes[0];
   $("#d-part").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + S.K.api.participants + S.wallet.address }); };
-  $("#d-dash").onclick = (e) => { e.preventDefault(); api("openExternal", { url: seed + "/dashboard/gonka/validator" }); };
   $("#d-doc").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.quickstart }); };
   // A clean start for the next node: the finished one stays in My nodes, so
   // its saved setup is let go (else Host Setup would only reopen it), and the
@@ -3244,6 +3441,15 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
   $("#b-again").onclick = () => {
     clearSession();
     try { sessionStorage.setItem(FRESH_SETUP_KEY, "1"); } catch (_) {}
+    location.reload();
+  };
+  // Finish closes this setup: the node stays in My nodes, its saved setup is
+  // let go, and the app goes back to its home screen. Host Setup then opens
+  // empty, ready for another node, instead of asking about this one again.
+  $("#b-finish").onclick = async () => {
+    $("#b-finish").disabled = true;
+    await added;
+    clearSession();
     location.reload();
   };
 };
@@ -3259,7 +3465,13 @@ async function addToMyNodes() {
   try {
     const nodes = await api("monitorNodes");
     const i = nodes.findIndex((n) => n.address === mine.address);
-    if (i >= 0) nodes[i] = { ...nodes[i], ...mine }; else nodes.unshift({ ...mine, name: t("My node") });
+    // A name of its own: "My node", or "My node 2" when another node kept
+    // here already has that name (two called the same cannot be told apart
+    // on the Votes page). A name the user gave it is never changed.
+    const taken = new Set(nodes.filter((n) => n.address !== mine.address).map((n) => n.name));
+    let name = t("My node");
+    for (let k = 2; taken.has(name) && k < 100; k++) name = `${t("My node")} ${k}`;
+    if (i >= 0) nodes[i] = { ...nodes[i], ...mine, name: nodes[i].name || name }; else nodes.unshift({ ...mine, name });
     await api("monitorSaveNodes", { nodes });
   } catch (e) { logLine("\nCouldn't add the node to Monitor/Vote: " + e.message + "\n", "stderr"); }
 }
@@ -4062,12 +4274,10 @@ function showHostSetup() {
   go(0);
   if (fresh) showHostSetup(); else showHome();
 
-  // Epoch countdown bar: tick locally every second, re-sync with the chain
-  // every 2 minutes (also catches the rollover into a new epoch).
-  syncEpochBar();
-  setInterval(renderEpochBar, 1000);
+  // Epoch countdown bar: its own clock, steered by the chain; read more often
+  // as the Proof of Compute comes near (also catches the new epoch).
+  startEpochBar();
   setInterval(renderFetched, 15000);
-  setInterval(syncEpochBar, 120000);
   // A release that comes out while the app is open (watchForUpdates).
   setInterval(watchForUpdates, 60 * 60 * 1000);
 })();

@@ -1,0 +1,55 @@
+PROMPT FOR BASE44 — The site's new look, part 4: one fault on Register a node, and the last things parts 1 to 3 left undone
+(no pictures; paste everything below and publish)
+
+Part 3 worked: the Download page fits a phone, the 14 new step pictures are in, the ticks are green circles, and most boxes have the surface look. I checked the live site again on the night of November 11, 2026; below is exactly what is still missing. The rules are the same as before: no words, numbers, links, data, backend functions or page addresses change, and nothing people can see today is removed. Every animation is switched off under prefers-reduced-motion. Nothing may be wider than a phone's screen. The 14 step pictures stay exactly as they are now.
+
+1. REGISTER A NODE — THE ROW OF STEP NUMBERS IS HIDDEN BEHIND THE TOP BAR (a fault, fix first)
+The row of 14 step numbers under "Step by step with GNOT" (<div class="sticky top-0 z-30 -mx-6 px-6">) sticks at top: 0. But the top bar (<div class="fixed top-0 left-0 right-0 z-50">) covers the first 86px of the window on a computer and 98px on a phone, and it sits above the row. So the moment the row sticks, it slides under the top bar and nobody sees it.
+Fix:
+- Stick the row directly under the top bar: its "top" must be the top bar's real height. Measure the top bar element, and measure again when the window is resized; do not hard-code it (today it is 86px on a computer and 98px on a phone).
+- After a click on a number, the step's card must not end up under the row: the cards' scroll margin (now scroll-mt-24) must be the top bar's height + the row's height (58px) + 12px. Use the same offset in the test that decides which step is in view (today: getBoundingClientRect().top - 120 <= 0).
+- After the fix, scroll through the 14 steps on a computer and on a phone: the row of numbers with its thin progress line stays visible under the top bar the whole time, and the number of the step in view is highlighted.
+
+2. PAGES RISE IN WHEN THEY OPEN — MISSING ON MOST PAGES
+Get a node does it right: the heading block and then each section rise in (the "reveal" wrapper, which gets the class "in"). The other pages do not match it:
+- Nothing rises in at all on: Register a node, Download, Monitor/Vote → My nodes, The network, Votes, a host's page.
+- Only the heading block rises in, not the sections, on: Mine or buy, FAQ, the Monitor/Vote front page.
+Make every page behave exactly like Get a node: the heading block first, then each section, 60ms apart (no more than 8 steps of delay); sections further down the page rise in when they first come into view. Once, not on every scroll.
+Two safety points:
+- Wrap each section or card on its own, never a whole long list in one wrapper. The list of proposals on Votes is about 18,000px tall; the hosts table and the 14 steps are long too. The wrapper's IntersectionObserver uses threshold 0.05 today: a block more than about 18 times taller than the window can never reach that and would stay invisible for ever. Set the threshold to 0.
+- Nothing may ever stay invisible. Under prefers-reduced-motion everything is simply there (the CSS already does this; keep it).
+
+3. BUTTONS AND FORM FIELDS — ONLY ONE BUTTON GOT THE NEW LOOK
+Only "Download GNOT" in the top bar has the main-button look (class "btn-main"). The class "btn-ghost" is in the CSS but is used nowhere. Every other button and field on the site still has the old flat look with 4px corners.
+- Every button that is filled light today gets "btn-main" (10px corners, the light gradient, dark text, the shadow, 1px up on hover, scale 0.98 when pressed). For example: "Download GNOT" in the card "GNOT — Gonka Host Setup" on Register a node, "Open Spheron ↗" on Get a node, "Vote with GNOT" on Votes, "Follow this node" on a host's page.
+- Every outlined button gets "btn-ghost" (transparent, 1px border rgba(255,255,255,0.14), 10px corners; on hover background rgba(255,255,255,0.06) and border rgba(255,255,255,0.24)). For example: "See every step ↓" on Register a node, "Spheron docs ↗" on Get a node, "Skip to the calculator ↓" on Mine or buy, "Refresh" and "Get GNOT" on the Monitor/Vote pages, "Follow a node" and "Find one among every host" on My nodes, the vote buttons "Yes", "No", "No, with veto", "Abstain" on Votes, and the language picker.
+- Form fields get 10px corners, a 1px border rgba(255,255,255,0.14) and the green focus ring from part 1: on Mine or buy the "Rig" select, the "what you pay" box and the "per hour" select; the search boxes on The network ("Find a host by address, name or model") and on Votes ("Find a proposal by its number…").
+- The 14 step-number squares on Register a node (w-8 h-8): 8px corners.
+- The COPY buttons inside the command boxes on Download stay as they are.
+No button's words change, and no button moves.
+
+4. SIX BOXES STILL HAVE THE OLD FLAT LOOK
+Give these the "surface" class (12px corners, the faint gradient, the lit top edge), like every other box now has:
+- Register a node: the note "When GNOT asks you to update, update: …" (class starts "mt-4 flex items-start gap-2.5 rounded border border-border bg-secondary").
+- Register a node: the link card "Not sure what to rent? See what each setup needs and earns …" (class starts "group flex items-center justify-between gap-4 border border-border rounded"). This one can be clicked, so "surface-clickable" with the lift and the sliding arrow.
+- Mine or buy: the row "How to read these figures / See every host →" (class starts "flex items-center justify-between gap-4 border border-border rounded").
+- A host's page: the box "… things are worth a look" (class "border border-border rounded bg-card p-4").
+- FAQ: the search box "QUERY >" (class starts "flex items-center gap-3 bg-card border border-border rounded px-4 py-3"): 12px corners.
+- Get a node: the frame around the Spheron video (class starts "aspect-video rounded-lg border border-border overflow-hidden"): 12px corners.
+
+5. SMALL MOTION POINTS FROM PARTS 1 AND 2 THAT ARE STILL MISSING
+- Bars: today only the epoch bar grows in (class "bar-grow"). Give the same to the vote bars on Votes (the quorum mark fades in after the bar), the bar under "What hosts were paid", the bar under "GNK: how much there is, and where", the bars in "What the hosts run" and "Models served", and the "share of the network" bars in the hosts table. Each grows from the left in 600ms the first time it is seen.
+- The Monitor/Vote front page: the big lines in the doors ("27 hosts", "2 open votes") count up from 0 the first time they are shown, with the same count-up the network tiles already use. The final value and its words are exactly as today.
+- Votes: the "VOTING NOW" label gets the soft pulsing ring (class "live-dot") on a small green dot before the words.
+- The tabs "My nodes · The network · Votes": the white pill jumps from tab to tab today. It should slide from the old tab to the new one in 220ms.
+- Tables: the header row stays visible while the table scrolls past, stuck directly under the top bar (the same measured height as in point 1), with a solid background so rows do not show through. This is for the table on Mine or buy and for "Every host" on The network. On a phone, where these show as cards, nothing changes.
+- Mine or buy, "Will it pay for itself?": the answer block gets a thin green left edge (2px, #7fb094) when the rig is ahead and a thin red one when it is behind. The words and their colours stay.
+
+6. CHECK BEFORE YOU PUBLISH
+- Register a node, on a computer and on a phone: the row of step numbers stays visible under the top bar while scrolling through all 14 steps.
+- Open every page and scroll to its very end (Votes and The network are the long ones): everything has appeared, nothing is left invisible.
+- Phone widths 360px and 375px: no page scrolls sideways. This is right today; keep it.
+- With prefers-reduced-motion: reduce, everything simply appears and numbers show their final value at once.
+- No word and no number on any page is different from before, and the 14 step pictures are the same files as now.
+
+Change nothing else on the site. Every language keeps working exactly as now.

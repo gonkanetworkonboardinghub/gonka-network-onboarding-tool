@@ -81,7 +81,24 @@ async function chainStatus(seed) {
 /** Current network tip height — cheap enough to poll from the Verify page. */
 async function chainHeight(seed) {
   const now = await getJson(seed + "/chain-rpc/block");
-  return { height: Number(now.result.block.header.height) };
+  // time: when that block was made, for the countdown's quick look (pocEta).
+  return { height: Number(now.result.block.header.height), time: Date.parse(now.result.block.header.time) || null };
+}
+
+/**
+ * How long until block `nextStart`, from the newest block and the pace blocks
+ * are being made at now.
+ *
+ * The next block is not a whole block away: part of it has already passed
+ * since the newest one was made. That part is taken off, by this computer's
+ * clock, and never more than one block's worth, so a clock that is minutes
+ * wrong cannot throw the countdown off by more than a few seconds.
+ */
+function pocEta({ height, time, nextStart, secPerBlock, now = Date.now() }) {
+  const blocksLeft = nextStart - height;
+  if (!(blocksLeft > 0)) return 0;
+  const sinceTip = time ? Math.min(secPerBlock * 1000, Math.max(0, now - time)) : 0;
+  return Math.max(0, blocksLeft * secPerBlock * 1000 - sinceTip);
 }
 
 async function nextPoc(seed) {
@@ -98,12 +115,26 @@ async function nextPoc(seed) {
   if (!nextStart || !isFinite(secPerBlock) || secPerBlock <= 0) throw new Error("Epoch data unavailable");
   const startBlock = Number(j.epoch_stages && j.epoch_stages.poc_start) || 0;
   const blocksLeft = nextStart - h;
+  // The pace over the last eight hours says how long an epoch is. How long
+  // the blocks still to come will take is better told by the pace of late:
+  // measured over about as many blocks as are left (300 to 5,000 of them).
+  let secPerBlockNow = secPerBlock;
+  const span = Math.min(5000, Math.max(300, blocksLeft));
+  if (blocksLeft > 0 && span < 5000 && h - span > 1) {
+    try {
+      const near = await getJson(seed + "/chain-rpc/block?height=" + (h - span));
+      const v = (tNow - Date.parse(near.result.block.header.time)) / 1000 / span;
+      if (isFinite(v) && v > 0) secPerBlockNow = v;
+    } catch (_) { /* the long measure will do */ }
+  }
   return {
     phase: j.phase || "",
     epoch: Number((j.epoch_stages && j.epoch_stages.epoch_index) || (j.latest_epoch && j.latest_epoch.index)) || null,
     blocksLeft,
-    etaMs: Math.max(0, blocksLeft * secPerBlock * 1000),
+    etaMs: pocEta({ height: h, time: tNow, nextStart, secPerBlock: secPerBlockNow }),
     secPerBlock,
+    // For the countdown's quick looks between two full readings (app.js).
+    secPerBlockNow, nextStart, height: h,
     // for the epoch progress bar: how far along the current epoch is
     totalBlocks: startBlock ? nextStart - startBlock : 0
   };
@@ -377,5 +408,5 @@ async function probeUrl(url, timeout = 8000) {
 module.exports = {
   firstReachableSeed, governanceModels, participant, account,
   epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf,
-  repoGpuConfigs, probeUrl, nextPoc, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
+  repoGpuConfigs, probeUrl, nextPoc, pocEta, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
 };

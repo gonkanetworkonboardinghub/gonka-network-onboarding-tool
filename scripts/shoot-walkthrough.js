@@ -80,7 +80,8 @@ const W = 1360, H = 900;
       { id: "cuda", label: "CUDA 13, or 12.9", status: "pass", detail: "CUDA 13.0 detected — Gonka's main ML node image runs on it" },
       { id: "nvidia-toolkit", label: "NVIDIA Container Toolkit", status: "fail", detail: "Required so Docker containers can use the GPU.", fixable: true },
       { id: "hf-cli", label: "Hugging Face CLI (weights downloader)", status: "fail", detail: "", fixable: true },
-      { id: "ports", label: "Internal ports not publicly exposed", status: "pass", detail: "" }] };
+      { id: "ports", label: "Internal ports not publicly exposed", status: "pass", detail: "" },
+      { id: "ports-free", label: "Ports Gonka needs are free", status: "pass", detail: "No other program on this server uses them." }] };
   await run(`
     window.__real = window.__real || api; const real = window.__real;
     const files = (await real("repoGpuConfigs")).map((r) => r.file);

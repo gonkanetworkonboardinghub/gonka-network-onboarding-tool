@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("gonka", {
   installUpdate: call("app:installUpdate"),
   openExternal: call("app:openExternal"),
   pickFile: call("app:pickFile"),
+  fileExists: call("app:fileExists"),
 
   connect: call("conn:connect"),
   disconnect: call("conn:disconnect"),
@@ -94,6 +95,8 @@ contextBridge.exposeInMainWorld("gonka", {
   monitorSaveNodes: call("monitor:saveNodes"),
   monitorProposals: call("monitor:proposals"),
   monitorVoteOf: call("monitor:voteOf"),
+  monitorMyVotes: call("monitor:myVotes"),
+  monitorRememberVote: call("monitor:rememberVote"),
   termRun: call("term:run"),
   termCwd: call("term:cwd"),
   mineConnect: call("mine:connect"),

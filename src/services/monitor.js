@@ -1091,10 +1091,39 @@ function saveNodes(dir, nodes) {
   return clean;
 }
 
+/**
+ * The votes cast from this computer, newest first: votes.json beside
+ * nodes.json. The chain only keeps a vote while its proposal is open, so
+ * without this a host could not see afterwards how they voted. One entry per
+ * proposal and address (a changed vote replaces the earlier one); no secret
+ * is in it, only what the chain itself showed while the vote was open.
+ */
+const VOTE_OPTIONS = ["YES", "NO", "NO_WITH_VETO", "ABSTAIN"];
+const MAX_VOTES = 2000;
+function loadVotes(dir) {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(dir, "votes.json"), "utf8"));
+    return Array.isArray(list)
+      ? list.filter((v) => v && Number(v.id) > 0 && looksLikeAddress(v.address) && VOTE_OPTIONS.includes(v.option)).slice(0, MAX_VOTES)
+      : [];
+  } catch (_) { return []; }
+}
+function rememberVote(dir, v) {
+  const id = Number(v && v.id), address = String((v && v.address) || "").trim(), option = String((v && v.option) || "");
+  if (!(id > 0) || !looksLikeAddress(address) || !VOTE_OPTIONS.includes(option)) throw new Error("That is not a vote.");
+  const txhash = /^[0-9A-Fa-f]{64}$/.test(String((v && v.txhash) || "")) ? String(v.txhash).toUpperCase() : undefined;
+  const entry = { id, address, option, at: Date.now(), ...(txhash ? { txhash } : {}) };
+  const rest = loadVotes(dir).filter((x) => !(Number(x.id) === id && x.address === address));
+  const list = [entry, ...rest].slice(0, MAX_VOTES);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "votes.json"), JSON.stringify(list, null, 1));
+  return list;
+}
+
 module.exports = {
   epochNow, members, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
-  looksLikeAddress, loadNodes, saveNodes,
+  looksLikeAddress, loadNodes, saveNodes, loadVotes, rememberVote,
   attention, recentTrouble,
   _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere }
 };

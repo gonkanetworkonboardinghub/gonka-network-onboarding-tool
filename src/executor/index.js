@@ -95,7 +95,17 @@ function usableKey(file, passphrase) {
   if (/\.pub$/i.test(p) && fs.existsSync(p.slice(0, -4))) p = p.slice(0, -4);
   let data;
   try { data = fs.readFileSync(p); }
-  catch (e) { throw new Error("Could not read the SSH key file: " + e.message); }
+  catch (e) {
+    // Said in words, without this computer's folders: a provider's example
+    // ("ssh -i <private-key-path> user@host") names a key that is not a file.
+    if (e.code === "ENOENT") {
+      const shown = String(file).trim();
+      throw new Error(`There is no SSH key file called "${shown}" on this computer` +
+        (/[<>]/.test(shown) ? ": that is a placeholder from your provider's example command, not a file" : "") +
+        `. If you made your key in GNOT, choose "Create an SSH key for me". Otherwise choose your key file, or paste the key itself.`);
+    }
+    throw new Error("Could not read the SSH key file: " + e.message);
+  }
   const { utils } = require("ssh2");
   const key = utils.parseKey(data, passphrase || undefined);
   if (key instanceof Error) {

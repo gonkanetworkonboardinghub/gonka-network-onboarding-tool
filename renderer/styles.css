@@ -1420,3 +1420,12 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 
 /* Host Setup: where the node lives after setup */
 .card.after-setup { border-color: var(--accent); background: var(--accent-dim); }
+
+/* The question about an earlier setup: alone on the first page until it is answered. */
+.resume-first { max-width: 640px; margin: 9vh auto 0; padding: 28px; }
+.resume-first h3 { font-size: 22px; margin-bottom: 10px; }
+.resume-first .btn-row { margin-top: 18px; }
+.running-note { margin: 0 0 16px; }
+
+/* A vote from a node with no weight yet: said before the vote, where it is seen. */
+.mon-noweight { margin: 10px 0 0; padding: 8px 12px; border-left: 2px solid var(--amber); background: var(--wash); border-radius: 6px; }
