@@ -1,0 +1,51 @@
+PROMPT FOR BASE44 — after GNOT 1.8.20: new step pictures, six captions and three FAQ answers
+(attach the 14 pictures from the folder "step-pictures-2026-11-13-png" to this message — 01-welcome.png to 14-finished.png — then paste everything below and publish)
+
+GNOT 1.8.20 changed a few things in Host Setup, and the website should say the same. This is words and pictures only: nothing about the site's look, layout or motion changes, and no other word, number, link, data, backend function or page address changes. Nothing people can see today is removed.
+
+1. REGISTER A NODE — THE 14 STEP PICTURES
+Replace the 14 step pictures with the 14 attached PNG pictures, in the same order, with the same headings, anchors, picture styling and lightbox as now:
+   1 — 01-welcome.png, 2 — 02-welcome-needs.png, 3 — 03-your-server.png, 4 — 04-connect.png, 5 — 05-health-check.png, 6 — 06-wallet.png, 7 — 07-network.png, 8 — 08-model.png, 9 — 09-review.png, 10 — 10-weights.png, 11 — 11-launch.png, 12 — 12-collateral.png, 13 — 13-verify.png, 14 — 14-finished.png.
+The picture in the card "GNOT — Gonka Host Setup" at the top of the page is the new 01-welcome.png too. Remove the old picture files; none of the old ones may still show anywhere.
+How to tell them apart: the new pictures say "v1.8.20" and "Updated Nov 13, 2026" at the bottom of the app's left column (the old ones say "v1.8.18" and "Updated Nov 11, 2026"), and the new picture 14 has a "Finish" button.
+
+2. REGISTER A NODE — SIX CAPTIONS
+Replace the text under these six steps with exactly this. The other eight captions, the note "Your provider asks for an SSH key?" and everything else on the page stay as they are.
+
+Step 5 ("Health check"):
+"GNOT checks the server against everything Gonka needs. Anything with a Fix button is repaired in one click — Docker, the NVIDIA container toolkit, the model downloader, even an old NVIDIA driver — and you see the exact commands first. It also tells you if another program on the server already uses a port Gonka needs."
+
+Step 6 ("Your wallet"):
+"GNOT creates your wallet on your own computer. Its 24 recovery words are shown once: write them on paper and never share them. Then send it a little GNK: 0.01 GNK is plenty to set up, and the node's network fees come from it too, a little each epoch. GNOT shows what hosts with one server paid last epoch: about 0.02 GNK on November 12, 2026, so 1 GNK lasts about 45 epochs. Gonka's guide suggests 10 GNK as a reserve that lasts a long time. GNOT watches the wallet live and sees the GNK arrive by itself; "How do I get GNK?" shows the ways."
+
+Step 10 ("Download the model"):
+"The model files are hundreds of GB, so this is the longest step. It resumes by itself if interrupted; you can leave it running. Continue opens once the model is on your server."
+
+Step 11 ("Launch and register"):
+"GNOT runs Gonka's official launch sequence in order: the software, the blockchain node, the server's own key, registering your host on the network, the permissions (signed on your computer) and the full node. It takes a while, usually 10 to 20 minutes, and carries on while you look at other steps. The activity log shows every command."
+
+Step 13 ("Verify"):
+"GNOT watches your node until it is fully ready — registered, reachable from the internet and active — and says what it is doing. You can leave it running and walk away. Continue opens once the node is ready."
+
+Step 14 ("Your node is live"):
+"GNOT now follows your node in My nodes, in Gonka Host Monitor/Vote inside the same app: see how it is doing, vote with it, use a command line on its server, or shut it down safely. From here: keep the server on, keep your 24 words safe, and never delete the .tmkms folder on the server. Finish closes the setup; Set up another node starts the next one."
+
+3. FAQ — THREE ANSWERS
+Replace the answers to these three questions with exactly this. The questions themselves, their order, and the other 29 questions and answers stay as they are.
+
+a. "What does it cost?":
+"GNOT itself costs nothing to use. What you pay for is the GPU server you rent and the Gonka network's own fees. Setting up takes about 0.001 GNK. Since Gonka's upgrade of 8 October 2026 (v0.2.16) a node also pays a small network fee for every Proof of Compute it takes part in, out of its wallet: in Gonka's own example about 0.04 GNK an epoch, more for a bigger node. Measured on the network on November 12, 2026, hosts with one 8-GPU server or less paid about 0.02 GNK an epoch (the highest paid 0.06), so 1 GNK lasts about 45 epochs. Gonka's guide suggests 10 GNK as a reserve that lasts a long time, and GNOT's wallet and Verify steps show what a node like yours pays."
+
+b. "How much does registering cost?":
+"Registering your node and giving it its permissions cost about 0.001 GNK in network fees together; send 0.01 GNK to be safe. Taking part is what costs: since v0.2.16 a node pays a fee for every Proof of Compute, out of your wallet. A node that cannot pay stays registered but is left out of the epoch and earns nothing. For one server that was about 0.02 GNK an epoch on November 12, 2026, so 1 GNK lasts about 45 epochs. Gonka's guide suggests about 10 GNK as a reserve, and the app shows whether your node has enough. "How do I get GNK?" shows where to get it."
+
+c. "How do I vote on a proposal?":
+"A host votes with its node, and the vote counts by the node's weight. Open Monitor/Vote in GNOT, link your node's wallet once, and vote on the Votes page. A node that is not in the current epoch can still vote, but its vote only counts if the node is in the epoch when voting ends. The app keeps a record of how you voted. The website shows every proposal and how the vote stands, but it never asks for your wallet, so voting happens in the app."
+
+4. CHECK BEFORE YOU PUBLISH
+- Register a node shows the 14 new pictures (v1.8.20) and none of the old ones.
+- Only the six captions and the three FAQ answers above are different; every other word and number on the site is as before.
+- Every language shows the new texts in its own words, and keeps working exactly as now.
+- The look, the motion and the phone layout are untouched.
+
+Change nothing else on the site.
