@@ -405,8 +405,37 @@ async function probeUrl(url, timeout = 8000) {
   }
 }
 
+/**
+ * What is left of the fee allowance a wallet gave its node's key, as the chain
+ * has it now. The node pays its fees out of the wallet through this allowance,
+ * so what it can spend is the wallet's balance capped by it. Pure: takes the
+ * answer of cosmos/feegrant/v1beta1/issued/{wallet}.
+ *   { found: false }                      the wallet gave no allowance
+ *   { found: true, left, expires, over }  left in ngonka, null when unlimited;
+ *                                         over when it has run out of time
+ * With several, the one with the most left counts (as Monitor/Vote shows it).
+ */
+function readAllowance(answer, now = Date.now()) {
+  const list = ((answer && answer.allowances) || []).map((a) => {
+    // Basic, or a periodic / message-limited one wrapped around a basic one.
+    let inner = (a && a.allowance) || {};
+    if (inner.allowance) inner = inner.allowance;
+    if (inner.basic) inner = inner.basic;
+    const limit = Array.isArray(inner.spend_limit) ? inner.spend_limit : [];
+    const coin = limit.find((c) => /ngonka/i.test(c.denom));
+    const over = !!inner.expiration && !(new Date(inner.expiration).getTime() > now);
+    return { found: true, left: limit.length ? Number((coin || {}).amount || 0) : null, expires: inner.expiration || null, over };
+  });
+  if (!list.length) return { found: false };
+  const worth = (x) => (x.over ? -1 : x.left === null ? Infinity : x.left);
+  return list.sort((a, b) => worth(b) - worth(a))[0];
+}
+async function allowanceLeft(seed, address) {
+  return readAllowance(await getJson(seed + "/chain-api/cosmos/feegrant/v1beta1/issued/" + address));
+}
+
 module.exports = {
   firstReachableSeed, governanceModels, participant, account,
-  epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf,
+  epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf, allowanceLeft, readAllowance,
   repoGpuConfigs, probeUrl, nextPoc, pocEta, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
 };

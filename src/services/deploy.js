@@ -878,9 +878,19 @@ async function mlnodeStatus(driver) {
  * wallet, through the fee allowance granted to the warm key; a node that
  * cannot pay stays registered but is left out of the epoch. The node's admin
  * API (it only listens on the server itself) works the sum out:
- *   budget_balance     ngonka this epoch may need — an upper estimate
+ *   budget_balance     a ceiling on this epoch's fees, in ngonka. NOT what this
+ *                      node will pay: Gonka's epoch_fee_budget.go sizes it on
+ *                      the commit count of the network's biggest host
+ *                      (count_source "top_participant"), adds half again, and
+ *                      counts every confirmation round that could happen. On
+ *                      2026-11-13 it said 3.54 GNK while hosts with one server
+ *                      paid about 0.02 and the biggest host 0.37.
  *   spendable_balance  what it can spend: the wallet's balance, capped by what
- *                      is left of the allowance
+ *                      is left of the allowance — as the node's OWN copy of
+ *                      the chain has it, so 0 while it is still catching up
+ * The node never holds a fee back for this ceiling; it pays each one as it
+ * comes (tx_manager: gas it can afford = spendable / price). So the ceiling is
+ * shown, never used to say a wallet is short.
  * null when the node is not up yet or is older than v0.2.16.
  */
 async function feeBudget(driver) {
@@ -893,7 +903,9 @@ async function feeBudget(driver) {
     spendable: Number(j.spendable_balance),
     covers: !!j.spendable_covers_budget,
     // false while the node has not seen a Proof of Compute to size the estimate from
-    known: j.budget_known !== false
+    known: j.budget_known !== false,
+    // true when the ceiling is sized on the biggest host's work, not this node's
+    biggest: j.count_source === "top_participant"
   };
 }
 

@@ -81,6 +81,9 @@ async function findPage() {
       window.__sync = { height: 100, catchingUp: true, snapshot: null };
       window.__ml = { gpuTotal: 2, gpuReady: 0, weightsReady: false, state: "STOPPED" };
       window.__bal = 1000000000; window.__fileExists = false; window.__nodes = [];
+      window.__fb = { covers: true, budget: 60000000, spendable: 900000000, known: true, biggest: false };
+      window.__grant = { found: true, left: 10000000000, expires: "2027-11-13T22:29:56.697Z", over: false };
+      window.__usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 };
       const fake = {
         archPreflight: async () => ({ bad: [] }),
         pull: async () => { __calls.push("pull"); await wait(250); return true; },
@@ -94,8 +97,8 @@ async function findPage() {
         containers: async () => "api   Up 3 minutes", probe: async () => ({ reachable: true }),
         nodeSync: async () => __sync, chainHeight: async () => ({ height: 7030000, time: Date.now() - 2000 }),
         mlnode: async () => __ml, epochParticipants: async () => [],
-        feeBudget: async () => ({ covers: true, budget: 60000000, spendable: 900000000, known: true }),
-        typicalFees: async () => ({ asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 }),
+        feeBudget: async () => __fb, typicalFees: async () => __usual,
+        allowanceLeft: async () => { if (__grant === "fails") throw new Error("the network did not answer"); return __grant; },
         balance: async () => __bal, keyNames: async () => ["gonka-account-key"], ensureCli: async () => true,
         keyShow: async () => ({ address: ${JSON.stringify(ADDR)}, pubkey: ${JSON.stringify(PUB)} }),
         sshKeyInfo: async () => null, fileExists: async () => __fileExists,
@@ -293,7 +296,46 @@ async function findPage() {
     note("Votes: a node in the epoch is not", r.quiet);
     note("Votes: nothing threw", errors.length === from, thrown(from));
 
-    // ---- 10. Start over, from any step (last: it reloads the page) -------------
+    // ---- 10. Verify's fee card: judged by what hosts really pay ----------------
+    // The real case of 2026-11-13: a wallet with 0.9966 GNK and an untouched
+    // allowance, while the node (still catching up) said it could spend 0 and
+    // gave its ceiling, 3.54 GNK, sized on the biggest host. The card said
+    // NOT ENOUGH FOR FEES, and kept saying it.
+    from = errors.length;
+    const feeCard = async (set) => {
+      await run(`${set}; const c = document.querySelector("#fee-card"); if (c) delete c.dataset.state; if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } document.querySelector("#b-re").click(); return 1;`);
+      await until("document.querySelector('#fee-card') && document.querySelector('#fee-card').dataset.state", 50);
+      return run(`const c = document.querySelector("#fee-card"); const tile = (label) => { const n = [...c.querySelectorAll(".need")].find((x) => x.querySelector(".need-label").textContent.trim().startsWith(label)); return n ? n.querySelector(".need-value").textContent.trim() : null; };
+        return { state: c.dataset.state, text: c.innerText, pills: [...c.querySelectorAll(".pill")].map((p) => p.className.replace("pill ", "") + ":" + p.textContent.trim()).join(","), can: tile("Your node can spend"), ceiling: tile("Your node's ceiling"), old: tile("This epoch may need"), again: !!S.feePoll };`);
+    };
+    await run(`__setup(); for (let k = 0; k < STEP.verify; k++) doneSteps.add(k); __sync = { height: 7030000, catchingUp: false, snapshot: null }; __ml = { gpuTotal: 8, gpuReady: 8, weightsReady: true, state: "INFERENCE" }; go(STEP.verify); return 1;`);
+    await until("document.querySelector('#b-re') && document.querySelector('#fee-card') && document.querySelector('#fee-card').dataset.state", 50);
+    const REAL = `__bal = 996600000; __fb = { covers: false, budget: 3540000000, spendable: 0, known: true, biggest: true }; __grant = { found: true, left: 9999719389, expires: "2027-11-13T22:29:56.697Z", over: false }; __usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 44500000, typical: 24500000 }, most: 373600000 }`;
+    r = await feeCard(REAL);
+    note("fee card: 0.9966 GNK and a whole allowance are enough, whatever the node's ceiling says", r.state === "ok" && r.pills === "ok:FEES COVERED" && !/NOT ENOUGH/.test(r.text), `${r.state} · ${r.pills}`);
+    note("fee card: what the node can spend is read from the chain, not from a node that is behind", r.can === "0.9966 GNK", String(r.can));
+    note("fee card: the node's ceiling is shown as a ceiling, and said to be sized on the biggest host", r.ceiling === "3.54 GNK" && r.old === null && /sized for the biggest host/.test(r.text) && /does not wait for the ceiling/.test(r.text), String(r.ceiling));
+    note("fee card: it says how long that lasts, and reads itself again by itself", /enough for at least 22 epochs/.test(r.text) && /lasts about 40 epochs/.test(r.text) && r.again);
+    r = await feeCard(`${REAL}; __grant = { found: false }`);
+    note("fee card: a wallet with GNK but no allowance is told that sending more does not help", r.state === "allowance" && r.pills === "err:ALLOWANCE USED UP" && r.can === "0 GNK" && /Sending more GNK does not help/.test(r.text) && /run the launch again/.test(r.text), `${r.state} · ${r.pills}`);
+    r = await feeCard(`${REAL}; __grant = { found: true, left: 9000000000, expires: "2026-01-01T00:00:00Z", over: true }`);
+    note("fee card: an allowance that has run out of time counts as none", r.state === "allowance" && r.can === "0 GNK", r.state);
+    r = await feeCard(`${REAL}; __bal = 20000000`);
+    note("fee card: less than hosts of this size paid is not enough, with what to send", r.state === "short" && r.pills === "err:NOT ENOUGH FOR FEES" && /Send at least 0\.425 GNK/.test(r.text), `${r.state} · ${r.pills}`);
+    r = await feeCard(`${REAL}; __bal = 100000000`);
+    note("fee card: one epoch's worth but not ten is enough for now", r.state === "soon" && r.pills === "warn:ENOUGH FOR NOW" && /not for many more/.test(r.text), `${r.state} · ${r.pills}`);
+    r = await feeCard(`${REAL}; __bal = 5000000000`);
+    note("fee card: more than the node's own ceiling is covered on the node's word too", r.state === "ceiling" && r.pills === "ok:FEES COVERED" && /needs up to 3\.54 GNK/.test(r.text), `${r.state} · ${r.pills}`);
+    r = await feeCard(`${REAL}; __grant = "fails"; __fb = { covers: false, budget: 3540000000, spendable: 900000000, known: true, biggest: true }`);
+    note("fee card: when the chain cannot be read, the node's own figure is used", r.state === "ok" && r.can === "0.9 GNK", `${r.state} · ${r.can}`);
+    r = await feeCard(`${REAL}; __usual = null`);
+    note("fee card: with nothing measured to compare with, it says so and raises no alarm", r.state === "unknown" && r.pills === "" && /could not read what hosts paid/.test(r.text), `${r.state} · ${r.pills}`);
+    await run(`clearTimeout(S.feePoll); if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; }
+      __bal = 1000000000; __fb = { covers: true, budget: 60000000, spendable: 900000000, known: true, biggest: false }; __grant = { found: true, left: 10000000000, expires: "2027-11-13T22:29:56.697Z", over: false };
+      __usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 }; return 1;`);
+    note("fee card: nothing threw", errors.length === from, thrown(from));
+
+    // ---- 11. Start over, from any step (last: it reloads the page) -------------
     from = errors.length;
     await run(`__setup(); S.step = 0; go(0); return 1;`);
     r = await run(`const b = document.querySelector("#rail-restart"); return { there: !!b, hidden: b && b.hidden };`);

@@ -93,11 +93,29 @@ const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
   const node = (stdout) => deploy.feeBudget({ exec: async () => ({ stdout }) });
   let f = await node('{"denom":"ngonka","spendable_balance":"10000000000","budget_balance":"2400000000","count":7,"count_source":"top_participant","budget_known":true,"spendable_covers_budget":true}');
   check("a node's answer is read as it is", f && f.budget === 2.4e9 && f.spendable === 1e10 && f.covers === true && f.known === true);
+  check("a ceiling sized on the biggest host's work is marked as that", f && f.biggest === true);
   f = await node('{"denom":"ngonka","spendable_balance":"5","budget_balance":"900","count":0,"count_source":"none","budget_known":false,"spendable_covers_budget":false}');
-  check("not covered, and only a first guess, is read as that", f && f.covers === false && f.known === false);
+  check("not covered, and only a first guess, is read as that", f && f.covers === false && f.known === false && f.biggest === false);
   check("a node that is not up says nothing", (await node("")) === null);
   check("an error page says nothing", (await node("curl: (7) Failed to connect")) === null);
   check("an older node's 404 says nothing", (await node('{"message":"Not Found"}')) === null);
+
+  // ---- what the chain says is left of the allowance a wallet gave its node ----
+  const { readAllowance } = require("../src/services/netdata");
+  const at = Date.parse("2026-11-13T23:40:00Z");
+  const basic = (amount, expiration) => ({ granter: "gonka1cold", grantee: "gonka1warm", allowance: { "@type": "/cosmos.feegrant.v1beta1.BasicAllowance", spend_limit: amount === null ? [] : [{ denom: "ngonka", amount: String(amount) }], ...(expiration ? { expiration } : {}) } });
+  let a = readAllowance({ allowances: [basic(9999719389, "2027-11-13T22:29:56.697Z")], pagination: { next_key: null, total: "1" } }, at);
+  check("an allowance is read with what is left of it", a.found && a.left === 9999719389 && a.over === false && a.expires === "2027-11-13T22:29:56.697Z");
+  check("a wallet that gave none says so", readAllowance({ allowances: [], pagination: { next_key: null, total: "0" } }, at).found === false);
+  check("an answer with nothing in it counts as none", readAllowance(null, at).found === false);
+  a = readAllowance({ allowances: [basic(null)] }, at);
+  check("one with no limit and no end is unlimited", a.found && a.left === null && a.over === false);
+  a = readAllowance({ allowances: [basic(5e9, "2026-11-13T23:39:59Z")] }, at);
+  check("one that has run out of time is over", a.found && a.over === true);
+  a = readAllowance({ allowances: [basic(1e9, "2026-01-01T00:00:00Z"), basic(3e9, "2027-01-01T00:00:00Z"), basic(2e9)] }, at);
+  check("of several, the live one with the most left counts", a.left === 3e9 && a.over === false);
+  a = readAllowance({ allowances: [{ granter: "gonka1cold", grantee: "gonka1warm", allowance: { "@type": "/cosmos.feegrant.v1beta1.AllowedMsgAllowance", allowance: { "@type": "/cosmos.feegrant.v1beta1.BasicAllowance", spend_limit: [{ denom: "ngonka", amount: "7" }] }, allowed_messages: ["/x"] } }] }, at);
+  check("one wrapped in a message list is read through", a.found && a.left === 7);
 
   console.log(failed ? `\n${failed} FAILED` : "\nall good");
   process.exit(failed ? 1 : 0);

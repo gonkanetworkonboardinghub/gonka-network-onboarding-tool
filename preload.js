@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld("gonka", {
   models: call("net:models"),
   participant: call("net:participant"),
   balance: call("net:balance"),
+  allowanceLeft: call("net:allowanceLeft"),
   epochParticipants: call("net:epochParticipants"),
   recommendCollateral: call("net:recommendCollateral"),
   collateralOf: call("net:collateralOf"),

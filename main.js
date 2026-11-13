@@ -399,6 +399,7 @@ ipcMain.handle("net:seed", wrap(async () => netdata.firstReachableSeed()));
 ipcMain.handle("net:models", wrap(async ({ seed }) => netdata.governanceModels(seed)));
 ipcMain.handle("net:participant", wrap(async ({ seed, address }) => netdata.participant(seed, address)));
 ipcMain.handle("net:balance", wrap(async ({ seed, address }) => netdata.balanceOf(seed, address)));
+ipcMain.handle("net:allowanceLeft", wrap(async ({ seed, address }) => netdata.allowanceLeft(seed, address)));
 ipcMain.handle("net:epochParticipants", wrap(async ({ seed }) => netdata.epochParticipants(seed)));
 ipcMain.handle("net:recommendCollateral", wrap(async ({ seed, myWeight }) => netdata.recommendCollateral(seed, myWeight)));
 ipcMain.handle("net:collateralOf", wrap(async ({ seed, address }) => netdata.collateralOf(seed, address)));
