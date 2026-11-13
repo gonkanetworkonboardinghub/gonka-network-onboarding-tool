@@ -1,11 +1,11 @@
 {
-  "asOf": "2026-11-13T00:15:39.149Z",
+  "asOf": "2026-11-13T01:07:27.287Z",
   "marker": "Set up with GNOT",
   "explorer": "http://node2.gonka.ai:8000/dashboard/gonka/tx/",
-  "scannedToHeight": 7029505,
-  "currentEpoch": 455,
+  "scannedToHeight": 7030091,
+  "currentEpoch": 456,
   "totals": {
-    "nodesEver": 2,
+    "nodesEver": 3,
     "activeNow": 0,
     "gpusNow": 0,
     "gnkMinedAllEpochs": 141.718693884
@@ -45,6 +45,23 @@
       "gpuTypes": {
         "A100": 8
       },
+      "gnkPerDay": 0
+    },
+    {
+      "address": "gonka1u5q25eqmww9gn3ga9y2p5jdurggfc5fh027kl3",
+      "since": {
+        "address": "gonka1u5q25eqmww9gn3ga9y2p5jdurggfc5fh027kl3",
+        "tx": "C5310DA7C02CACBAA99F1C3AA45FBBE131AAC69371298C74D88113758BAF9398",
+        "height": 7029671,
+        "time": "2026-11-13T00:30:10Z",
+        "memo": "Set up with GNOT v1.8.19",
+        "kind": "MsgSubmitNewParticipant"
+      },
+      "txCount": 3,
+      "activeNow": false,
+      "weight": 0,
+      "gpus": 0,
+      "gpuTypes": {},
       "gnkPerDay": 0
     }
   ],
@@ -436,6 +453,13 @@
     },
     {
       "epoch": 455,
+      "activeNodes": 0,
+      "gpus": 0,
+      "weight": 0,
+      "gnk": 0
+    },
+    {
+      "epoch": 456,
       "activeNodes": 0,
       "gpus": 0,
       "weight": 0,
