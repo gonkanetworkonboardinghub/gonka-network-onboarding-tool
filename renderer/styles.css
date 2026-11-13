@@ -1429,3 +1429,8 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 
 /* A vote from a node with no weight yet: said before the vote, where it is seen. */
 .mon-noweight { margin: 10px 0 0; padding: 8px 12px; border-left: 2px solid var(--amber); background: var(--wash); border-radius: 6px; }
+
+/* Start over: there on every step once a setup is under way; quiet until it is wanted. */
+#rail .rail-restart { margin-top: 12px; padding: 5px 11px; font-size: 12px; font-weight: 500; letter-spacing: 0.01em; color: var(--muted); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; box-shadow: none; }
+#rail .rail-restart:hover { color: var(--text); border-color: var(--text); background: var(--wash); transform: none; }
+#rail .rail-restart[hidden] { display: none; }

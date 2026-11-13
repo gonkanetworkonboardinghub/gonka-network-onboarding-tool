@@ -56,8 +56,10 @@ async function findPage() {
 
   const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
   let id = 0; const waiting = new Map(); const errors = [];
+  let answerYes = true; const dialogs = [];
   ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && waiting.has(d.id)) { waiting.get(d.id)(d); waiting.delete(d.id); } if (d.method === "Runtime.exceptionThrown") errors.push(d.params.exceptionDetails.exception ? d.params.exceptionDetails.exception.description : d.params.exceptionDetails.text);
-    if (d.method === "Page.javascriptDialogOpening") ws.send(JSON.stringify({ id: ++id, method: "Page.handleJavaScriptDialog", params: { accept: true } })); };
+    // "Are you sure?" questions: what was asked is kept, and the answer is whatever the check wants (yes unless said otherwise).
+    if (d.method === "Page.javascriptDialogOpening") { dialogs.push(d.params.message); ws.send(JSON.stringify({ id: ++id, method: "Page.handleJavaScriptDialog", params: { accept: answerYes } })); } };
   const send = (method, params) => new Promise((r, no) => { const n = ++id; const timer = setTimeout(() => { waiting.delete(n); no(new Error(`no answer from the page in 60 seconds (${method})`)); }, 60000); waiting.set(n, (d) => { clearTimeout(timer); r(d); }); ws.send(JSON.stringify({ id: n, method, params })); });
   const run = async (e) => { const d = await send("Runtime.evaluate", { expression: `(async () => { ${e} })()`, awaitPromise: true, returnByValue: true }); if (d.result.exceptionDetails) throw new Error((d.result.exceptionDetails.exception && d.result.exceptionDetails.exception.description) || d.result.exceptionDetails.text); return d.result.result.value; };
   const until = async (cond, tries = 50) => { for (let i = 0; i < tries; i++) { try { if (await run(`return !!(${cond})`)) return true; } catch (_) {} await sleep(200); } return false; };
@@ -98,7 +100,8 @@ async function findPage() {
         keyShow: async () => ({ address: ${JSON.stringify(ADDR)}, pubkey: ${JSON.stringify(PUB)} }),
         sshKeyInfo: async () => null, fileExists: async () => __fileExists,
         monitorNodes: async () => __nodes.map((n) => ({ ...n })), monitorSaveNodes: async (a) => { __nodes = a.nodes; return a.nodes; },
-        nextPoc: () => new Promise(() => {}), seed: async () => "http://node1.gonka.ai:8000"
+        nextPoc: () => new Promise(() => {}), seed: async () => "http://node1.gonka.ai:8000",
+        disconnect: async () => { localStorage.setItem("gnot-check-disconnected", "1"); return true; }
       };
       api = async (fn, args) => (fn in fake ? fake[fn](args) : real(fn, args));
       window.__setup = () => {
@@ -290,7 +293,38 @@ async function findPage() {
     note("Votes: a node in the epoch is not", r.quiet);
     note("Votes: nothing threw", errors.length === from, thrown(from));
 
-    await run("api = window.__real; clearSession(); doneSteps.clear(); errorSteps.clear(); return 1;").catch(() => {});
+    // ---- 10. Start over, from any step (last: it reloads the page) -------------
+    from = errors.length;
+    await run(`__setup(); S.step = 0; go(0); return 1;`);
+    r = await run(`const b = document.querySelector("#rail-restart"); return { there: !!b, hidden: b && b.hidden };`);
+    note("Start over: not offered on an untouched first page", r.there && r.hidden);
+    await run(`for (let k = 0; k < STEP.wallet; k++) doneSteps.add(k); go(STEP.wallet); return 1;`);
+    const everywhere = await run(`const seen = []; for (const s of STEPS.slice(1)) { S.step = STEP[s.id]; renderRail(); const b = document.querySelector("#rail-restart"); seen.push(!b.hidden && b.textContent.trim() === "Start over"); } S.step = STEP.wallet; renderRail(); return seen.every(Boolean) ? seen.length : 0;`);
+    note("Start over: there on every later step", everywhere === 12, `${everywhere} of 12 steps`);
+    answerYes = false; dialogs.length = 0;
+    await run(`document.querySelector("#rail-restart").click(); return 1;`);
+    await sleep(400);
+    r = await run(`return { saved: !!localStorage.getItem(SESSION_KEY), step: STEPS[S.step].id, leaving: !!S.leaving, connected: S.connected };`);
+    note("Start over: it asks first, and says nothing on the server is touched", dialogs.length === 1 && /Stop this setup and start over\?/.test(dialogs[0]) && /Nothing on your server is removed or stopped/.test(dialogs[0]) && !/still running/.test(dialogs[0]) && !/Shut down safely/.test(dialogs[0]), (dialogs[0] || "").replace(/\s+/g, " ").slice(0, 90));
+    note("Start over: answering no changes nothing", r.saved && r.step === "wallet" && !r.leaving && r.connected);
+    dialogs.length = 0;
+    await run(`S.consoleBusy = true; S.launched = true; document.querySelector("#rail-restart").click(); return 1;`);
+    await sleep(400);
+    await run(`S.consoleBusy = false; S.launched = false; return 1;`);
+    note("Start over: a running step and a node already up are each named in the question", dialogs.length === 1 && /A step is still running/.test(dialogs[0]) && /does not shut it down/.test(dialogs[0]) && /Shut down safely/.test(dialogs[0]));
+    note("Start over: nothing threw", errors.length === from, thrown(from));
+    answerYes = true; dialogs.length = 0;
+    await run(`localStorage.removeItem("gnot-check-disconnected"); document.querySelector("#rail-restart").click(); return 1;`).catch(() => {});
+    // The page starts again: wait for the new one (it no longer has this check's stand-ins).
+    const back = await until("typeof RENDER !== 'undefined' && typeof STEP !== 'undefined' && !window.__real && document.querySelector('#b-start')", 120);
+    // (The new page saves its own blank start, so "forgotten" means: nothing of the old setup is in it.)
+    r = back ? await run(`const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); return { kept: s ? (s.step || 0) + (s.furthest || 0) + (s.done || []).length + (s.wallet && s.wallet.address ? 1 : 0) + (s.ssh && s.ssh.host ? 1 : 0) : 0,
+      disc: localStorage.getItem("gnot-check-disconnected"), step: S.step, home: document.body.classList.contains("on-home"), hidden: document.querySelector("#rail-restart").hidden, done: doneSteps.size };`) : {};
+    await run(`localStorage.removeItem("gnot-check-disconnected"); return 1;`).catch(() => {});
+    note("Start over: answering yes ends the connection and forgets the setup", back && r.disc === "1" && r.kept === 0 && r.done === 0, back ? `connection ended: ${r.disc === "1"}, left of the old setup: ${r.kept}` : "the page did not come back");
+    note("Start over: Host Setup opens again on its first step, ready for a new setup", back && r.step === 0 && !r.home && r.hidden);
+
+    await run("if (window.__real) api = window.__real; clearSession(); doneSteps.clear(); errorSteps.clear(); return 1;").catch(() => {});
   } catch (e) {
     note("the checks", false, String(e.message).split("\n")[0]);
   }

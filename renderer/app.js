@@ -179,6 +179,9 @@ function renderRail() {
   const fill = $("#rail-progress-fill"), n = $("#rail-progress-n");
   if (fill) fill.style.width = (doneSteps.size / STEPS.length * 100).toFixed(1) + "%";
   if (n) n.textContent = `${doneSteps.size} / ${STEPS.length}`;
+  // "Start over" is there on every step once a setup is under way: nothing to stop on an untouched first page.
+  const restart = $("#rail-restart");
+  if (restart) { restart.hidden = !(S.step > 0 || doneSteps.size > 0); restart.textContent = t("Start over"); }
   // The step being done stays in sight in a short window.
   const now = el.querySelector(".rack-unit.active");
   if (now && now.scrollIntoView) now.scrollIntoView({ block: "nearest" });
@@ -345,6 +348,8 @@ function saveSession() {
   // screen is a blank start: saving it would wipe out the setup on offer
   // (an update's restart on 31 October 2026 did exactly that).
   if (S.sessionOffered) return;
+  // Being let go (startOver): a step still finishing must not write it back.
+  if (S.leaving) return;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       v: 1, at: Date.now(), step: S.step,
@@ -364,6 +369,30 @@ function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
+
+/**
+ * Stop this setup, at whatever step it is, and begin again from the first
+ * page. It asks first, and says what it does and does not do: GNOT lets go of
+ * this setup's answers and of its connection to the server; nothing on the
+ * server is removed, stopped or undone, and the wallet stays on this computer.
+ * A step that is running, and a node that is already up, are each named,
+ * because those are the two cases where "start over" could be misread.
+ */
+async function startOver() {
+  const say = [t("Stop this setup and start over?"), "",
+    t("GNOT forgets this setup's answers and goes back to the first step. Nothing on your server is removed or stopped by this: what is installed or running there stays as it is, and your wallet stays on this computer.")];
+  if (S.consoleBusy) say.push("", t("A step is still running. Starting over ends GNOT's connection to your server; a download or command already under way there may carry on or stop partway."));
+  if (S.launched || doneSteps.has(STEP.deploy)) say.push("", t("Your node is already registered and running on your server, and starting over does not shut it down. To stop it for good, use \"Shut down safely\" on its page in Monitor/Vote."));
+  if (!confirm(say.join("\n"))) return;
+  S.leaving = true;
+  if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; }
+  try { await api("disconnect"); } catch (_) { /* no connection to end */ }
+  clearSession();
+  try { sessionStorage.setItem(FRESH_SETUP_KEY, "1"); } catch (_) {}      // open on Host Setup's first step, not on the home screen
+  if (window.gonka.setRunning) window.gonka.setRunning("");
+  if (window.gonka.allowClose) window.gonka.allowClose();
+  location.reload();
+}
 
 /** A password for the server's own key: 48 random hex characters, safe as-is in config.env and in the shell. */
 function newServerPassword() {
@@ -4254,6 +4283,7 @@ function showHostSetup() {
   $("#link-hub").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.website }); };
   $("#link-source").onclick = (e) => { e.preventDefault(); api("openExternal", { url: S.K.docs.sourceCode }); };
   $("#link-home").onclick = (e) => { e.preventDefault(); showHome(); };
+  $("#rail-restart").onclick = () => startOver();
 
   // Theme: applied to <html> so the CSS variable blocks switch wholesale.
   // Chosen once, remembered forever — the setup can span days across restarts.
