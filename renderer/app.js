@@ -2513,8 +2513,11 @@ RENDER.choices = () => {
       if (!onStep("choices")) return;
       $("#choices-card").innerHTML = `
         <span class="pill err">${esc(t("Couldn't read the network"))}</span> <span class="small">${esc(e.message)}</span>
-        <div class="btn-row" style="margin-top:12px"><button class="primary" id="b-choices-retry">${esc(t("Try again"))}</button></div>`;
+        <div class="btn-row" style="margin-top:12px"><button class="primary" id="b-choices-retry">${esc(t("Try again"))}</button></div>
+        <p class="small" style="margin-top:8px">${esc(t("You can also go on without choosing now: once your node is registered, Verify and Monitor/Vote let you choose, and change it, at any time."))}</p>`;
       $("#b-choices-retry").onclick = () => { $("#choices-card").innerHTML = loadingHtml(t("Reading the models and the hosts from the network…")); load(); };
+      // A network that does not answer must never hold the setup up.
+      $("#b-next").disabled = false;
     }
   }
 
@@ -2595,7 +2598,6 @@ RENDER.choices = () => {
   }
 
   $("#b-next").onclick = () => {
-    if (!data) return;
     markDone(STEP.choices); saveSession(); go(STEP.review);
   };
   load();
