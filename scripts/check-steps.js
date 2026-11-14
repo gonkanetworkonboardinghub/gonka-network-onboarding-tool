@@ -325,7 +325,9 @@ async function findPage() {
     r = await feeCard(`${REAL}; __bal = 100000000`);
     note("fee card: one epoch's worth but not ten is enough for now", r.state === "soon" && r.pills === "warn:ENOUGH FOR NOW" && /not for many more/.test(r.text), `${r.state} · ${r.pills}`);
     r = await feeCard(`${REAL}; __bal = 5000000000`);
-    note("fee card: more than the node's own ceiling is covered on the node's word too", r.state === "ceiling" && r.pills === "ok:FEES COVERED" && /needs up to 3\.54 GNK/.test(r.text), `${r.state} · ${r.pills}`);
+    note("fee card: a wallet above the node's ceiling is still judged by what hosts paid, in one voice", r.state === "ok" && r.pills === "ok:FEES COVERED" && /enough for at least 112 epochs/.test(r.text) && !/lasts at least/.test(r.text), `${r.state} · ${r.pills}`);
+    r = await feeCard(`${REAL}; __bal = 5000000000; __usual = null`);
+    note("fee card: with nothing measured, a wallet above the node's ceiling is covered on the node's word", r.state === "ceiling" && r.pills === "ok:FEES COVERED" && /needs up to 3\.54 GNK/.test(r.text), `${r.state} · ${r.pills}`);
     r = await feeCard(`${REAL}; __grant = "fails"; __fb = { covers: false, budget: 3540000000, spendable: 900000000, known: true, biggest: true }`);
     note("fee card: when the chain cannot be read, the node's own figure is used", r.state === "ok" && r.can === "0.9 GNK", `${r.state} · ${r.can}`);
     r = await feeCard(`${REAL}; __usual = null`);

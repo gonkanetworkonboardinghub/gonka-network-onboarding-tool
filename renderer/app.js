@@ -3267,9 +3267,12 @@ RENDER.verify = () => {
     const walletHasIt = bal !== null && bal > 0 && (!high || bal >= high);
     const state = can === null ? "wait"
       : can <= 0 || (high && can < high) ? (walletHasIt ? "allowance" : "short")
+      // What hosts really paid is the measure whenever it is known: a wallet above
+      // the node's ceiling would otherwise read "lasts at least 2 epochs" beside
+      // "about 400 epochs". The ceiling only speaks when nothing was measured.
+      : high ? (can >= enough ? "ok" : "soon")
       : fb && fb.known && can >= fb.budget ? "ceiling"
-      : !high ? "unknown"
-      : can >= enough ? "ok" : "soon";
+      : "unknown";
     const have = `<b>${gnk(can)}</b>`;
     const pill = (kind, label) => `<span class="pill ${kind}">${esc(t(label))}</span>`;
     let verdict;

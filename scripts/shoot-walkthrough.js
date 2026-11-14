@@ -94,11 +94,17 @@ const W = 1360, H = 900;
       modelsIn: ["deepseek-ai/DeepSeek-V4-Flash-0731"], serverKeyName: null,
       genEnv: "export KEY_NAME=gonka-node\\nexport PUBLIC_URL=http://203.0.113.7:8000\\nexport HF_HOME=/mnt/shared\\n",
       keyNames: ["gonka-account-key"], keyShow: { address: ${JSON.stringify(ADDR)}, pubkey: ${JSON.stringify(PUB)} },
-      balance: 12500000000, ensureCli: true,
+      // 1 GNK on the wallet step, so its picture shows how long that lasts ("about 45
+      // epochs"); more by the later steps, as someone adding GNK for collateral has.
+      balance: () => window.__shotBal, ensureCli: true,
       containers: "api   Up 3 hours\\nnode  Up 3 hours\\nmlnode Up 3 hours",
       probe: { reachable: true }, nodeSync: { height: 6750000, catchingUp: false, snapshot: null },
       mlnode: { gpuTotal: 8, gpuReady: 8, weightsReady: true, state: "INFERENCE" },
-      feeBudget: { covers: true, budget: 2400000000, spendable: 12400000000, known: true },
+      feeBudget: { covers: true, budget: 3540000000, spendable: 9998600000, known: true, biggest: true },
+      allowanceLeft: { found: true, left: 9998600000, expires: "2027-11-13T22:29:56.697Z", over: false },
+      // What hosts paid in fees, as measured on 2026-11-12 (the figures the website's
+      // captions give), so the wallet picture never depends on a slow network answer.
+      typicalFees: { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 },
       participant: { participant: { address: ${JSON.stringify(ADDR)}, inferenceUrl: "http://203.0.113.7:8000", status: "ACTIVE" } },
       monitorNodes: [], monitorSaveNodes: true
     };
@@ -126,7 +132,7 @@ const W = 1360, H = 900;
   ];
   for (const [name, step, ready] of steps) {
     const before = errors.length;
-    await run(`const i = STEPS.findIndex((s) => s.id === ${JSON.stringify(step)}); S.step = i; doneSteps.clear(); for (let k = 0; k < i; k++) doneSteps.add(k); renderRail(); RENDER[${JSON.stringify(step)}](); return 1;`);
+    await run(`window.__shotBal = ${step === "wallet" ? 1000000000 : 12500000000}; const i = STEPS.findIndex((s) => s.id === ${JSON.stringify(step)}); S.step = i; doneSteps.clear(); for (let k = 0; k < i; k++) doneSteps.add(k); renderRail(); RENDER[${JSON.stringify(step)}](); return 1;`);
     
     const ok = await until(ready.split(", ").map((r) => `document.querySelector(${JSON.stringify(r.startsWith("#stage") ? r : "#stage " + r)})`).join(" || "), 50);
     await sleep(1500);
