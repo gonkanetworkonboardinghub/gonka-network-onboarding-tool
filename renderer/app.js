@@ -2646,7 +2646,7 @@ RENDER.deploy = () => {
     ${header("Step 10", "Launch and register", `
       The wizard now runs the official launch sequence, in the exact order Gonka requires.
       Watch the activity log below for details.`)}
-    <div class="info-banner">${t("<b>This step takes a while: usually 10 to 20 minutes.</b> Most of it is downloading Gonka's software, several GB, and starting the chain node. You can leave it running: each line below turns green as it finishes, and the clock in the activity log shows it is still working.")}</div>
+    <div class="info-banner">${t("<b>This step takes a while: it can take about an hour.</b> Most of it is downloading Gonka's software, several GB, and starting the chain node. You can leave it running: each line below turns green as it finishes, and the clock in the activity log shows it is still working.")}</div>
     ${pocNoteHtml()}
     <div class="card">${tasks.map((tk) => `
       <div class="task" id="task-${tk.id}">
@@ -2936,9 +2936,14 @@ RENDER.verify = () => {
 
   function startSyncMeter() {
     if (S.syncPoll) return;
+    // One read at a time (a busy server can take longer than the ten seconds
+    // between reads), and one that fails does not wipe what the last one showed.
+    let lastGood = null, reading = false;
     const tick = async () => {
       const el = $("#sync-meter");
       if (!el) { clearInterval(S.syncPoll); S.syncPoll = null; return; }
+      if (reading) return;
+      reading = true;
       try {
         const [local, net] = await Promise.all([
           api("nodeSync"),
@@ -3118,7 +3123,8 @@ RENDER.verify = () => {
           }
         } catch (_) { /* never block the meter on these probes */ }
 
-        el.innerHTML = s1 + s2 + s3 + s4 + s5;
+        lastGood = { html: s1 + s2 + s3 + s4 + s5, at: Date.now() };
+        el.innerHTML = lastGood.html;
 
         if (synced) {
           // Keep polling once synced — stage 4 is the interesting one from here
@@ -3138,8 +3144,12 @@ RENDER.verify = () => {
           }
         }
       } catch (e) {
-        el.innerHTML = `<p class="small">${t("Can't read the node's sync state")} (${esc(e.message)})</p>`;
-      }
+        // A read that fails is usually a busy server or a connection that blinked.
+        // What was read in the last few minutes stays up, with a line saying so;
+        // the next read, ten seconds on, puts it right.
+        const note = `<p class="small" id="sync-miss">${esc(t("GNOT could not read your node just now ({why}). It tries again every 10 seconds.", { why: e.message }))}</p>`;
+        if ($("#sync-meter")) $("#sync-meter").innerHTML = lastGood && Date.now() - lastGood.at < 5 * 60 * 1000 ? lastGood.html + note : note;
+      } finally { reading = false; }
     };
     tick();
     S.syncPoll = setInterval(tick, 10000);

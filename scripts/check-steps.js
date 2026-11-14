@@ -95,7 +95,7 @@ async function findPage() {
         downloadWeights: async () => { __calls.push("weights"); await wait(300); return true; },
         participant: async () => ({ participant: { address: ${JSON.stringify(ADDR)}, inferenceUrl: "http://203.0.113.7:8000", status: "ACTIVE" } }),
         containers: async () => "api   Up 3 minutes", probe: async () => ({ reachable: true }),
-        nodeSync: async () => __sync, chainHeight: async () => ({ height: 7030000, time: Date.now() - 2000 }),
+        nodeSync: async () => { if (window.__syncFails) throw new Error("Node is not answering yet"); return __sync; }, chainHeight: async () => ({ height: 7030000, time: Date.now() - 2000 }),
         mlnode: async () => __ml, epochParticipants: async () => [],
         feeBudget: async () => __fb, typicalFees: async () => __usual,
         allowanceLeft: async () => { if (__grant === "fails") throw new Error("the network did not answer"); return __grant; },
@@ -132,6 +132,8 @@ async function findPage() {
     await run(`go(STEP.deploy); return 1;`);
     r = await run(`return { done: document.querySelectorAll("#stage .task.done").length, next: !document.querySelector("#b-next").disabled };`);
     note("launch: its page shows all six lines done, and Continue open, when opened again", r.done === 6 && r.next, `${r.done} of 6 done`);
+    r = await run(`return document.querySelector("#stage .info-banner").innerText;`);
+    note("launch: it says the step can take about an hour, not 10 to 20 minutes", /it can take about an hour/.test(r) && !/10 to 20/.test(r), String(r).slice(0, 70));
     note("launch: nothing threw", errors.length === from, thrown(from));
 
     // ---- 2. A failure while another page is showing ------------------------
@@ -337,7 +339,32 @@ async function findPage() {
       __usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 }; return 1;`);
     note("fee card: nothing threw", errors.length === from, thrown(from));
 
-    // ---- 11. Start over, from any step (last: it reloads the page) -------------
+    // ---- 11. Verify: a read of the node that fails ----------------------------
+    // After an update the app picked a setup up on Verify, one read of the server
+    // failed, and the lines for catching up and the GPUs were gone from the page.
+    from = errors.length;
+    const meter = () => run(`const m = document.querySelector("#sync-meter"); return { rows: m ? m.querySelectorAll(":scope > div").length : 0, miss: !!document.querySelector("#sync-miss"), text: m ? m.innerText : "" };`);
+    await run(`__setup(); window.__syncFails = false; for (let k = 0; k < STEP.verify; k++) doneSteps.add(k); __sync = { height: 7030000, catchingUp: false, snapshot: null }; __ml = { gpuTotal: 8, gpuReady: 8, weightsReady: true, state: "INFERENCE" }; go(STEP.verify); return 1;`);
+    await until("document.querySelector('#sync-meter') && document.querySelectorAll('#sync-meter > div').length >= 4", 60);
+    const before = await meter();
+    await run(`window.__syncFails = true; return 1;`);
+    const missed = await until("document.querySelector('#sync-miss')", 80);
+    r = await meter();
+    note("Verify: a read that fails keeps the lines that were there, and says it will try again", missed && before.rows >= 4 && r.rows === before.rows && /Caught up with the network/.test(r.text) && /tries again every 10 seconds/.test(r.text), `${before.rows} lines before, ${r.rows} after`);
+    await run(`window.__syncFails = false; return 1;`);
+    const healed = await until("document.querySelector('#sync-meter') && !document.querySelector('#sync-miss') && document.querySelectorAll('#sync-meter > div').length >= 4", 80);
+    note("Verify: the next read that works clears the line", healed);
+    await run(`if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } clearTimeout(S.feePoll); __setup(); window.__syncFails = true; for (let k = 0; k < STEP.verify; k++) doneSteps.add(k); go(STEP.verify); return 1;`);
+    const first = await until("document.querySelector('#sync-miss')", 60);
+    r = await meter();
+    note("Verify: when the very first read fails, it says so and keeps trying", first && r.rows === 0 && /could not read your node just now/.test(r.text), r.text.slice(0, 80));
+    await run(`window.__syncFails = false; return 1;`);
+    const came = await until("document.querySelectorAll('#sync-meter > div').length >= 4 && !document.querySelector('#sync-miss')", 80);
+    note("Verify: and shows the lines as soon as a read works", came);
+    await run(`if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } clearTimeout(S.feePoll); window.__syncFails = false; return 1;`);
+    note("Verify, a failed read: nothing threw", errors.length === from, thrown(from));
+
+    // ---- 12. Start over, from any step (last: it reloads the page) -------------
     from = errors.length;
     await run(`__setup(); S.step = 0; go(0); return 1;`);
     r = await run(`const b = document.querySelector("#rail-restart"); return { there: !!b, hidden: b && b.hidden };`);
