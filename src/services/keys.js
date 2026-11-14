@@ -403,6 +403,52 @@ async function vote({ keyName, passphrase, address, proposalId, option, seedApiU
   } catch (e) { throw said(e); }
 }
 
+/**
+ * The host's choice for each model it does not run, signed LOCALLY with the
+ * cold key, as `inferenced tx inference set-poc-delegation <model> <host>` and
+ * `refuse-poc-delegation <model>` do. Gonka takes it only from a registered
+ * host. `choices` is [{ model, mode: "delegate" | "refuse", to }]. A choice the
+ * chain already holds is not sent again, so a re-run pays nothing; if all are
+ * there, nothing is signed. With `dryRun` nothing is sent.
+ */
+async function setModelChoices({ keyName, passphrase, address, choices, seedApiUrl, dryRun }, onData) {
+  const key = unlock(keyName, passphrase);
+  if (address && key.address !== address) {
+    throw new Error(`The wallet "${keyName}" is ${key.address}, not this node's wallet.`);
+  }
+  const seed = seedBase(seedApiUrl);
+  // What the chain holds now, so nothing is paid twice.
+  let held = { delegations: [], refusals: [] };
+  try {
+    const res = await fetch(`${seed}/chain-api/productscience/inference/inference/poc_delegation/${key.address}`, { signal: AbortSignal.timeout(10000) });
+    if (res.ok) held = await res.json();
+  } catch (_) { /* can't tell: send them all */ }
+  const has = (c) => c.mode === "refuse"
+    ? (held.refusals || []).some((r) => r.model_id === c.model)
+    : (held.delegations || []).some((d) => d.model_id === c.model && d.delegate_to === c.to);
+  const todo = (choices || []).filter((c) => c && c.model && (c.mode === "refuse" || (c.mode === "delegate" && c.to)) && !has(c));
+  if (!todo.length) return { skipped: true, sent: 0 };
+  const messages = todo.map((c) => c.mode === "refuse"
+    ? wallet.Msg.refusePoCDelegation(key.address, c.model)
+    : wallet.Msg.setPoCDelegation(key.address, c.model, c.to));
+  const said = (e) => {
+    const m = String(e.message || e);
+    if (/invalid model/i.test(m)) return new Error("Gonka does not know one of these models any more. Open this step again to see the current ones.");
+    if (/participant not found/i.test(m)) return new Error("The host chosen for one of the models is not registered on Gonka. Pick another one.");
+    if (/not.*(a )?participant|permission/i.test(m)) return new Error("Gonka takes this choice only from a registered host, and this node is not registered yet. GNOT sends it again once it is.");
+    if (/insufficient (funds|fee)/i.test(m)) return new Error("The wallet does not hold enough GNK for the fee.");
+    return e;
+  };
+  try {
+    if (dryRun) return await wallet.estimate({ seed, priv: key.priv, messages, gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo: GNOT_MEMO });
+    onData && onData(`Sending your choice for ${todo.length} model(s): ${todo.map((c) => `${c.model.split("/").pop()} ${c.mode === "refuse" ? "refused" : "delegated to " + c.to}`).join("; ")}\n`);
+    const r = await wallet.signAndBroadcast({
+      seed, priv: key.priv, messages, gasAdjustment: 2.0, gasPrice: K.get().gasPriceNgonka, memo: GNOT_MEMO, onData
+    });
+    return { txhash: r.txhash, height: r.height, fee: r.fee, sent: todo.length };
+  } catch (e) { throw said(e); }
+}
+
 /** Account sequence (null when the account can't be read or doesn't exist yet). */
 async function accountSequence(address, seedApiUrl) {
   try {
@@ -480,7 +526,7 @@ function sshKeySave(text) {
 
 module.exports = {
   ensureCli, listKeys, createKey, importKey, showKey,
-  grantMlOps, manualRegister, depositCollateral, vote, importForNode, accountSequence,
+  grantMlOps, manualRegister, depositCollateral, vote, setModelChoices, importForNode, accountSequence,
   keyringDir, sshKeygen, sshKeyInfo, sshKeySave, keyringKeyNames, keyringAddresses, resetKeyring,
   _internal: { tidyPrivateKey }
 };

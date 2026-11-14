@@ -206,6 +206,63 @@ async function members(seeds) {
 }
 
 /**
+ * Who chose what for the models they do not run, across the epoch's hosts.
+ *
+ * Gonka asks every host, for each model it does not run, to delegate it (a
+ * host that runs it checks the work for this one, for a share of its reward),
+ * or to refuse it; no choice costs more. Read from the chain's own rules:
+ * params.delegation_params gives the rates (in November 2026: delegate 5%,
+ * refuse 10%, nothing 15%, per model, added up), params.poc_params.models the
+ * models that count. A delegation only counts while the chosen host runs that
+ * model and is in the epoch; otherwise the chain treats it as no choice
+ * (inference-chain/x/inference/module/delegation_weight_calculator.go).
+ *
+ * One question per host (about thirty), at the paced rate: kept two minutes.
+ */
+let choicesCache = { at: 0, data: null };
+async function modelChoices(seeds) {
+  if (choicesCache.data && Date.now() - choicesCache.at < 2 * 60 * 1000) return choicesCache.data;
+  const [m, params] = await Promise.all([members(seeds), ask(seeds, `${INF}/inference/params`)]);
+  const p = (params && params.params) || {};
+  const dec = (d) => (d && d.value !== undefined ? num(d.value) * Math.pow(10, num(d.exponent)) : null);
+  const dp = p.delegation_params || {};
+  const rates = { delegate: dec(dp.delegation_share), refuse: dec(dp.refusal_penalty), none: dec(dp.no_participation_penalty) };
+  const counted = ((p.poc_params || {}).models || []).map((x) => ({ id: x.model_id, penaltyStart: num(x.penalty_start_epoch) }))
+    .filter((x) => x.id && (!x.penaltyStart || x.penaltyStart <= m.epoch + 1));
+  // Hosts on Gonka's own lists (developer access, transfer agents) are never
+  // GNOT's default pick: Gonka asks hosts not to all lean on the same few.
+  const listed = new Set([...(((p.developer_access_params || {}).allowed_developer_addresses) || []),
+    ...(((p.transfer_agent_access_params || {}).allowed_transfer_addresses) || [])]);
+  const hosts = [];
+  for (const h of m.hosts) {
+    const d = await soft(ask(seeds, `${INF}/inference/poc_delegation/${h.address}`));
+    const choices = {};
+    for (const x of ((d && d.delegations) || [])) choices[x.model_id] = { mode: "delegate", to: x.delegate_to };
+    for (const x of ((d && d.refusals) || [])) choices[x.model_id] = { mode: "refuse" };
+    hosts.push({ address: h.address, weight: h.weight, models: h.models, choices, read: !!d, listed: listed.has(h.address) });
+  }
+  const total = hosts.reduce((a, h) => a + h.weight, 0);
+  const byModel = {};
+  for (const model of counted.map((c) => c.id)) {
+    byModel[model] = hosts.filter((h) => h.models.includes(model)).map((h) => {
+      const from = hosts.filter((o) => o.address !== h.address && o.choices[model] && o.choices[model].mode === "delegate" && o.choices[model].to === h.address);
+      const w = from.reduce((a, o) => a + o.weight, 0);
+      return { address: h.address, weight: h.weight, delegatedBy: from.length, delegatedWeight: w, delegatedShare: total ? w / total : 0, listed: h.listed };
+    }).sort((a, b) => b.weight - a.weight);
+  }
+  const data = { epoch: m.epoch, total, rates, counted, hosts, byModel, at: Date.now() };
+  choicesCache = { at: Date.now(), data };
+  return data;
+}
+
+/** One host's choices for the models it does not run, as the chain holds them now: [{ model, mode, to }]. */
+async function choicesOf(seeds, address) {
+  const d = await ask(seeds, `${INF}/inference/poc_delegation/${address}`);
+  return ((d && d.delegations) || []).map((x) => ({ model: x.model_id, mode: "delegate", to: x.delegate_to }))
+    .concat(((d && d.refusals) || []).map((x) => ({ model: x.model_id, mode: "refuse" })));
+}
+
+/**
  * Every host's results for the recent epochs, as one file.
  *
  * The same GitHub job that publishes the website's numbers keeps it
@@ -1121,7 +1178,7 @@ function rememberVote(dir, v) {
 }
 
 module.exports = {
-  epochNow, members, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
+  epochNow, members, modelChoices, choicesOf, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes, loadVotes, rememberVote,
   attention, recentTrouble,

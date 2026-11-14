@@ -100,6 +100,18 @@ const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
   check("an error page says nothing", (await node("curl: (7) Failed to connect")) === null);
   check("an older node's 404 says nothing", (await node('{"message":"Not Found"}')) === null);
 
+  // ---- the choice for the models a host does not run, as the wallet encodes it ----
+  {
+    const wallet = require("../src/services/wallet");
+    const { fields } = wallet._internal;
+    const dec = (anyBytes) => { const a = fields(anyBytes); return { type: Buffer.from(a[1][0]).toString(), body: fields(a[2][0]) }; };
+    const s = (f, n) => (f[n] ? Buffer.from(f[n][0]).toString() : "");
+    let x = dec(wallet.Msg.setPoCDelegation("gonka1me", "deepseek-ai/DeepSeek-V4-Flash-0731", "gonka1host"));
+    check("a delegation is the chain's MsgSetPoCDelegation: sender 1, model 2, host 3", x.type === "/inference.inference.MsgSetPoCDelegation" && s(x.body, 1) === "gonka1me" && s(x.body, 2) === "deepseek-ai/DeepSeek-V4-Flash-0731" && s(x.body, 3) === "gonka1host");
+    x = dec(wallet.Msg.refusePoCDelegation("gonka1me", "zai-org/GLM-5.3-Flash"));
+    check("a refusal is the chain's MsgRefusePoCDelegation: sender 1, model 2", x.type === "/inference.inference.MsgRefusePoCDelegation" && s(x.body, 1) === "gonka1me" && s(x.body, 2) === "zai-org/GLM-5.3-Flash" && !x.body[3]);
+  }
+
   // ---- what the chain says is left of the allowance a wallet gave its node ----
   const { readAllowance } = require("../src/services/netdata");
   const at = Date.parse("2026-11-13T23:40:00Z");

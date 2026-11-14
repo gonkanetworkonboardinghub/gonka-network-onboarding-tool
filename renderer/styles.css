@@ -1434,3 +1434,22 @@ div.field .lbl { display: block; font-size: 12.5px; color: var(--muted); margin-
 #rail .rail-restart { margin-top: 12px; padding: 5px 11px; font-size: 12px; font-weight: 500; letter-spacing: 0.01em; color: var(--muted); background: transparent; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; box-shadow: none; }
 #rail .rail-restart:hover { color: var(--text); border-color: var(--text); background: var(--wash); transform: none; }
 #rail .rail-restart[hidden] { display: none; }
+
+/* Other models: what the node does with each model it does not run, and what it keeps. */
+.choices-total { display: flex; gap: 18px; align-items: center; padding: 16px 18px; margin-bottom: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--wash); }
+.choices-total .big-figure { font-size: 46px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; color: var(--green); min-width: 104px; font-variant-numeric: tabular-nums; }
+.choice-model { padding: 16px 0 10px; border-top: 1px solid var(--line); }
+.choice-model:first-of-type { border-top: 0; }
+.choice-model h3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.choice-opt { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; cursor: pointer; line-height: 1.45; }
+.choice-opt input { margin-top: 4px; flex: none; accent-color: var(--accent); }
+.choice-hosts { margin: 4px 0 10px 26px; display: grid; gap: 6px; }
+.choice-host { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.choice-host:hover { border-color: var(--line-strong); }
+.choice-host.picked { border-color: var(--accent); background: var(--wash); }
+.choice-host input { margin-top: 4px; flex: none; accent-color: var(--accent); }
+.choice-host code { font-size: 13px; }
+.choice-host .small { display: block; margin-top: 2px; }
+.choice-more { margin-top: 2px; }
+.choice-more > summary { font-size: 13px; }
+.choice-more .choice-hosts { margin-left: 0; }

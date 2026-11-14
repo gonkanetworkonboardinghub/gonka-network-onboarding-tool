@@ -112,6 +112,7 @@ const W = 1360, H = 900;
     S.connected = true; S.mode = "ssh";
     Object.assign(S.ssh, { host: "203.0.113.7", port: 22, username: "root", auth: "key", privateKeyPath: "C:\\\\Users\\\\you\\\\.ssh\\\\gnot_ed25519" });
     S.wallet = { name: "gonka-account-key", address: ${JSON.stringify(ADDR)}, pubkey: ${JSON.stringify(PUB)}, confirmed: true, passphrase: "x" };
+    S.models = ["deepseek-ai/DeepSeek-V4-Flash-0731"]; S.choices = [];
     S.net = { ...S.net, scheme: "http", host: "203.0.113.7" };
     S.scan = ${JSON.stringify(scan)};
     return 1;`);
@@ -123,12 +124,13 @@ const W = 1360, H = 900;
     ["06-wallet", "wallet", "#bal-live, #stage .pill"],
     ["07-network", "network", "#net-form .card"],
     ["08-model", "model", ".model-list"],
-    ["09-review", "review", ".need-grid, #stage pre, #stage textarea"],
-    ["10-weights", "weights", "#stage .card"],
-    ["11-launch", "deploy", "#stage .card"],
-    ["12-collateral", "collateral", "#b-dep, #stage .warn-banner, #stage .info-banner"],
-    ["13-verify", "verify", "#fee-card .need-grid"],
-    ["14-finished", "done", "#stage .after-setup"]
+    ["09-other-models", "choices", "#choices-card .choices-total"],
+    ["10-review", "review", ".need-grid, #stage pre, #stage textarea"],
+    ["11-weights", "weights", "#stage .card"],
+    ["12-launch", "deploy", "#stage .card"],
+    ["13-collateral", "collateral", "#b-dep, #stage .warn-banner, #stage .info-banner"],
+    ["14-verify", "verify", "#fee-card .need-grid"],
+    ["15-finished", "done", "#stage .after-setup"]
   ];
   for (const [name, step, ready] of steps) {
     const before = errors.length;
@@ -144,7 +146,7 @@ const W = 1360, H = 900;
   await run("api = window.__real; await api('monitorSaveNodes', { nodes: [] }); showMonitor(); return 1;");
   await until("document.querySelector('.mon-doors') && !document.querySelector('.mon-door-figure .chain-mini')", 80);
   await sleep(1000);
-  await shot("15-monitor");
+  await shot("16-monitor");
   await run("clearSession(); doneSteps.clear(); return 1;");
   await send("Emulation.clearDeviceMetricsOverride");
   console.log("page errors:", errors.length ? errors : "none");

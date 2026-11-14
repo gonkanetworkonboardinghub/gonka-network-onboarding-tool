@@ -113,6 +113,16 @@ const Msg = {
     str(1, participant), req(2, coin(amount)))),
   send: (from, to, amount) => any("/cosmos.bank.v1beta1.MsgSend", cat(
     str(1, from), str(2, to), amount.map((c) => req(3, coin(c))))),
+  // A host's choice for a model it does not run (inference/poc_delegation.proto,
+  // signed by the host's own account, not the node's key). Delegate: another
+  // host that runs the model checks its work for this one, for a 5% share of
+  // this host's reward; an empty delegateTo clears the choice. Refuse: no
+  // part in that model, for a 10% cut. No choice costs 15%. Each one replaces
+  // whatever was chosen for that model before.
+  setPoCDelegation: (sender, modelId, delegateTo) => any("/inference.inference.MsgSetPoCDelegation", cat(
+    str(1, sender), str(2, modelId), str(3, delegateTo || ""))),
+  refusePoCDelegation: (sender, modelId) => any("/inference.inference.MsgRefusePoCDelegation", cat(
+    str(1, sender), str(2, modelId))),
   // option: one of VOTE_OPTIONS' keys. The chain also takes a free-text
   // metadata field (4); the CLI leaves it empty, and so does this.
   vote: (proposalId, voter, option) => {

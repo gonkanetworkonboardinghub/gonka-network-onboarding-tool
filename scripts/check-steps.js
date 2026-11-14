@@ -84,6 +84,17 @@ async function findPage() {
       window.__fb = { covers: true, budget: 60000000, spendable: 900000000, known: true, biggest: false };
       window.__grant = { found: true, left: 10000000000, expires: "2027-11-13T22:29:56.697Z", over: false };
       window.__usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 };
+      // The network as "Other models" reads it: three models that count, and the hosts that run each.
+      const MM = "MiniMaxAI/MiniMax-M2.7", DS = "deepseek-ai/DeepSeek-V4-Flash-0731", GL = "zai-org/GLM-5.3-Flash";
+      const H = (a, w, by, share, listed) => ({ address: a, weight: w, delegatedBy: by, delegatedWeight: Math.round(share * 1000000), delegatedShare: share, listed: !!listed });
+      window.__mc = { epoch: 457, total: 1000000, rates: { delegate: 0.05, refuse: 0.1, none: 0.15 },
+        counted: [{ id: MM, penaltyStart: 278 }, { id: DS, penaltyStart: 360 }, { id: GL, penaltyStart: 394 }],
+        byModel: {
+          [MM]: [H("gonka1bigbutbusyxxxxxxxxxxxxxxxxxxxxxxxxxxx1", 300000, 9, 0.27), H("gonka1listedxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx2", 120000, 0, 0, true), H("gonka1fairmmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx3", 90000, 1, 0.02)],
+          [DS]: [H("gonka1fairdsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx4", 150000, 2, 0.03)],
+          [GL]: [H("gonka1fairglxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx5", 80000, 0, 0), H("gonka1tinyglxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx6", 3000, 0, 0)]
+        }, hosts: [] };
+      window.__sentChoices = null; window.__choicesFail = null;
       const fake = {
         archPreflight: async () => ({ bad: [] }),
         pull: async () => { __calls.push("pull"); await wait(250); return true; },
@@ -98,6 +109,7 @@ async function findPage() {
         nodeSync: async () => { if (window.__syncFails) throw new Error("Node is not answering yet"); return __sync; }, chainHeight: async () => ({ height: 7030000, time: Date.now() - 2000 }),
         mlnode: async () => __ml, epochParticipants: async () => [],
         feeBudget: async () => __fb, typicalFees: async () => __usual,
+        modelChoices: async () => __mc, setModelChoices: async (a) => { __calls.push("choices"); __sentChoices = a.choices; if (__choicesFail) throw new Error(__choicesFail); return { sent: a.choices.length }; },
         allowanceLeft: async () => { if (__grant === "fails") throw new Error("the network did not answer"); return __grant; },
         balance: async () => __bal, keyNames: async () => ["gonka-account-key"], ensureCli: async () => true,
         keyShow: async () => ({ address: ${JSON.stringify(ADDR)}, pubkey: ${JSON.stringify(PUB)} }),
@@ -131,7 +143,7 @@ async function findPage() {
     note("launch: no page is marked red, and the page showing stays", r.red === "" && r.step === "mode", r.red ? "marked red: " + r.red : "");
     await run(`go(STEP.deploy); return 1;`);
     r = await run(`return { done: document.querySelectorAll("#stage .task.done").length, next: !document.querySelector("#b-next").disabled };`);
-    note("launch: its page shows all six lines done, and Continue open, when opened again", r.done === 6 && r.next, `${r.done} of 6 done`);
+    note("launch: its page shows all seven lines done, and Continue open, when opened again", r.done === 7 && r.next, `${r.done} of 7 done`);
     r = await run(`return document.querySelector("#stage .info-banner").innerText;`);
     note("launch: it says the step can take about an hour, not 10 to 20 minutes", /it can take about an hour/.test(r) && !/10 to 20/.test(r), String(r).slice(0, 70));
     note("launch: nothing threw", errors.length === from, thrown(from));
@@ -263,7 +275,7 @@ async function findPage() {
       text: document.querySelector("#stage").innerText, names: __nodes.map((n) => n.name).join(" | ") };`);
     note("Finished: Finish and Set up another node are both there", r.finish && r.again);
     note("Finished: no other dashboard is offered", !r.dash && !/network dashboard/i.test(r.text));
-    note("Finished: the steps read 13 of 13", r.n === "13 / 13", r.n);
+    note("Finished: the steps read 14 of 14", r.n === "14 / 14", r.n);
     note("Finished: the new node gets a name of its own in My nodes", r.names === "My node 2 | My node", r.names);
 
     await run(`const saved = JSON.parse(localStorage.getItem(SESSION_KEY)); __savedDone = saved;
@@ -339,6 +351,42 @@ async function findPage() {
       __usual = { asOf: "2026-11-13T01:09:48Z", hours: 22.1, hosts: 25, small: { hosts: 13, low: 0, high: 62400000, typical: 22100000 }, most: 382500000 }; return 1;`);
     note("fee card: nothing threw", errors.length === from, thrown(from));
 
+    // ---- 10b. Other models: the choice Gonka asks every host to make ----------
+    from = errors.length;
+    const MM = "MiniMaxAI/MiniMax-M2.7", DS = "deepseek-ai/DeepSeek-V4-Flash-0731", GL = "zai-org/GLM-5.3-Flash";
+    await run(`__setup(); for (let k = 0; k < STEP.choices; k++) doneSteps.add(k); S.choices = []; go(STEP.choices); return 1;`);
+    const choicesShown = await until("document.querySelector('#choices-card .choices-total')", 50);
+    r = await run(`return { label: STEPS[STEP.choices].label, after: STEPS[STEP.choices - 1].id, before: STEPS[STEP.choices + 1].id, eyebrow: document.querySelector('.step-eyebrow').textContent,
+      total: document.querySelector('.big-figure').textContent, text: document.querySelector('#choices-card').innerText, choices: JSON.parse(JSON.stringify(S.choices)), next: !document.querySelector('#b-next').disabled };`);
+    note("Other models: its own step, right after Model & GPUs and before Review (step 8)", choicesShown && r.label === "Other models" && r.after === "model" && r.before === "review" && /8/.test(r.eyebrow), `${r.after} → ${r.label} → ${r.before}`);
+    const pick = (m) => r.choices.find((c) => c.model === m) || {};
+    note("Other models: GNOT suggests a host that runs each model, not the one already carrying most, not one on Gonka's own lists, not a tiny one",
+      pick(MM).mode === "delegate" && /fairmm/.test(pick(MM).to) && pick(GL).mode === "delegate" && /fairgl/.test(pick(GL).to), `${pick(MM).to} · ${pick(GL).to}`);
+    note("Other models: the model the node runs costs nothing, and gets a safety-net host too", pick(DS).own && pick(DS).mode === "delegate" && /fairds/.test(pick(DS).to) && /YOUR NODE RUNS IT/.test(r.text));
+    note("Other models: it says what the node keeps with these choices, and without any", r.total === "90%" && /would keep 70%/.test(r.text) && r.next, r.total);
+    await run(`const el = document.querySelector('input[name="mode-${GL}"][value="refuse"]'); el.checked = true; el.onchange(); return 1;`);
+    r = await run(`return { total: document.querySelector('.big-figure').textContent, glm: JSON.parse(JSON.stringify(S.choices.find((c) => c.model === "${GL}"))) };`);
+    note("Other models: changing a choice changes the figure at once (refusing GLM: 85%)", r.total === "85%" && r.glm.mode === "refuse", r.total);
+    await run(`document.querySelector('#b-next').click(); return 1;`);
+    r = await run(`return { step: STEPS[S.step].id, done: doneSteps.has(STEP.choices), saved: (JSON.parse(localStorage.getItem(SESSION_KEY) || "{}").choices || []).length };`);
+    note("Other models: Continue keeps the choices and goes on to Review", r.step === "review" && r.done && r.saved === 3, `${r.step}, saved ${r.saved}`);
+    // The launch sends them, right after the permissions.
+    await run(`const keep = S.choices; __setup(); S.choices = keep; for (let k = 0; k < STEP.deploy; k++) doneSteps.add(k); go(STEP.deploy); document.querySelector("#b-run").click(); return 1;`);
+    await until("!S.consoleBusy && S.launched", 60);
+    r = await run(`return { calls: __calls.join(","), sent: __sentChoices, line: document.querySelector('#task-choices') && document.querySelector('#task-choices').className, sentFlag: S.choicesSent };`);
+    note("Launch: it sends the choices right after the permissions, signed with the wallet", /grant,choices,launch/.test(r.calls) && r.sent && r.sent.length === 3 && /done/.test(r.line) && r.sentFlag, r.calls);
+    note("Launch: what it sends is what was chosen", r.sent && r.sent.some((c) => c.model === GL && c.mode === "refuse") && r.sent.some((c) => c.model === MM && c.mode === "delegate" && /fairmm/.test(c.to)));
+    await run(`const keep = S.choices; __setup(); S.choices = keep; __choicesFail = "the network did not answer"; for (let k = 0; k < STEP.deploy; k++) doneSteps.add(k); go(STEP.deploy); document.querySelector("#b-run").click(); return 1;`);
+    await until("!S.consoleBusy && (S.launched || document.querySelector('#deploy-extra .problem'))", 60);
+    r = await run(`return { launched: S.launched, line: document.querySelector('#task-choices').className, note: document.querySelector('#task-choices .t-note').textContent, sentFlag: S.choicesSent };`);
+    note("Launch: if sending the choices fails, the node still launches, and the line says Verify sends it again", r.launched && /err/.test(r.line) && /Verify/.test(r.note) && r.sentFlag === false, r.note);
+    await run(`__choicesFail = null; return 1;`);
+    // A setup saved before this step existed lands on the same step after the update.
+    r = await run(`localStorage.setItem(SESSION_KEY, JSON.stringify({ v: 1, at: Date.now(), step: 9, furthest: 9, done: [0,1,2,3,4,5,6,7,8], wallet: {}, ssh: {}, net: {} }));
+      const s = loadSession(); clearSession(); return { step: STEPS[s.step].id, furthest: STEPS[s.furthest].id, done: s.done, v: s.v };`);
+    note("An unfinished setup saved by an older GNOT is picked up on the same step (Launch stays Launch)", r.step === "deploy" && r.furthest === "deploy" && r.done.join() === "0,1,2,3,4,5,6,8,9" && r.v === 2, `${r.step} · ${r.done.join()}`);
+    note("Other models: nothing threw", errors.length === from, thrown(from));
+
     // ---- 11. Verify: a read of the node that fails ----------------------------
     // After an update the app picked a setup up on Verify, one read of the server
     // failed, and the lines for catching up and the GPUs were gone from the page.
@@ -371,7 +419,7 @@ async function findPage() {
     note("Start over: not offered on an untouched first page", r.there && r.hidden);
     await run(`for (let k = 0; k < STEP.wallet; k++) doneSteps.add(k); go(STEP.wallet); return 1;`);
     const everywhere = await run(`const seen = []; for (const s of STEPS.slice(1)) { S.step = STEP[s.id]; renderRail(); const b = document.querySelector("#rail-restart"); seen.push(!b.hidden && b.textContent.trim() === "Start over"); } S.step = STEP.wallet; renderRail(); return seen.every(Boolean) ? seen.length : 0;`);
-    note("Start over: there on every later step", everywhere === 12, `${everywhere} of 12 steps`);
+    note("Start over: there on every later step", everywhere === 13, `${everywhere} of 13 steps`);
     answerYes = false; dialogs.length = 0;
     await run(`document.querySelector("#rail-restart").click(); return 1;`);
     await sleep(400);

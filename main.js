@@ -430,6 +430,12 @@ ipcMain.handle("monitor:network", wrap(async () => monitor.network(await seedFor
 ipcMain.handle("monitor:networkOverview", wrap(async () => monitor.networkOverview(await seedForMonitor())));
 ipcMain.handle("monitor:hardwareSetups", wrap(async () => monitor.hardwareSetups()));
 ipcMain.handle("monitor:typicalFees", wrap(async () => monitor.typicalFees()));
+ipcMain.handle("monitor:modelChoices", wrap(async () => monitor.modelChoices(await seedForMonitor())));
+ipcMain.handle("monitor:choicesOf", wrap(async ({ address }) => {
+  if (!monitor.looksLikeAddress(address)) throw new Error("That is not a Gonka address.");
+  return monitor.choicesOf(await seedForMonitor(), String(address).trim());
+}));
+ipcMain.handle("keys:setModelChoices", wrap(async (a) => keys.setModelChoices(a, onData)));
 // Whether each host's public address answers (monitor.answers), in the order asked.
 ipcMain.handle("monitor:answers", wrap(async ({ urls }) =>
   Promise.all((Array.isArray(urls) ? urls : []).slice(0, 300).map((u) => monitor.answers(u)))));

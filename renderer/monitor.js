@@ -170,7 +170,7 @@ function monRefresh() {
   if (MON.view === "network" || MON.view === "mine" || MON.view === "hub") monLoadOverview(true);
   // Never redraw under someone typing a passphrase.
   else if (MON.view === "votes") { if (!MON.ballot) monLoadProposals(); }
-  else if (MON.view === "node") monLoad(true);
+  else if (MON.view === "node") { if (!MON.choicesEdit || MON.choicesEdit.stage === "done") monLoad(true); }
 }
 /** The Refresh button: read the page's figures again now. */
 function monRefreshNow() {
@@ -453,7 +453,7 @@ function monWire(main) {
     f.oninput = () => { MON.hostFilter = f.value; const pos = f.selectionStart; monRenderMain(); const g = $("#mon-filter"); if (g) { g.focus(); g.setSelectionRange(pos, pos); } };
   }
   if (MON.view === "add") monWireAdd();
-  if (MON.view === "node") monWireNode();
+  if (MON.view === "node") { monWireNode(); monWireChoices(main); }
   if (MON.view === "votes") { monWireVotes(main); monWireBallots(main); }
   if ($("#mon-undo")) $("#mon-undo").onclick = monUndoForget;
 }
@@ -1491,7 +1491,7 @@ function monNodeHtml(d) {
     </div>`;
 
   // Its GNK comes first after the figures: for most people it is the reason to look.
-  return verdict + monAttentionCard(d) + tiles + `<div class="mon-two">${monMoneyCard(d)}${monWorkCard(d)}</div>` + monRewardsCard(d) + monHardwareCard(d) + monPocCard(d);
+  return verdict + monAttentionCard(d) + tiles + `<div class="mon-two">${monMoneyCard(d)}${monWorkCard(d)}</div>` + monRewardsCard(d) + monHardwareCard(d) + monChoicesCard(d) + monPocCard(d);
 }
 
 /* What deserves a look, in plain sentences. The codes and figures come from
@@ -1700,6 +1700,149 @@ function monPocCard(d) {
   const intent = p.intents.length ? `<div class="mon-kv">${esc(t("Models it has declared for"))} <b>${esc(p.intents.map((x) => monModel(x.model)).join(", "))}</b></div>` : "";
   if (!lines.length && !deleg && !refuse && !intent) return "";
   return `<div class="card"><h3>${esc(t("Proof of Compute"))}</h3>${lines.join("")}${refuse}${intent}${deleg}</div>`;
+}
+
+/* ---- other models: the choice Gonka asks of every host ------------------ */
+/*
+ * For each model a host does not run, Gonka asks it to delegate it or refuse
+ * it, and takes a share of the reward for each model left without a choice
+ * (see RENDER.choices in app.js, whose choiceCost/choiceKeeps/pickDelegate
+ * this uses). On every node's page: what it chose, what it keeps, and how
+ * many hosts chose it. On your own nodes, with a linked wallet: change it.
+ * The choices of every host are read once (about thirty questions) and kept
+ * three minutes.
+ */
+function monChoicesData() {
+  const fresh = MON.choicesData && Date.now() - MON.choicesData.readAt < 3 * 60 * 1000;
+  if (!fresh && !MON.choicesLoading) {
+    MON.choicesLoading = true;
+    api("modelChoices").then((x) => { x.readAt = Date.now(); MON.choicesData = x; MON.choicesError = null; })
+      .catch((e) => { MON.choicesError = e.message; })
+      .finally(() => { MON.choicesLoading = false; if (!MON.choicesEdit || MON.choicesEdit.stage === "pick") monRenderMain(); });
+  }
+  return MON.choicesData || null;
+}
+
+function monChoicesCard(d) {
+  const cd = monChoicesData();
+  const head = `<h3>${esc(t("Other models"))}${tip("For each model a host does not run, Gonka asks it to delegate it to a host that runs it, or to refuse it. A model left without a choice costs the most.")}</h3>`;
+  if (!cd) return `<div class="card">${head}${MON.choicesError ? `<p class="small">${esc(MON.choicesError)}</p>` : `<p class="small">${loadingInline(t("Reading every host's choices from the network…"))}</p>`}</div>`;
+  const me = cd.hosts.find((h) => h.address === d.address);
+  const runs = me ? me.models : [...new Set(d.hardware.nodes.flatMap((n) => n.models || []))];
+  const mine = d.poc.delegations.map((x) => ({ model: x.model, mode: "delegate", to: x.to })).concat(d.poc.refusals.map((x) => ({ model: x.model, mode: "refuse" })));
+  const k = choiceKeeps(runs, mine, cd), rates = choiceRates(cd);
+  const best = 1 - Math.min(1, cd.counted.filter((c) => !runs.includes(c.id)).length * rates.delegate);
+  const rows = cd.counted.map((c) => {
+    const ch = mine.find((x) => x.model === c.id);
+    const cost = choiceCost(c.id, runs, ch, cd);
+    const what = runs.includes(c.id) ? t("runs it")
+      : !ch ? t("no choice")
+      : ch.mode === "refuse" ? t("refused")
+      : cost === rates.delegate ? t("delegated to {h}", { h: monShort(ch.to) })
+      : t("delegated to {h}, which no longer runs it in this epoch: counts as no choice", { h: monShort(ch.to) });
+    return `<div class="mon-row two"><span>${esc(monModel(c.id))}</span><span>${esc(what)}${cost ? ` · <b>${esc(t("{p} of the reward", { p: Math.round(cost * 100) + "%" }))}</b>` : ""}</span></div>`;
+  }).join("");
+  const chosenBy = cd.counted.map((c) => (cd.byModel[c.id] || []).find((h) => h.address === d.address))
+    .map((h, i) => (h && h.delegatedBy ? t(h.delegatedBy === 1 ? "1 host for {m} ({share} of the network)" : "{n} hosts for {m} ({share} of the network)",
+      { n: h.delegatedBy, m: monModel(cd.counted[i].id), share: Math.round(h.delegatedShare * 100) + "%" }) : null)).filter(Boolean);
+  const bad = cd.counted.some((c) => !runs.includes(c.id) && choiceCost(c.id, runs, mine.find((x) => x.model === c.id), cd) >= rates.none);
+  const node = MON.nodes.find((n) => n.address === d.address);
+  const own = monOwn(node);
+  const ed = MON.choicesEdit && MON.choicesEdit.address === d.address ? MON.choicesEdit : null;
+  return `<div class="card">${head}
+    <p>${bad ? `<span class="pill warn">${esc(t("A MODEL HAS NO CHOICE"))}</span> ` : ""}<span class="small">${esc(cd.counted.every((c) => runs.includes(c.id))
+      ? t("It runs every model that counts: nothing is taken.")
+      : k.keeps < best - 0.0001
+        ? t("With its choices this node keeps {k} of its reward. With a host chosen for every model it does not run, it would keep {b}.", { k: Math.round(k.keeps * 100) + "%", b: Math.round(best * 100) + "%" })
+        : t("With its choices this node keeps {k} of its reward (with no choice at all: {w}).", { k: Math.round(k.keeps * 100) + "%", w: Math.round(k.without * 100) + "%" }))}</span></p>
+    <div class="mon-table">${rows}</div>
+    ${chosenBy.length ? `<p class="small">${esc(t("Other hosts have chosen this one: {list}.", { list: chosenBy.join(", ") }))}</p>` : ""}
+    ${own ? (ed ? monChoicesEditor(d, ed, runs, cd) : `<div class="btn-row" style="margin-top:8px"><button class="${bad ? "primary" : ""}" id="mon-choices-edit">${esc(bad ? t("Choose now") : t("Change the choices"))}</button></div>`)
+      : node && !own && bad ? `<p class="small">${esc(t("Link this node's wallet to choose here."))}</p>` : ""}
+  </div>`;
+}
+
+function monChoicesEditor(d, ed, runs, cd) {
+  const rates = choiceRates(cd);
+  const models = cd.counted.filter((c) => !runs.includes(c.id));
+  const rows = models.map((c) => {
+    const p = ed.picks[c.id] || {};
+    const hosts = (cd.byModel[c.id] || []).filter((h) => h.address !== d.address);
+    return `<div class="choice-model">
+      <h4>${esc(monModel(c.id))}</h4>
+      <label class="choice-opt"><input type="radio" name="mc-${esc(c.id)}" value="delegate" ${p.mode === "delegate" ? "checked" : ""} ${hosts.length ? "" : "disabled"} ${ed.stage !== "pick" ? "disabled" : ""}>
+        <span><b>${esc(t("Delegate"))}</b> (${esc(t("you keep {k}", { k: Math.round((1 - rates.delegate) * 100) + "%" }))}) ${esc(t("to"))}
+        <select data-mc-to="${esc(c.id)}" ${p.mode === "delegate" && ed.stage === "pick" ? "" : "disabled"}>${hosts.map((h) => `<option value="${esc(h.address)}" ${p.to === h.address ? "selected" : ""}>${esc(monShort(h.address))} · ${esc(t("{own} of the network, chosen by {n}", { own: Math.round((cd.total ? h.weight / cd.total : 0) * 100) + "%", n: h.delegatedBy }))}</option>`).join("")}</select></span></label>
+      <label class="choice-opt"><input type="radio" name="mc-${esc(c.id)}" value="refuse" ${p.mode === "refuse" ? "checked" : ""} ${ed.stage !== "pick" ? "disabled" : ""}>
+        <span><b>${esc(t("Refuse"))}</b> (${esc(t("you keep {k}", { k: Math.round((1 - rates.refuse) * 100) + "%" }))})</span></label>
+    </div>`;
+  }).join("");
+  const picks = models.map((c) => ({ model: c.id, ...(ed.picks[c.id] || {}) }));
+  const k = choiceKeeps(runs, picks, cd);
+  let flow = "";
+  if (ed.stage === "pick" || ed.stage === "checking") flow = `
+    <div class="mon-ballot-flow">
+      <label>${esc(t("Wallet passphrase:"))} <input type="password" id="mon-mc-pass" autocomplete="off" ${ed.stage === "checking" ? "disabled" : ""}></label>
+      <button class="primary" id="mon-mc-check" ${ed.stage === "checking" ? "disabled" : ""}>${ed.stage === "checking" ? loadingInline(t("Checking…")) : esc(t("Continue"))}</button>
+      <button id="mon-mc-cancel">${esc(t("Cancel"))}</button>
+    </div>`;
+  else if (ed.stage === "confirm" || ed.stage === "sending") flow = `
+    <div class="mon-ballot-flow">
+      <span>${ed.nothing ? esc(t("The network already holds these choices: nothing to send.")) : esc(t("The network accepts these choices. The fee is about {fee}.", { fee: monGnk(ed.fee) }))}</span>
+      ${ed.nothing ? "" : `<button class="primary" id="mon-mc-send" ${ed.stage === "sending" ? "disabled" : ""}>${ed.stage === "sending" ? loadingInline(t("Sending…")) : esc(t("Send the choices"))}</button>`}
+      <button id="mon-mc-cancel" ${ed.stage === "sending" ? "disabled" : ""}>${esc(ed.nothing ? t("Close") : t("Cancel"))}</button>
+    </div>`;
+  else if (ed.stage === "done") flow = `<div class="mon-ballot-flow ok">${esc(t("Sent. The network shows the new choices within a minute; this page reads them again by itself."))}</div>`;
+  return `<div class="choices-edit">
+    <p class="small"><b>${esc(t("With these choices: keeps {k}.", { k: Math.round(k.keeps * 100) + "%" }))}</b></p>
+    ${rows}${flow}${ed.error ? `<p class="small mon-err">${esc(ed.error)}</p>` : ""}</div>`;
+}
+
+function monWireChoices(main) {
+  const d = MON.data;
+  if (!d) return;
+  const cd = MON.choicesData;
+  if ($("#mon-choices-edit") && cd) $("#mon-choices-edit").onclick = () => {
+    const node = MON.nodes.find((n) => n.address === d.address);
+    const me = cd.hosts.find((h) => h.address === d.address);
+    const runs = me ? me.models : [...new Set(d.hardware.nodes.flatMap((n) => n.models || []))];
+    const picks = {};
+    for (const c of cd.counted) {
+      if (runs.includes(c.id)) continue;
+      const dl = d.poc.delegations.find((x) => x.model === c.id), rf = d.poc.refusals.find((x) => x.model === c.id);
+      const stillRuns = dl && (cd.byModel[c.id] || []).some((h) => h.address === dl.to);
+      picks[c.id] = rf ? { mode: "refuse" } : stillRuns ? { mode: "delegate", to: dl.to } : { mode: "delegate", to: pickDelegate(c.id, cd, node && node.address) };
+    }
+    MON.choicesEdit = { address: d.address, stage: "pick", picks };
+    monRenderMain();
+  };
+  const ed = MON.choicesEdit;
+  if (!ed || ed.address !== d.address || !cd) return;
+  main.querySelectorAll("input[name^='mc-']").forEach((el) => el.onchange = () => {
+    const model = el.name.slice(3);
+    ed.picks[model] = el.value === "refuse" ? { mode: "refuse" } : { mode: "delegate", to: (ed.picks[model] && ed.picks[model].to) || pickDelegate(model, cd, d.address) };
+    monRenderMain();
+  });
+  main.querySelectorAll("select[data-mc-to]").forEach((el) => el.onchange = () => { ed.picks[el.dataset.mcTo] = { mode: "delegate", to: el.value }; monRenderMain(); });
+  const node = MON.nodes.find((n) => n.address === d.address);
+  const choices = Object.entries(ed.picks).map(([model, p]) => ({ model, ...p }));
+  const ask = (dryRun) => api("setModelChoices", { keyName: node.wallet, passphrase: ed.pass, address: d.address, choices, dryRun });
+  if ($("#mon-mc-cancel")) $("#mon-mc-cancel").onclick = () => { MON.choicesEdit = null; monRenderMain(); };
+  const check = async () => {
+    const pass = $("#mon-mc-pass").value;
+    if (!pass) return;
+    ed.pass = pass; ed.stage = "checking"; ed.error = null; monRenderMain();
+    try { const r = await ask(true); ed.nothing = !!r.skipped; ed.fee = r.fee; ed.stage = "confirm"; }
+    catch (e) { ed.stage = "pick"; ed.pass = null; ed.error = e.message; }
+    if (MON.choicesEdit === ed) monRenderMain();
+  };
+  if ($("#mon-mc-check")) { $("#mon-mc-check").onclick = check; $("#mon-mc-pass").onkeydown = (e) => { if (e.key === "Enter") check(); }; }
+  if ($("#mon-mc-send")) $("#mon-mc-send").onclick = async () => {
+    ed.stage = "sending"; ed.error = null; monRenderMain();
+    try { await ask(false); ed.stage = "done"; ed.pass = null; setTimeout(() => { if (MON.choicesEdit === ed) { MON.choicesEdit = null; MON.choicesData = null; monLoad(true); } }, 30000); }
+    catch (e) { ed.stage = "confirm"; ed.error = e.message; }
+    if (MON.choicesEdit === ed) monRenderMain();
+  };
 }
 
 /* ---- proposals --------------------------------------------------------- */

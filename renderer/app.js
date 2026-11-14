@@ -86,6 +86,7 @@ const STEPS = [
   { id: "wallet",    label: "Wallet" },
   { id: "network",   label: "Network & SSL" },
   { id: "model",     label: "Model & GPUs" },
+  { id: "choices",   label: "Other models" },
   { id: "review",    label: "Review config" },
   { id: "weights",   label: "Model weights" },
   { id: "deploy",    label: "Launch & register" },
@@ -352,7 +353,7 @@ function saveSession() {
   if (S.leaving) return;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({
-      v: 1, at: Date.now(), step: S.step,
+      v: 2, at: Date.now(), step: S.step,
       furthest: Math.max(S.furthest || 0, S.step),
       mode: S.mode,
       ssh: { host: S.ssh.host, port: S.ssh.port, username: S.ssh.username,
@@ -361,12 +362,25 @@ function saveSession() {
       net: S.net,
       chosenConfigFile: S.chosenConfigFile, chosenSetupKey: S.chosenSetupKey, chosenWhole: S.chosenWhole, nodeConfigText: S.nodeConfigText, models: S.models,
       serverKeyName: S.serverKeyName,
+      choices: S.choices || [], choicesSent: !!S.choicesSent,
       done: [...doneSteps]
     }));
   } catch (_) {}
 }
 function loadSession() {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_) { return null; }
+  // Saved before "Other models" was step 8 (GNOT 1.8.24): every step from
+  // Review on was one lower. Move them up, so a setup picked up after the
+  // update lands where it was.
+  if (s && (s.v || 1) < 2) {
+    const MODEL = 6;
+    const up = (i) => (typeof i === "number" && i > MODEL ? i + 1 : i);
+    s.step = up(s.step); s.furthest = up(s.furthest);
+    s.done = (s.done || []).map(up);
+    s.v = 2;
+  }
+  return s;
 }
 function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (_) {} }
 
@@ -417,6 +431,8 @@ function restoreOffered(keepSsh) {
   S.chosenWhole = prev.chosenWhole || null;
   S.nodeConfigText = prev.nodeConfigText || "";
   S.models = prev.models || [];
+  S.choices = prev.choices || [];
+  S.choicesSent = !!prev.choicesSent;
   S.serverKeyName = prev.serverKeyName || null;
   (prev.done || []).forEach((i) => doneSteps.add(i));
   renderRail();
@@ -2169,7 +2185,7 @@ RENDER.model = () => {
       <button class="primary" id="b-next" ${S.chosenConfigFile ? "" : "disabled"}>Continue</button>
     </div>`);
   $("#b-back").onclick = () => go(5);
-  $("#b-next").onclick = () => { markDone(STEP.model); go(7); };
+  $("#b-next").onclick = () => { markDone(STEP.model); go(STEP.choices); };
 
   async function load() {
     try {
@@ -2396,10 +2412,225 @@ RENDER.model = () => {
   }
 };
 
-/* --- 7 Review ------------------------------------------------------- */
+/* --- 8 Other models -------------------------------------------------- */
+/*
+ * Gonka asks every host, for each model it does not run, to DELEGATE it (a
+ * host that runs that model checks the work for this one, for a share of its
+ * reward) or to REFUSE it. A model left without a choice costs the most. The
+ * rates are the chain's (params.delegation_params; in November 2026: 5%, 10%
+ * and 15% of the epoch's reward per model, added up), and a delegation only
+ * counts while the chosen host runs that model and is in the epoch; otherwise
+ * the chain treats it as no choice. Until 1.8.24 GNOT never asked, so its
+ * nodes paid the most: a node running one model kept about 70%.
+ *
+ * The choice is made here, early, and sent in the launch sequence right after
+ * registering (Gonka takes it only from a registered host, signed by its own
+ * wallet). Verify checks it is on the chain; Monitor/Vote keeps watching it.
+ */
+const CHOICE_RATES = { delegate: 0.05, refuse: 0.10, none: 0.15 };
+const niceModel = (m) => String(m || "").split("/").pop().replace(/-0731$/, "");
+const shortAddr = (a) => (a && a.length > 20 ? `${a.slice(0, 12)}…${a.slice(-6)}` : a || "");
+const pct = (x) => `${Math.round(x * 100)}%`;
+function choiceRates(data) {
+  const r = (data && data.rates) || {};
+  return { delegate: r.delegate != null ? r.delegate : CHOICE_RATES.delegate, refuse: r.refuse != null ? r.refuse : CHOICE_RATES.refuse, none: r.none != null ? r.none : CHOICE_RATES.none };
+}
+/** What one model costs this node per epoch: 0 if it runs it; otherwise by its choice, read against the hosts in the epoch. */
+function choiceCost(model, runs, choice, data) {
+  const rates = choiceRates(data);
+  if (runs.includes(model)) return 0;
+  if (choice && choice.mode === "refuse") return rates.refuse;
+  if (choice && choice.mode === "delegate") {
+    const ok = ((data && data.byModel && data.byModel[model]) || []).some((h) => h.address === choice.to);
+    return ok ? rates.delegate : rates.none;   // a host that does not run it, or left: counts as no choice
+  }
+  return rates.none;
+}
+/** The share of its reward a node keeps, with these choices and with none at all. */
+function choiceKeeps(runs, choices, data) {
+  const models = ((data && data.counted) || []).map((c) => c.id);
+  const lost = (pick) => Math.min(1, models.reduce((a, m) => a + choiceCost(m, runs, pick(m), data), 0));
+  return { keeps: 1 - lost((m) => (choices || []).find((c) => c.model === m)), without: 1 - lost(() => null) };
+}
+/**
+ * GNOT's suggestion: a host that runs the model and is in this epoch, not on
+ * Gonka's own lists, not already carrying a tenth of the network in
+ * delegations, big enough to stay (1% or more) and not one of the very
+ * biggest (15% or more), since a delegation hands over a say. Among those,
+ * each wallet gets its own (by its address), so GNOT's nodes spread out
+ * instead of all landing on the same host.
+ */
+function pickDelegate(model, data, self) {
+  const list = ((data && data.byModel && data.byModel[model]) || []).filter((h) => h.address !== self);
+  const share = (h) => (data && data.total ? h.weight / data.total : 0);
+  const tiers = [
+    list.filter((h) => !h.listed && h.delegatedShare < 0.10 && share(h) >= 0.01 && share(h) < 0.15),
+    list.filter((h) => !h.listed && h.delegatedShare < 0.10 && share(h) >= 0.01),
+    list.filter((h) => !h.listed),
+    list
+  ];
+  const pool = (tiers.find((x) => x.length) || []).slice().sort((a, b) => a.address.localeCompare(b.address));
+  if (!pool.length) return null;
+  let hsh = 0;
+  for (const ch of String(self || "") + "|" + model) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
+  return pool[hsh % pool.length].address;
+}
+
+RENDER.choices = () => {
+  stage(`
+    ${header("Step 8", "Your choice for the other models",
+      "Gonka runs several AI models. Your node runs one, and Gonka asks every host to choose what happens with the others. The choice changes how much of the reward your node keeps.")}
+    <div class="card" id="choices-card">${loadingHtml(t("Reading the models and the hosts from the network…"))}</div>
+    <div class="btn-row">
+      <button id="b-back">Back</button>
+      <button class="primary" id="b-next" disabled>Continue</button>
+    </div>`);
+  $("#b-back").onclick = () => go(STEP.model);
+  let data = null;
+  const runs = () => S.models || [];
+  const self = S.wallet && S.wallet.address;
+
+  async function load() {
+    try {
+      data = await api("modelChoices");
+      if (!onStep("choices")) return;
+      // Keep what was chosen before when it still makes sense; otherwise start from GNOT's suggestion.
+      const before = S.choices || [];
+      S.choices = data.counted.map((c) => {
+        const was = before.find((x) => x.model === c.id);
+        if (runs().includes(c.id)) {
+          // The model it runs: a host for it too, as a safety net (many hosts do this).
+          const to = was && was.mode === "delegate" && data.byModel[c.id].some((h) => h.address === was.to) ? was.to : pickDelegate(c.id, data, self);
+          return { model: c.id, mode: was && was.mode === "off" ? "off" : (to ? "delegate" : "off"), to, own: true };
+        }
+        if (was && was.mode === "refuse") return { model: c.id, mode: "refuse" };
+        const keep = was && was.mode === "delegate" && data.byModel[c.id].some((h) => h.address === was.to) ? was.to : null;
+        const to = keep || pickDelegate(c.id, data, self);
+        return to ? { model: c.id, mode: "delegate", to } : { model: c.id, mode: "refuse" };
+      });
+      paint();
+    } catch (e) {
+      if (!onStep("choices")) return;
+      $("#choices-card").innerHTML = `
+        <span class="pill err">${esc(t("Couldn't read the network"))}</span> <span class="small">${esc(e.message)}</span>
+        <div class="btn-row" style="margin-top:12px"><button class="primary" id="b-choices-retry">${esc(t("Try again"))}</button></div>`;
+      $("#b-choices-retry").onclick = () => { $("#choices-card").innerHTML = loadingHtml(t("Reading the models and the hosts from the network…")); load(); };
+    }
+  }
+
+  function hostOption(model, h, picked) {
+    const own = data.total ? h.weight / data.total : 0;
+    const by = h.delegatedBy === 1
+      ? t("chosen by 1 host ({share} of the network)", { share: pct(h.delegatedShare) })
+      : h.delegatedBy
+        ? t("chosen by {n} hosts ({share} of the network)", { n: h.delegatedBy, share: pct(h.delegatedShare) })
+        : t("chosen by no other host yet");
+    return `<label class="choice-host${picked ? " picked" : ""}">
+        <input type="radio" name="to-${esc(model)}" value="${esc(h.address)}" ${picked ? "checked" : ""}>
+        <span><code title="${esc(h.address)}">${esc(shortAddr(h.address))}</code>
+        <span class="small">${esc(t("runs it, in this epoch · its own weight {own} of the network · {by}", { own: pct(own), by }))}${h.listed ? " · " + esc(t("on Gonka's own lists")) : ""}</span></span>
+      </label>`;
+  }
+
+  function paint() {
+    const rates = choiceRates(data);
+    const k = choiceKeeps(runs(), S.choices, data);
+    const rows = data.counted.map((c) => {
+      const ch = S.choices.find((x) => x.model === c.id) || {};
+      const hosts = (data.byModel[c.id] || []).filter((h) => h.address !== self);
+      // The host chosen, in plain sight; every other host that runs the model folded under one line.
+      const list = (picked) => {
+        const p = hosts.find((h) => h.address === picked);
+        const others = hosts.filter((h) => h.address !== picked);
+        return (p ? hostOption(c.id, p, true) : "") + (others.length
+          ? `<details class="more choice-more"><summary>${esc(t("Pick another host ({n} more run {m})", { n: others.length, m: niceModel(c.id) }))}</summary><div class="choice-hosts">${others.map((h) => hostOption(c.id, h, false)).join("")}</div></details>`
+          : "");
+      };
+      if (runs().includes(c.id)) {
+        return `<div class="choice-model" data-model="${esc(c.id)}">
+          <h3>${esc(niceModel(c.id))} <span class="pill ok">${esc(t("YOUR NODE RUNS IT"))}</span></h3>
+          <p class="small">${esc(t("Nothing is taken for the model your node runs."))}</p>
+          <label class="choice-opt"><input type="checkbox" data-own="${esc(c.id)}" ${ch.mode === "delegate" ? "checked" : ""}>
+            <span>${esc(t("Also choose a host for it, as a safety net (recommended): if your node ever misses a Proof of Compute, it pays {d} instead of {n}. Many hosts do this.", { d: pct(rates.delegate), n: pct(rates.none) }))}</span></label>
+          ${ch.mode === "delegate" ? `<div class="choice-hosts">${list(ch.to)}</div>` : ""}
+        </div>`;
+      }
+      return `<div class="choice-model" data-model="${esc(c.id)}">
+        <h3>${esc(niceModel(c.id))}</h3>
+        <label class="choice-opt"><input type="radio" name="mode-${esc(c.id)}" value="delegate" ${ch.mode === "delegate" ? "checked" : ""} ${hosts.length ? "" : "disabled"}>
+          <span><b>${esc(t("Delegate (recommended)"))}</b>: ${esc(t("a host that runs {m} checks its work for your node. It receives {d} of your reward. You keep {k}.", { m: niceModel(c.id), d: pct(rates.delegate), k: pct(1 - rates.delegate) }))}</span></label>
+        ${ch.mode === "delegate" ? `<div class="choice-hosts">${list(ch.to)}</div>` : ""}
+        <label class="choice-opt"><input type="radio" name="mode-${esc(c.id)}" value="refuse" ${ch.mode === "refuse" ? "checked" : ""}>
+          <span><b>${esc(t("Refuse"))}</b>: ${esc(t("your node takes no part in {m}. {r} of your reward goes to Gonka's community pool. You keep {k}.", { m: niceModel(c.id), r: pct(rates.refuse), k: pct(1 - rates.refuse) }))}</span></label>
+        <p class="small">${esc(t("Without a choice: {n} of your reward goes to Gonka's community pool, every epoch.", { n: pct(rates.none) }))}</p>
+      </div>`;
+    }).join("");
+    $("#choices-card").innerHTML = `
+      <div class="choices-total">
+        <div class="big-figure">${esc(pct(k.keeps))}</div>
+        <div><b>${esc(t("of its reward your node keeps with these choices"))}</b>
+        <div class="small">${esc(t("Without any choice it would keep {w}. Every other host's choices are on the network too: almost all of them choose.", { w: pct(k.without) }))}</div></div>
+      </div>
+      ${rows}
+      ${more("What does this mean?", `<p>${t("Gonka runs several AI models, and every host helps check the work done on all of them. A node runs only one, so for each of the others it either lets a host that runs it do the checking (delegate), or says it takes no part (refuse). A host you delegate to receives {d} of your reward for doing that job, and your node's say in checking that model goes to it, so don't all pick the same few hosts. What is taken when you refuse, or don't choose, is not shared with other hosts: it goes to Gonka's community pool. Your choices are public on the network, like every host's.", { d: pct(rates.delegate) })}</p>
+        <p>${esc(t("GNOT sends your choices right after your node is registered, in the launch step, signed with your wallet on this computer. It costs about 0.0001 GNK. You can change them later in Monitor/Vote."))}</p>`)}`;
+    // Wire: delegate/refuse per model, the host picked, the safety net on the model it runs.
+    document.querySelectorAll("#choices-card input[name^='mode-']").forEach((el) => el.onchange = () => {
+      const model = el.name.slice(5), ch = S.choices.find((x) => x.model === model);
+      ch.mode = el.value;
+      if (ch.mode === "delegate" && !ch.to) ch.to = pickDelegate(model, data, self);
+      paint(); saveSession();
+    });
+    document.querySelectorAll("#choices-card input[name^='to-']").forEach((el) => el.onchange = () => {
+      const ch = S.choices.find((x) => x.model === el.name.slice(3));
+      ch.to = el.value; paint(); saveSession();
+    });
+    document.querySelectorAll("#choices-card input[data-own]").forEach((el) => el.onchange = () => {
+      const ch = S.choices.find((x) => x.model === el.dataset.own);
+      ch.mode = el.checked ? "delegate" : "off";
+      if (el.checked && !ch.to) ch.to = pickDelegate(ch.model, data, self);
+      paint(); saveSession();
+    });
+    $("#b-next").disabled = false;
+  }
+
+  $("#b-next").onclick = () => {
+    if (!data) return;
+    markDone(STEP.choices); saveSession(); go(STEP.review);
+  };
+  load();
+};
+
+/**
+ * Send the choices made on "Other models", signed with the wallet. Only what
+ * the chain does not hold yet is sent (keys.setModelChoices). A delegate that
+ * no longer runs the model, or left the epoch, is swapped for GNOT's next
+ * suggestion first, since the chain would count it as no choice.
+ * Returns a short note for the launch line.
+ */
+async function sendModelChoices() {
+  const wanted = (S.choices || []).filter((c) => c.mode === "delegate" || c.mode === "refuse");
+  if (!wanted.length) return { note: t("nothing chosen") };
+  let data = null;
+  try { data = await api("modelChoices"); } catch (_) { /* send as chosen */ }
+  let swapped = 0;
+  if (data) for (const c of wanted) {
+    if (c.mode !== "delegate") continue;
+    const still = (data.byModel[c.model] || []).some((h) => h.address === c.to);
+    if (!still) { const next = pickDelegate(c.model, data, S.wallet.address); if (next) { c.to = next; swapped++; } }
+  }
+  const r = await api("setModelChoices", {
+    keyName: S.wallet.name, passphrase: S.wallet.passphrase, address: S.wallet.address,
+    choices: wanted, seedApiUrl: S.seed || S.K.seedNodes[0]
+  });
+  S.choicesSent = true; saveSession();
+  return { note: r.skipped ? t("already on the network") : swapped ? t("sent; {n} host(s) swapped for one still running the model", { n: swapped }) : t("sent, on the network"), data };
+}
+
+/* --- 9 Review ------------------------------------------------------- */
 RENDER.review = () => {
   stage(`
-    ${header("Step 8", "Review and write the configuration", `
+    ${header("Step 9", "Review and write the configuration", `
       This is exactly what the wizard will place on your server. The security hardening
       (locking internal ports to localhost) is applied automatically.`)}
     <div class="card">
@@ -2434,7 +2665,7 @@ RENDER.review = () => {
       <button id="b-back">Back</button>
       <button class="primary" id="b-write">Write to server & continue</button>
     </div>`);
-  $("#b-back").onclick = () => go(6);
+  $("#b-back").onclick = () => go(STEP.choices);
 
   let envText = "";
   (async () => {
@@ -2492,7 +2723,7 @@ RENDER.review = () => {
   const KEEP_LINES = ["KEY_NAME", "KEYRING_PASSWORD", "ACCOUNT_PUBKEY"];
   const lineOf = (text, key) => String(text).split(/\r?\n/).find((l) => new RegExp(`^\\s*(export\\s+)?${key}=`).test(l)) || "";
   function maskEnv(text) { return String(text).replace(/(KEYRING_PASSWORD=)[^\s#]+/, "$1••••••••"); }
-  $("#b-edit-node").onclick = () => { S.openModelEditor = true; go(6); };
+  $("#b-edit-node").onclick = () => { S.openModelEditor = true; go(STEP.model); };
   $("#b-edit-env").onclick = () => {
     if (!S.configEnvText) return;
     $("#env-box").innerHTML = `
@@ -2528,7 +2759,7 @@ RENDER.review = () => {
       await api("writeConfigs", { configEnv, nodeConfigJson: S.nodeConfigText });
       toast("Configuration written to the server.");
       markDone(STEP.review);
-      if (onStep("review")) go(8);
+      if (onStep("review")) go(STEP.weights);
     } catch (e) { markError(STEP.review); stepProblem("review", null, { at: t("Review config"), message: e.message, retry: () => $("#b-write") && $("#b-write").click() }); }
     finally { setBusy(false); }
   };
@@ -2540,7 +2771,7 @@ RENDER.weights = () => {
   // ahead. A setup picked up again has it already (the step is marked done).
   const have = S.weightsDone || doneSteps.has(STEP.weights);
   stage(`
-    ${header("Step 9", "Download model weights", `
+    ${header("Step 10", "Download model weights", `
       Your node needs the model files (hundreds of GB) before it can serve inference.
       This is the longest step — you can leave it running.`)}
     ${pocNoteHtml()}
@@ -2555,8 +2786,8 @@ RENDER.weights = () => {
       <span class="small" id="weights-gate"${have ? " hidden" : ""}>${esc(t("Continue opens once the model is on your server."))}</span>
       <button id="b-skip"${have ? "" : " disabled"}>Continue</button>
     </div>`);
-  $("#b-back").onclick = () => go(7);
-  $("#b-skip").onclick = () => { if (!(S.weightsDone || doneSteps.has(STEP.weights))) return; markDone(STEP.weights); go(9); };
+  $("#b-back").onclick = () => go(STEP.review);
+  $("#b-skip").onclick = () => { if (!(S.weightsDone || doneSteps.has(STEP.weights))) return; markDone(STEP.weights); go(STEP.deploy); };
   $("#b-dl").onclick = async () => {
     if ($("#problem-box")) $("#problem-box").innerHTML = "";
     try {
@@ -2640,10 +2871,11 @@ RENDER.deploy = () => {
     { id: "warm",    label: "Create the server's operational key" },
     { id: "register",label: "Register your host on the network" },
     { id: "grant",   label: "Grant permissions (signed on this computer)" },
+    { id: "choices", label: "Send your choice for the other models (signed on this computer)" },
     { id: "launch",  label: "Launch the full node (API + ML node)" }
   ];
   stage(`
-    ${header("Step 10", "Launch and register", `
+    ${header("Step 11", "Launch and register", `
       The wizard now runs the official launch sequence, in the exact order Gonka requires.
       Watch the activity log below for details.`)}
     <div class="info-banner">${t("<b>This step takes a while: it can take about an hour.</b> Most of it is downloading Gonka's software, several GB, and starting the chain node. You can leave it running: each line below turns green as it finishes, and the clock in the activity log shows it is still working.")}</div>
@@ -2659,8 +2891,8 @@ RENDER.deploy = () => {
       <span class="spacer"></span>
       <button id="b-next" ${S.launched ? "" : "disabled"}>Continue</button>
     </div>`);
-  $("#b-back").onclick = () => go(8);
-  $("#b-next").onclick = () => { if (!S.launched) return; markDone(STEP.deploy); go(10); };   // -> Collateral
+  $("#b-back").onclick = () => go(STEP.weights);
+  $("#b-next").onclick = () => { if (!S.launched) return; markDone(STEP.deploy); go(STEP.collateral); };   // -> Collateral
   if (S.launched) tasks.forEach((tk) => set(tk.id, "done"));
   else tasks.forEach((tk) => paint(tk.id));       // a sequence still running, or stopped: as far as it got
   if (S.warmPending) S.warmPending();              // the server key's phrase, still waiting to be written down
@@ -2796,6 +3028,20 @@ RENDER.deploy = () => {
       set("grant", "done");
       S.granted = true;
 
+      // The choice for the other models: Gonka takes it only now, from a
+      // registered host. A failure here must not stop the node: Verify shows
+      // it and sends it again.
+      setBusy(true, "Sending your choice for the other models…");
+      set("choices", "running");
+      try {
+        const r = await sendModelChoices();
+        set("choices", "done", r.note);
+      } catch (e) {
+        S.choicesSent = false;
+        set("choices", "err", t("not sent yet: Verify sends it again"));
+        logLine("\n" + t("Couldn't send your choice for the other models") + ": " + e.message + "\n", "stderr");
+      }
+
       setBusy(true, "Launching the full node…");
       set("launch", "running");
       await api("launchAll");
@@ -2853,7 +3099,7 @@ function participantStatus(v) {
 RENDER.verify = () => {
   if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; }
   stage(`
-    ${header("Step 12", "Setup is done — now it just runs", `
+    ${header("Step 13", "Setup is done — now it just runs", `
       Everything is installed, configured and registered. Nothing below needs
       you to do anything: this page watches your node until it is fully ready
       and tells you exactly what it is doing.`)}
@@ -2872,6 +3118,7 @@ RENDER.verify = () => {
     </div>
     <div class="card" id="v-card">${loadingHtml(t("Checking…"))}</div>
     <div class="card" id="fee-card">${loadingHtml(t("Checking…"))}</div>
+    <div class="card" id="choices-v">${loadingHtml(t("Checking…"))}</div>
     <div class="card">
       <p class="need-note" style="margin-top:0">${t("Keep the server switched on. If you stop it, your node drops out and has to catch up again — and it earns nothing while it is off.")}</p>
       ${more("What each line means", `<ul>
@@ -2889,9 +3136,9 @@ RENDER.verify = () => {
       <span class="small" id="verify-gate"${verifyOpen() ? " hidden" : ""}>${esc(t("Continue opens once your node is ready: caught up, registered, and its GPUs and model ready."))}</span>
       <button class="primary" id="b-next"${verifyOpen() ? "" : " disabled"}>Continue</button>
     </div>`);
-  $("#b-back").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } go(10); };
+  $("#b-back").onclick = () => { if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } go(STEP.collateral); };
   // No way on to "Finished" while this page is still watching the node get ready.
-  $("#b-next").onclick = () => { if (!verifyOpen()) return; if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(STEP.verify); go(12); };
+  $("#b-next").onclick = () => { if (!verifyOpen()) return; if (S.syncPoll) { clearInterval(S.syncPoll); S.syncPoll = null; } markDone(STEP.verify); go(STEP.done); };
   $("#b-re").onclick = check;
   wireCopy();
   $("#b-dash-own").onclick = () => showMonitor(S.wallet.address);
@@ -3229,6 +3476,7 @@ RENDER.verify = () => {
       card.innerHTML = `<span class="pill err">CHECK FAILED</span> <span class="small">${esc(e.message)}</span>`;
     }
     fees();
+    choicesCheck();
   }
 
   /**
@@ -3246,6 +3494,60 @@ RENDER.verify = () => {
    * host's work (deploy.feeBudget), a hundred times what one server pays, and
    * the node never waits for it. Read again every minute, so it cannot go stale.
    */
+  /**
+   * The node's choice for the models it does not run, as the chain holds it
+   * (read from all the epoch's hosts, monitor.modelChoices), what it keeps
+   * with it, and a button that sends what was chosen on "Other models" when
+   * the chain does not have it yet (the launch could not, or it was skipped).
+   */
+  async function choicesCheck() {
+    const el = $("#choices-v");
+    if (!el) return;
+    let data = null;
+    try { data = await api("modelChoices"); } catch (e) {
+      el.innerHTML = `<h3>${esc(t("Your choice for the other models"))}</h3><p class="small">${esc(t("GNOT could not read your node just now ({why}). It tries again every 10 seconds.", { why: e.message }))}</p>`;
+      clearTimeout(S.choicesPoll); S.choicesPoll = setTimeout(() => { if ($("#choices-v")) choicesCheck(); }, 10000);
+      return;
+    }
+    if (!$("#choices-v")) return;
+    const me = data.hosts.find((h) => h.address === S.wallet.address);
+    const runs = me ? me.models : (S.models || []);
+    const held = (me && me.choices) || null;
+    let mine = held ? Object.entries(held).map(([model, c]) => ({ model, ...c })) : null;
+    if (!mine) {
+      // Not in the epoch yet: the epoch's list does not have it, so ask about this node alone.
+      try { mine = await api("choicesOf", { address: S.wallet.address }); } catch (_) { mine = []; }
+    }
+    const k = choiceKeeps(runs, mine, data);
+    const rows = data.counted.map((c) => {
+      const ch = mine.find((x) => x.model === c.id);
+      const cost = choiceCost(c.id, runs, ch, data);
+      const what = runs.includes(c.id) ? t("your node runs it")
+        : !ch ? t("no choice yet")
+        : ch.mode === "refuse" ? t("refused")
+        : cost === choiceRates(data).delegate ? t("delegated to {h}", { h: shortAddr(ch.to) })
+        : t("delegated to {h}, which no longer runs it in this epoch: counts as no choice", { h: shortAddr(ch.to) });
+      return `<div class="mon-kv">${esc(niceModel(c.id))}: <b>${esc(what)}</b>${cost ? ` · ${esc(t("{p} of the reward", { p: pct(cost) }))}` : ""}</div>`;
+    }).join("");
+    const missing = data.counted.some((c) => !runs.includes(c.id) && choiceCost(c.id, runs, mine.find((x) => x.model === c.id), data) >= choiceRates(data).none);
+    const canSend = missing && (S.choices || []).some((c) => c.mode === "delegate" || c.mode === "refuse") && S.wallet.passphrase;
+    el.innerHTML = `
+      <h3>${esc(t("Your choice for the other models"))}</h3>
+      <p>${missing ? `<span class="pill warn">${esc(t("NOT ON THE NETWORK YET"))}</span>` : `<span class="pill ok">${esc(t("ON THE NETWORK"))}</span>`}
+        <span class="small">${esc(t("With what the network holds now, your node keeps {k} of its reward (with no choice at all: {w}).", { k: pct(k.keeps), w: pct(k.without) }))}</span></p>
+      ${rows}
+      ${canSend ? `<div class="btn-row" style="margin-top:10px"><button class="primary" id="b-send-choices">${esc(t("Send my choices now"))}</button><button id="b-edit-choices">${esc(t("Change them"))}</button></div>` : missing ? `<div class="btn-row" style="margin-top:10px"><button class="primary" id="b-edit-choices">${esc(t("Choose now"))}</button></div>` : ""}`;
+    if ($("#b-send-choices")) $("#b-send-choices").onclick = async () => {
+      $("#b-send-choices").disabled = true;
+      try { const r = await sendModelChoices(); toast(t("Your choice for the other models") + ": " + r.note); }
+      catch (e) { toast(t("Couldn't send your choice for the other models") + ": " + e.message); }
+      setTimeout(() => { if ($("#choices-v")) choicesCheck(); }, 8000);
+    };
+    if ($("#b-edit-choices")) $("#b-edit-choices").onclick = () => go(STEP.choices);
+    // Watched while the page is open: a delegate that stops running the model counts as no choice.
+    clearTimeout(S.choicesPoll); S.choicesPoll = setTimeout(() => { if ($("#choices-v")) choicesCheck(); }, 120000);
+  }
+
   async function fees() {
     const el = $("#fee-card");
     if (!el) return;
@@ -3329,7 +3631,7 @@ RENDER.verify = () => {
 /* --- 11 Collateral ---------------------------------------------------- */
 RENDER.collateral = () => {
   stage(`
-    ${header("Step 11", "Collateral — unlock full rewards",
+    ${header("Step 12", "Collateral — unlock full rewards",
       "GNK you lock up to unlock your node's full earning power. It stays yours. Check the figures below before deciding.")}
     <div class="card">
       ${tiles([
@@ -3358,8 +3660,8 @@ RENDER.collateral = () => {
       <button id="b-skip">Skip — I'll do this later</button>
       <button class="primary" id="b-next" style="display:none" id2="b-next">Continue</button>
     </div>`);
-  $("#b-back").onclick = () => go(9);
-  $("#b-skip").onclick = () => { markDone(STEP.collateral); go(11); };
+  $("#b-back").onclick = () => go(STEP.deploy);
+  $("#b-skip").onclick = () => { markDone(STEP.collateral); go(STEP.verify); };
   const laterLink = $("#c-later");
   if (laterLink) laterLink.onclick = (e) => {
     e.preventDefault();
@@ -3444,7 +3746,7 @@ RENDER.collateral = () => {
           body.innerHTML = `<div class="info-banner">${t("<b>Collateral confirmed on-chain: {amt}.</b> From the next Proof of Compute round your node earns at full weight instead of 20%.",
             { amt: gnk(onChain.amount.amount) })}</div>`;
           markDone(STEP.collateral);
-          setTimeout(() => { if (onStep("collateral")) go(11); }, 1200);   // -> Verify, where the waiting happens
+          setTimeout(() => { if (onStep("collateral")) go(STEP.verify); }, 1200);   // -> Verify, where the waiting happens
         } catch (e) { stepProblem("collateral", null, { at: t("Collateral"), message: e.message, retry: () => $("#b-dep") && $("#b-dep").click() }); }
         finally { setBusy(false); }
       };
@@ -3495,7 +3797,7 @@ docker compose -f docker-compose.yml -f docker-compose.mlnode.yml down</pre>
       <button id="b-again">Set up another node</button>
       <button class="primary" id="b-finish">${esc(t("Finish"))}</button>
     </div>`);
-  $("#b-back").onclick = () => go(11);
+  $("#b-back").onclick = () => go(STEP.verify);
   // The last step is done by being reached: 13 of 13.
   if (!doneSteps.has(STEP.done)) { markDone(STEP.done); saveSession(); }
   // Opened again later: is it in the epoch by now? Then it says so.
