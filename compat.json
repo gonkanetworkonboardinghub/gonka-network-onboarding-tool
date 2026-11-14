@@ -1,9 +1,9 @@
 {
- "asOf": "2026-11-14T08:07:54.510Z",
+ "asOf": "2026-11-14T15:11:36.761Z",
  "ok": true,
  "chain": {
   "version": "v0.2.16-post3",
-  "height": 7051083,
+  "height": 7055866,
   "upgrade": null
  },
  "checkedAgainst": {
@@ -21,13 +21,17 @@
  "unknown": [],
  "fix": null,
  "grant": {
-  "feeNgonka": 1023324,
+  "feeNgonka": 1022460,
   "setupNgonka": 10000000
  },
  "register": {
   "feeNgonka": 148424
  },
  "changes": [
+  {
+   "at": "2026-11-14T15:11:36.761Z",
+   "text": "Gonka changed its deploy folder on 2026-11-14: \"Devshard 0.2.x v6 (#1792)\"."
+  },
   {
    "at": "2026-11-12T11:29:44.058Z",
    "text": "New proposal #119: \"Community Support for the Gonka Foundation\", voting until 2026-11-14."
@@ -180,7 +184,7 @@
    "P2P_EXTERNAL_ADDRESS",
    "PUBLIC_URL"
   ],
-  "deploy": "fd99f88d1f5d",
+  "deploy": "9e663130755e",
   "guide": [
    "./inferenced --help",
    "./inferenced keys add gonka-account-key --keyring-backend file",
