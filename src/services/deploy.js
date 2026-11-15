@@ -512,14 +512,21 @@ async function createWarmKey(driver, onData) {
     const j = JSON.parse(line);
     return { existed: true, address: j.address, mnemonic: null };
   }
+  // What this command prints holds the new key's 24-word recovery phrase, so it
+  // never goes to the activity log (which stays on screen, can be copied, and
+  // ends up in screenshots and recordings). The words are shown once, on the
+  // page's own card, and nowhere else.
+  onData && onData("▶ Creating the server's operational key...\n");
   const r = await driver.exec(
     `cd ${JOIN()} && source config.env && export DOCKER_DEFAULT_PLATFORM=linux/amd64 && ` +
     `printf '%s\\n%s\\n' "$KEYRING_PASSWORD" "$KEYRING_PASSWORD" | docker compose run --rm --no-deps -T api ` +
     `inferenced keys add "$KEY_NAME" --keyring-backend file --output json 2>&1`,
-    { onData, timeoutMs: 180000 });
+    { timeoutMs: 180000 });
   const line = (r.stdout + r.stderr).split("\n").find((l) => l.trim().startsWith("{"));
-  if (!line) throw new Error("Warm key creation failed:\n" + (r.stdout + r.stderr).slice(-600));
+  // An error message must not carry the phrase either: only what came before the JSON line, if anything.
+  if (!line) throw new Error("Warm key creation failed:\n" + (r.stdout + r.stderr).split("\n").filter((l) => !/mnemonic/i.test(l)).join("\n").slice(-600));
   const j = JSON.parse(line);
+  onData && onData(`Operational key created: ${j.address}\n`);
   return { existed: false, address: j.address, mnemonic: j.mnemonic || null };
 }
 

@@ -100,6 +100,23 @@ const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
   check("an error page says nothing", (await node("curl: (7) Failed to connect")) === null);
   check("an older node's 404 says nothing", (await node('{"message":"Not Found"}')) === null);
 
+  // ---- the server key's recovery phrase never reaches the activity log ----
+  {
+    const phrase = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
+    const said = [];
+    const made = await deploy.createWarmKey({ exec: async (cmd, opts) => {
+      if (/keys show/.test(cmd)) return { stdout: "", stderr: "" };
+      const out = `Enter keyring passphrase:\n{"name":"node-1","type":"local","address":"gonka1warm","pubkey":"{}","mnemonic":"${phrase}"}\n`;
+      if (opts && opts.onData) opts.onData(out);
+      return { stdout: out, stderr: "" };
+    } }, (s) => said.push(String(s)));
+    check("a new server key comes back with its phrase, for the page to show once", made.existed === false && made.address === "gonka1warm" && made.mnemonic === phrase);
+    check("…and none of that phrase is written to the activity log", said.length > 0 && !phrase.split(" ").some((w) => said.join("").includes(w)) && !/mnemonic/i.test(said.join("")));
+    let failedWith = "";
+    try { await deploy.createWarmKey({ exec: async (cmd) => (/keys show/.test(cmd) ? { stdout: "", stderr: "" } : { stdout: `oops "mnemonic":"${phrase}"\nError: boom\n`, stderr: "" }) }, () => {}); } catch (e) { failedWith = e.message; }
+    check("a failure there does not carry the phrase in its message either", /boom/.test(failedWith) && !failedWith.includes("alpha"));
+  }
+
   // ---- the choice for the models a host does not run, as the wallet encodes it ----
   {
     const wallet = require("../src/services/wallet");
