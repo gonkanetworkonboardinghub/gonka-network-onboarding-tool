@@ -2775,7 +2775,7 @@ RENDER.weights = () => {
   stage(`
     ${header("Step 10", "Download model weights", `
       Your node needs the model files (hundreds of GB) before it can serve inference.
-      This is the longest step — you can leave it running.`)}
+      This can take a while, depending on your server's connection — you can leave it running.`)}
     ${pocNoteHtml()}
     <div class="card">
       <p>Models to download: ${S.models.map((m) => `<code>${esc(m)}</code>`).join(", ") || "<i>none detected</i>"}</p>
