@@ -23,8 +23,7 @@
 const KNOWLEDGE = {
   "seedNodes": [
     "http://node2.gonka.ai:8000",
-    "http://node1.gonka.ai:8000",
-    "http://node3.gonka.ai:8000"
+    "http://node1.gonka.ai:8000"
   ],
   "api": {
     "latestEpoch": "/api/v1/epochs/latest",
@@ -40,7 +39,6 @@ const KNOWLEDGE = {
 
 // The GNK price, worked out as the app does.
 const gnkPrice = (() => {
-  const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
   async function getJson(url, timeout = 15000, headers = {}) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -54,14 +52,6 @@ const gnkPrice = (() => {
     } catch (_) { return null; }
   };
   const sources = (await Promise.all([
-    tryOne("Uniswap (GeckoTerminal)", async () =>
-      Number((await getJson(`https://api.geckoterminal.com/api/v2/networks/eth/tokens/${WGNK}`)).data.attributes.price_usd)),
-    tryOne("DEX Screener", async () => {
-      const pairs = (await getJson(`https://api.dexscreener.com/latest/dex/tokens/${WGNK}`)).pairs || [];
-      const best = pairs.filter((p) => p.baseToken && p.baseToken.symbol === "WGNK")
-        .sort((a, b) => Number(b.liquidity && b.liquidity.usd || 0) - Number(a.liquidity && a.liquidity.usd || 0))[0];
-      return Number(best && best.priceUsd);
-    }),
     tryOne("CoinGecko", async () =>
       Number((await getJson("https://api.coingecko.com/api/v3/simple/price?ids=gonka&vs_currencies=usd")).gonka.usd)),
     tryOne("CoinPaprika", async () =>
@@ -290,6 +280,63 @@ async function members(seeds) {
     if (c.model_id && e && e.value !== undefined) rates[c.model_id] = num(e.value) * Math.pow(10, num(e.exponent));
   }
   return { epoch, hosts, excluded, rates };
+}
+
+/**
+ * Who chose what for the models they do not run, across the epoch's hosts.
+ *
+ * Gonka asks every host, for each model it does not run, to delegate it (a
+ * host that runs it checks the work for this one, for a share of its reward),
+ * or to refuse it; no choice costs more. Read from the chain's own rules:
+ * params.delegation_params gives the rates (in November 2026: delegate 5%,
+ * refuse 10%, nothing 15%, per model, added up), params.poc_params.models the
+ * models that count. A delegation only counts while the chosen host runs that
+ * model and is in the epoch; otherwise the chain treats it as no choice
+ * (inference-chain/x/inference/module/delegation_weight_calculator.go).
+ *
+ * One question per host (about thirty), at the paced rate: kept two minutes.
+ */
+let choicesCache = { at: 0, data: null };
+async function modelChoices(seeds) {
+  if (choicesCache.data && Date.now() - choicesCache.at < 2 * 60 * 1000) return choicesCache.data;
+  const [m, params] = await Promise.all([members(seeds), ask(seeds, `${INF}/inference/params`)]);
+  const p = (params && params.params) || {};
+  const dec = (d) => (d && d.value !== undefined ? num(d.value) * Math.pow(10, num(d.exponent)) : null);
+  const dp = p.delegation_params || {};
+  const rates = { delegate: dec(dp.delegation_share), refuse: dec(dp.refusal_penalty), none: dec(dp.no_participation_penalty) };
+  const counted = ((p.poc_params || {}).models || []).map((x) => ({ id: x.model_id, penaltyStart: num(x.penalty_start_epoch) }))
+    .filter((x) => x.id && (!x.penaltyStart || x.penaltyStart <= m.epoch + 1));
+  // Hosts on Gonka's own lists (developer access, transfer agents) are never
+  // GNOT's default pick: Gonka asks hosts not to all lean on the same few.
+  const listed = new Set([...(((p.developer_access_params || {}).allowed_developer_addresses) || []),
+    ...(((p.transfer_agent_access_params || {}).allowed_transfer_addresses) || [])]);
+  const hosts = [];
+  for (const h of m.hosts) {
+    const d = await soft(ask(seeds, `${INF}/inference/poc_delegation/${h.address}`));
+    const choices = {};
+    for (const x of ((d && d.delegations) || [])) choices[x.model_id] = { mode: "delegate", to: x.delegate_to };
+    for (const x of ((d && d.refusals) || [])) choices[x.model_id] = { mode: "refuse" };
+    hosts.push({ address: h.address, weight: h.weight, models: h.models, choices, read: !!d, listed: listed.has(h.address) });
+  }
+  const total = hosts.reduce((a, h) => a + h.weight, 0);
+  const byModel = {};
+  for (const model of counted.map((c) => c.id)) {
+    byModel[model] = hosts.filter((h) => h.models.includes(model)).map((h) => {
+      const from = hosts.filter((o) => o.address !== h.address && o.choices[model] && o.choices[model].mode === "delegate" && o.choices[model].to === h.address);
+      const w = from.reduce((a, o) => a + o.weight, 0);
+      return { address: h.address, weight: h.weight, delegatedBy: from.length, delegatedWeight: w, delegatedShare: total ? w / total : 0, listed: h.listed };
+    }).sort((a, b) => b.weight - a.weight);
+  }
+  const data = { epoch: m.epoch, total, rates, counted, hosts, byModel, at: Date.now() };
+  choicesCache = { at: Date.now(), data };
+  return data;
+}
+
+/** One host's choices for the models it does not run, as the chain holds them now: [{ model, mode, to }]. */
+async function choicesOf(seeds, address) {
+  const d = await ask(seeds, `${INF}/inference/poc_delegation/${address}`);
+  return ((d && d.delegations) || []).map((x) => ({ model: x.model_id, mode: "delegate", to: x.delegate_to }))
+    .concat(((d && d.refusals) || []).map((x) => ({ model: x.model_id, mode: "refuse" })));
 }
 
 /**
@@ -1178,10 +1225,39 @@ function saveNodes(dir, nodes) {
   return clean;
 }
 
+/**
+ * The votes cast from this computer, newest first: votes.json beside
+ * nodes.json. The chain only keeps a vote while its proposal is open, so
+ * without this a host could not see afterwards how they voted. One entry per
+ * proposal and address (a changed vote replaces the earlier one); no secret
+ * is in it, only what the chain itself showed while the vote was open.
+ */
+const VOTE_OPTIONS = ["YES", "NO", "NO_WITH_VETO", "ABSTAIN"];
+const MAX_VOTES = 2000;
+function loadVotes(dir) {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(dir, "votes.json"), "utf8"));
+    return Array.isArray(list)
+      ? list.filter((v) => v && Number(v.id) > 0 && looksLikeAddress(v.address) && VOTE_OPTIONS.includes(v.option)).slice(0, MAX_VOTES)
+      : [];
+  } catch (_) { return []; }
+}
+function rememberVote(dir, v) {
+  const id = Number(v && v.id), address = String((v && v.address) || "").trim(), option = String((v && v.option) || "");
+  if (!(id > 0) || !looksLikeAddress(address) || !VOTE_OPTIONS.includes(option)) throw new Error("That is not a vote.");
+  const txhash = /^[0-9A-Fa-f]{64}$/.test(String((v && v.txhash) || "")) ? String(v.txhash).toUpperCase() : undefined;
+  const entry = { id, address, option, at: Date.now(), ...(txhash ? { txhash } : {}) };
+  const rest = loadVotes(dir).filter((x) => !(Number(x.id) === id && x.address === address));
+  const list = [entry, ...rest].slice(0, MAX_VOTES);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "votes.json"), JSON.stringify(list, null, 1));
+  return list;
+}
+
 module.exports = {
-  epochNow, members, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
+  epochNow, members, modelChoices, choicesOf, history, host, overview, answers, knock, network, networkOverview, hardwareSetups, typicalFees, summarise,
   proposals, voteOf,
-  looksLikeAddress, loadNodes, saveNodes,
+  looksLikeAddress, loadNodes, saveNodes, loadVotes, rememberVote,
   attention, recentTrouble,
   _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere }
 };
@@ -1194,7 +1270,7 @@ const KEEP_MS = 60 * 1000;
 const kept = new Map();          // question -> { at, status, data } or { pending }
 let own = { at: 0, p: null };
 
-// The price as the app has it: the middle of four markets, read as the app
+// The price as the app has it: the middle of the markets, read as the app
 // reads them, from the visitor's own computer. The page reads the markets in
 // the visitor's browser (read-markets.js) and sends them as "markets"; the
 // markets limit how often one address may ask, and this server shares its
@@ -1213,7 +1289,7 @@ async function publishedPrice() {
   return published.p;
 }
 // The markets the app reads, in its order (src/services/earnings.js gnkPrice).
-const MARKETS = ["Uniswap (GeckoTerminal)","DEX Screener","CoinGecko","CoinPaprika"];
+const MARKETS = ["CoinGecko","CoinPaprika"];
 function fillInPrice(live, published) {
   const have = new Map(((live && live.sources) || []).map((s) => [s.name, s]));
   const answered = have.size;

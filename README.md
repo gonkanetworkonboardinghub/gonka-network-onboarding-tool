@@ -72,8 +72,8 @@ The short version:
   GitHub (the update manifest, releases, Gonka's official repository for
   supported configurations, and this repository's `data` branch for the
   network's figures), GitHub Container Registry (to check node images),
-  four public GNK price sources for "Mine it or buy it?" (GeckoTerminal,
-  DEX Screener, CoinGecko, CoinPaprika), your own server — and The Gonka
+  two public GNK price sources for "Mine it or buy it?" (CoinGecko and
+  CoinPaprika), your own server — and The Gonka
   Network Onboarding Hub's website, at most once an hour while it is open, to
   say it was opened: a random number made for that computer, the app's version
   and whether it is Windows or Mac, nothing else (`src/services/usage.js`).

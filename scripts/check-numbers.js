@@ -17,7 +17,7 @@
  *   - what nodes set up with GNOT were paid, from the chain's own rewards,
  *     against what the website shows;
  *   - the network: hosts, GPUs and weight, and any jump since the last look;
- *   - Mine or buy: every rig's figures, the GNK price and its four markets,
+ *   - Mine or buy: every rig's figures, the GNK price and its markets,
  *     and the provider's price list.
  *
  * It only reads. Nothing here downloads a release file (each download counts
@@ -176,7 +176,7 @@ async function getJson(url, opts = {}) {
     if (!(price.usd > 0)) say("problems", `the GNK price is ${price.usd}`);
     const srcs = (price.sources || []).map((s) => s.usd).filter((x) => x > 0);
     if (srcs.length < 2) say("warnings", `the GNK price came from ${srcs.length} market(s) out of 4`);
-    else if (Math.max(...srcs) / Math.min(...srcs) > 1.15) say("warnings", `the four GNK markets disagree by more than 15%: ${(price.sources || []).map((s) => `${s.name} $${s.usd}`).join(", ")}`);
+    else if (Math.max(...srcs) / Math.min(...srcs) > 1.15) say("warnings", `the GNK markets disagree by more than 15%: ${(price.sources || []).map((s) => `${s.name} $${s.usd}`).join(", ")}`);
     if (last && last.price && now.price && Math.abs(now.price - last.price) / last.price > JUMP) say("news", `GNK price $${last.price.toFixed(3)} → $${now.price.toFixed(3)}`);
     const bad = (ea.configs || []).filter((c) => !(num(c.gnkPerDay) > 0) || !(num(c.usdPerDay) >= 0));
     if (bad.length) say("problems", `Mine or buy: ${bad.length} rig(s) with no believable figure: ${bad.map((c) => `${c.gpuCount}× ${c.gpuClass} ${String(c.model).split("/").pop()} = ${c.gnkPerDay}`).join("; ")}`);

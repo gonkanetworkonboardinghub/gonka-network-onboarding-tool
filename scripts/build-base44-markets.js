@@ -4,7 +4,7 @@
  *
  *   node scripts/build-base44-markets.js [outfile]
  *
- * The app reads the four GNK markets from the computer it runs on. The
+ * The app reads the GNK markets from the computer it runs on. The
  * website's server cannot do that reliably: the markets limit how often one
  * address may ask, and Base44's servers share theirs with many other websites
  * (on 28 October 2026 not one market answered them for hours). Every market
@@ -34,8 +34,6 @@ const code = `// read-markets.js — the GNK price markets, read in the visitor'
 // Send it as "markets" with every call to the gnot-monitor and gnot-rentals
 // functions; they work the price out from it, as the app does. One reading is
 // shared by the whole page for five minutes (one minute when no market answered).
-
-const WGNK = ${JSON.stringify(E.WGNK)};
 
 // A market gets 6 seconds here (15 in the app), so a slow one cannot hold the page up.
 ${getJson.replace("timeout = 15000", "timeout = 6000")}

@@ -35,8 +35,6 @@ const GPU_CLASSES = [
  * per copy), so an 8-GPU server with a 4-GPU setup runs two and earns twice.
  */
 const FULL_SERVER = 8;
-/** Wrapped GNK on Ethereum — the only official one (gonka.ai/docs/FAQ). */
-const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
 /** A class+model pair needs at least this many GPUs behind it to be quoted on its own. */
 const MIN_SAMPLE_GPUS = 8;
 /** A rig the network runs but no config covers needs at least this many GPUs behind it to be listed at all. */
@@ -65,9 +63,10 @@ async function getJson(url, timeout = 15000, headers = {}) {
 
 /**
  * The GNK price, from as many independent places as answer in time; the median
- * is used, so one stale or odd source cannot swing it. Native GNK is not on a
- * central exchange: the traded asset is WGNK on Ethereum, which is what the
- * DEX sources below read.
+ * is used, so one stale or odd source cannot swing it. Only markets for native
+ * GNK are read (both of these track GNK/USDT on SafeTrade). The Ethereum token
+ * is left out on purpose since the exploit of 18 November 2026: its price no
+ * longer stands for GNK.
  */
 async function gnkPrice() {
   const tryOne = async (name, fn) => {
@@ -77,14 +76,6 @@ async function gnkPrice() {
     } catch (_) { return null; }
   };
   const sources = (await Promise.all([
-    tryOne("Uniswap (GeckoTerminal)", async () =>
-      Number((await getJson(`https://api.geckoterminal.com/api/v2/networks/eth/tokens/${WGNK}`)).data.attributes.price_usd)),
-    tryOne("DEX Screener", async () => {
-      const pairs = (await getJson(`https://api.dexscreener.com/latest/dex/tokens/${WGNK}`)).pairs || [];
-      const best = pairs.filter((p) => p.baseToken && p.baseToken.symbol === "WGNK")
-        .sort((a, b) => Number(b.liquidity && b.liquidity.usd || 0) - Number(a.liquidity && a.liquidity.usd || 0))[0];
-      return Number(best && best.priceUsd);
-    }),
     tryOne("CoinGecko", async () =>
       Number((await getJson("https://api.coingecko.com/api/v3/simple/price?ids=gonka&vs_currencies=usd")).gonka.usd)),
     tryOne("CoinPaprika", async () =>
@@ -522,7 +513,6 @@ async function estimate(seed, { force = false } = {}) {
       networkGnkPerDay: (paid ? paid.gnk : facts.mintedGnk) * perDay
     },
     price,
-    contract: WGNK,
     vesting: {
       epochs: facts.vestingEpochs,
       days: facts.vestingEpochs * facts.epochHours / 24
@@ -544,6 +534,6 @@ async function estimate(seed, { force = false } = {}) {
   return data;
 }
 
-module.exports = { estimate, gnkPrice, WGNK };
+module.exports = { estimate, gnkPrice };
 // For the website's Base44 function (scripts/build-base44-rentals.js): the same price code.
-module.exports._parts = { getJson, gnkPrice, WGNK };
+module.exports._parts = { getJson, gnkPrice };

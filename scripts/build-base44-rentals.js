@@ -151,7 +151,7 @@ async function reading() {
 function answer(r, browser) {
   const earnings = JSON.parse(JSON.stringify(r.e));
   const pub = r.pub;
-  // The price as the app has it: the middle of four markets; each one the
+  // The price as the app has it: the middle of the markets; each one the
   // browser could not read from this server's own reading, else the data job's.
   const price = priceFrom(browser, r.live ? earnings.price : null, pub && pub.price && { ...pub.price, asOf: pub.asOf });
   earnings.price = price;

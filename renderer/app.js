@@ -617,7 +617,7 @@ const TIPS = {
   rig: "The GPUs in one server, and how many copies of the model it runs at once. GNOT can set up every rig shown here, except those marked †.",
   model: "The AI model the server runs for the Gonka network. The network pays hosts for serving the models it needs.",
   gnkDay: "What a typical server like this was paid per day in the last finished epoch, measured from the chain: its share of that epoch's reward, by the work it proved.",
-  worth: "That GNK a day at today's price, the middle of 4 markets.",
+  worth: "That GNK a day at today's GNK price.",
   rentBelow: "The most this server can cost per hour and still pay for itself, at today's GNK price.",
   cheapest: "The lowest price {provider} lists right now for a dedicated server with everything a node needs: enough memory and disk, and a system image with the right CUDA.",
   eachDay: "What is left each day: what the server earns, minus what the provider charges for it.",
@@ -2002,13 +2002,11 @@ RENDER.wallet = () => {
     const howToGet = () => more("How do I get GNK?", `
       <ul>
         <li>${t("<b>From a Gonka wallet you already have</b>, such as Keplr or Tangem: send GNK to the address above.")}</li>
-        <li>${t("<b>From WGNK on Ethereum</b>: Gonka's bridge, on its own dashboard, turns WGNK into GNK in about 15–20 minutes. It pays out to the gonka1 address that belongs to your Ethereum wallet; from there, send it to the address above.")}</li>
-        <li>${t("<b>No GNK or WGNK yet?</b> The traded form is WGNK on Ethereum, on Uniswap. The only official WGNK is contract {addr}.", { addr: `<code>${esc(S.K.wgnkContract || "")}</code>` })}</li>
+        <li>${t("<b>No GNK yet?</b> Someone who already holds GNK can send it to the address above.")}</li>
       </ul>
       <p class="small">${esc(t("Start with a small amount: transfers cannot be undone."))}</p>
       <div class="btn-row">
         ${docs.walletGuide ? `<button data-open="${esc(docs.walletGuide)}">${esc(t("Gonka's wallet guide"))}</button>` : ""}
-        ${docs.bridge ? `<button data-open="${esc(docs.bridge)}">${esc(t("Gonka's bridge guide"))}</button>` : ""}
       </div>`);
     const whyMore = () => more("Why does this wallet need GNK?", `
       <p>${esc(t("Setting up signs one or two small transactions (the node's permissions, and its registration if the network does not do it), about 0.001 GNK in all. Taking part costs more: since Gonka v0.2.16 a node pays a network fee for every Proof of Compute, out of this wallet. Without it the node stays registered but is left out of the epoch and earns nothing. Collateral is optional and separate."))}</p>`);
@@ -4338,7 +4336,7 @@ function renderEarnBody(d) {
       <li>${esc(t("A new node earns less at first, while it proves itself to the network."))}</li>
       <li>${esc(t("Every GPU that joins lowers what each one earns, because the amount minted per epoch does not grow with them."))}</li>
       <li>${esc(t("Mined GNK is only money once sold, and the price moves."))}</li>
-      <li>${esc(t("Native GNK is on no exchange. The traded form is WGNK on Ethereum, contract {addr}. Anything calling itself GNK on Solana is fake.", { addr: d.contract }))}</li>
+      <li>${esc(t("Anything calling itself GNK on Solana is fake."))}</li>
     </ul>
     <div class="earn-src">
       ${esc(t("Epoch {epoch}: {gnk} GNK shared between {hosts} hosts over {hours} hours.", {

@@ -11,8 +11,6 @@
 // functions; they work the price out from it, as the app does. One reading is
 // shared by the whole page for five minutes (one minute when no market answered).
 
-const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
-
 // A market gets 6 seconds here (15 in the app), so a slow one cannot hold the page up.
 async function getJson(url, timeout = 6000, headers = {}) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
@@ -28,14 +26,6 @@ async function gnkPrice() {
     } catch (_) { return null; }
   };
   const sources = (await Promise.all([
-    tryOne("Uniswap (GeckoTerminal)", async () =>
-      Number((await getJson(`https://api.geckoterminal.com/api/v2/networks/eth/tokens/${WGNK}`)).data.attributes.price_usd)),
-    tryOne("DEX Screener", async () => {
-      const pairs = (await getJson(`https://api.dexscreener.com/latest/dex/tokens/${WGNK}`)).pairs || [];
-      const best = pairs.filter((p) => p.baseToken && p.baseToken.symbol === "WGNK")
-        .sort((a, b) => Number(b.liquidity && b.liquidity.usd || 0) - Number(a.liquidity && a.liquidity.usd || 0))[0];
-      return Number(best && best.priceUsd);
-    }),
     tryOne("CoinGecko", async () =>
       Number((await getJson("https://api.coingecko.com/api/v3/simple/price?ids=gonka&vs_currencies=usd")).gonka.usd)),
     tryOne("CoinPaprika", async () =>

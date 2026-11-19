@@ -16,7 +16,7 @@ const EARNINGS_URL = "https://raw.githubusercontent.com/gonkanetworkonboardinghu
 
 // What the app knows about the network, as its knowledge.js has it.
 const KNOWLEDGE = {
-  seedNodes: ["http://node2.gonka.ai:8000","http://node1.gonka.ai:8000","http://node3.gonka.ai:8000"],
+  seedNodes: ["http://node2.gonka.ai:8000","http://node1.gonka.ai:8000"],
   epochsUrl: "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/epochs.json",
   repo: {"url":"https://github.com/gonka-ai/gonka.git","branch":"main","joinDir":"gonka/deploy/join"},
   gpuClasses: [{ id: "B300", match: /B300/i }, { id: "B200", match: /B200/i }, { id: "H200", match: /H200/i }, { id: "H100", match: /H100/i }, { id: "A100", match: /A100/i }],
@@ -113,7 +113,24 @@ async function chainStatus(seed) {
 /** Current network tip height — cheap enough to poll from the Verify page. */
 async function chainHeight(seed) {
   const now = await getJson(seed + "/chain-rpc/block");
-  return { height: Number(now.result.block.header.height) };
+  // time: when that block was made, for the countdown's quick look (pocEta).
+  return { height: Number(now.result.block.header.height), time: Date.parse(now.result.block.header.time) || null };
+}
+
+/**
+ * How long until block `nextStart`, from the newest block and the pace blocks
+ * are being made at now.
+ *
+ * The next block is not a whole block away: part of it has already passed
+ * since the newest one was made. That part is taken off, by this computer's
+ * clock, and never more than one block's worth, so a clock that is minutes
+ * wrong cannot throw the countdown off by more than a few seconds.
+ */
+function pocEta({ height, time, nextStart, secPerBlock, now = Date.now() }) {
+  const blocksLeft = nextStart - height;
+  if (!(blocksLeft > 0)) return 0;
+  const sinceTip = time ? Math.min(secPerBlock * 1000, Math.max(0, now - time)) : 0;
+  return Math.max(0, blocksLeft * secPerBlock * 1000 - sinceTip);
 }
 
 async function nextPoc(seed) {
@@ -130,12 +147,26 @@ async function nextPoc(seed) {
   if (!nextStart || !isFinite(secPerBlock) || secPerBlock <= 0) throw new Error("Epoch data unavailable");
   const startBlock = Number(j.epoch_stages && j.epoch_stages.poc_start) || 0;
   const blocksLeft = nextStart - h;
+  // The pace over the last eight hours says how long an epoch is. How long
+  // the blocks still to come will take is better told by the pace of late:
+  // measured over about as many blocks as are left (300 to 5,000 of them).
+  let secPerBlockNow = secPerBlock;
+  const span = Math.min(5000, Math.max(300, blocksLeft));
+  if (blocksLeft > 0 && span < 5000 && h - span > 1) {
+    try {
+      const near = await getJson(seed + "/chain-rpc/block?height=" + (h - span));
+      const v = (tNow - Date.parse(near.result.block.header.time)) / 1000 / span;
+      if (isFinite(v) && v > 0) secPerBlockNow = v;
+    } catch (_) { /* the long measure will do */ }
+  }
   return {
     phase: j.phase || "",
     epoch: Number((j.epoch_stages && j.epoch_stages.epoch_index) || (j.latest_epoch && j.latest_epoch.index)) || null,
     blocksLeft,
-    etaMs: Math.max(0, blocksLeft * secPerBlock * 1000),
+    etaMs: pocEta({ height: h, time: tNow, nextStart, secPerBlock: secPerBlockNow }),
     secPerBlock,
+    // For the countdown's quick looks between two full readings (app.js).
+    secPerBlockNow, nextStart, height: h,
     // for the epoch progress bar: how far along the current epoch is
     totalBlocks: startBlock ? nextStart - startBlock : 0
   };
@@ -406,10 +437,39 @@ async function probeUrl(url, timeout = 8000) {
   }
 }
 
+/**
+ * What is left of the fee allowance a wallet gave its node's key, as the chain
+ * has it now. The node pays its fees out of the wallet through this allowance,
+ * so what it can spend is the wallet's balance capped by it. Pure: takes the
+ * answer of cosmos/feegrant/v1beta1/issued/{wallet}.
+ *   { found: false }                      the wallet gave no allowance
+ *   { found: true, left, expires, over }  left in ngonka, null when unlimited;
+ *                                         over when it has run out of time
+ * With several, the one with the most left counts (as Monitor/Vote shows it).
+ */
+function readAllowance(answer, now = Date.now()) {
+  const list = ((answer && answer.allowances) || []).map((a) => {
+    // Basic, or a periodic / message-limited one wrapped around a basic one.
+    let inner = (a && a.allowance) || {};
+    if (inner.allowance) inner = inner.allowance;
+    if (inner.basic) inner = inner.basic;
+    const limit = Array.isArray(inner.spend_limit) ? inner.spend_limit : [];
+    const coin = limit.find((c) => /ngonka/i.test(c.denom));
+    const over = !!inner.expiration && !(new Date(inner.expiration).getTime() > now);
+    return { found: true, left: limit.length ? Number((coin || {}).amount || 0) : null, expires: inner.expiration || null, over };
+  });
+  if (!list.length) return { found: false };
+  const worth = (x) => (x.over ? -1 : x.left === null ? Infinity : x.left);
+  return list.sort((a, b) => worth(b) - worth(a))[0];
+}
+async function allowanceLeft(seed, address) {
+  return readAllowance(await getJson(seed + "/chain-api/cosmos/feegrant/v1beta1/issued/" + address));
+}
+
 module.exports = {
   firstReachableSeed, governanceModels, participant, account,
-  epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf,
-  repoGpuConfigs, probeUrl, nextPoc, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
+  epochParticipants, chainStatus, recommendCollateral, collateralOf, balanceOf, allowanceLeft, readAllowance,
+  repoGpuConfigs, probeUrl, nextPoc, pocEta, modelActivity, payingModels, checkImageArchs, releaseArchStatus, chainHeight, myEpochWeight
 };
   return module.exports;
 })();
@@ -455,8 +515,6 @@ const GPU_CLASSES = [
  * per copy), so an 8-GPU server with a 4-GPU setup runs two and earns twice.
  */
 const FULL_SERVER = 8;
-/** Wrapped GNK on Ethereum — the only official one (gonka.ai/docs/FAQ). */
-const WGNK = "0x972a7a92d92796a98801a8818bcf91f1648f2f68";
 /** A class+model pair needs at least this many GPUs behind it to be quoted on its own. */
 const MIN_SAMPLE_GPUS = 8;
 /** A rig the network runs but no config covers needs at least this many GPUs behind it to be listed at all. */
@@ -485,9 +543,10 @@ async function getJson(url, timeout = 15000, headers = {}) {
 
 /**
  * The GNK price, from as many independent places as answer in time; the median
- * is used, so one stale or odd source cannot swing it. Native GNK is not on a
- * central exchange: the traded asset is WGNK on Ethereum, which is what the
- * DEX sources below read.
+ * is used, so one stale or odd source cannot swing it. Only markets for native
+ * GNK are read (both of these track GNK/USDT on SafeTrade). The Ethereum token
+ * is left out on purpose since the exploit of 18 November 2026: its price no
+ * longer stands for GNK.
  */
 async function gnkPrice() {
   const tryOne = async (name, fn) => {
@@ -497,14 +556,6 @@ async function gnkPrice() {
     } catch (_) { return null; }
   };
   const sources = (await Promise.all([
-    tryOne("Uniswap (GeckoTerminal)", async () =>
-      Number((await getJson(`https://api.geckoterminal.com/api/v2/networks/eth/tokens/${WGNK}`)).data.attributes.price_usd)),
-    tryOne("DEX Screener", async () => {
-      const pairs = (await getJson(`https://api.dexscreener.com/latest/dex/tokens/${WGNK}`)).pairs || [];
-      const best = pairs.filter((p) => p.baseToken && p.baseToken.symbol === "WGNK")
-        .sort((a, b) => Number(b.liquidity && b.liquidity.usd || 0) - Number(a.liquidity && a.liquidity.usd || 0))[0];
-      return Number(best && best.priceUsd);
-    }),
     tryOne("CoinGecko", async () =>
       Number((await getJson("https://api.coingecko.com/api/v3/simple/price?ids=gonka&vs_currencies=usd")).gonka.usd)),
     tryOne("CoinPaprika", async () =>
@@ -942,7 +993,6 @@ async function estimate(seed, { force = false } = {}) {
       networkGnkPerDay: (paid ? paid.gnk : facts.mintedGnk) * perDay
     },
     price,
-    contract: WGNK,
     vesting: {
       epochs: facts.vestingEpochs,
       days: facts.vestingEpochs * facts.epochHours / 24
@@ -964,9 +1014,9 @@ async function estimate(seed, { force = false } = {}) {
   return data;
 }
 
-module.exports = { estimate, gnkPrice, WGNK };
+module.exports = { estimate, gnkPrice };
 // For the website's Base44 function (scripts/build-base44-rentals.js): the same price code.
-module.exports._parts = { getJson, gnkPrice, WGNK };
+module.exports._parts = { getJson, gnkPrice };
   return module.exports;
 })();
 // ---- the app's src/services/rentals.js, as it is ----
@@ -1247,7 +1297,7 @@ async function publishedEarnings() {
 }
 
 // The markets the app reads, in its order (src/services/earnings.js gnkPrice).
-const MARKETS = ["Uniswap (GeckoTerminal)","DEX Screener","CoinGecko","CoinPaprika"];
+const MARKETS = ["CoinGecko","CoinPaprika"];
 function fillInPrice(live, published) {
   const have = new Map(((live && live.sources) || []).map((s) => [s.name, s]));
   const answered = have.size;
@@ -1326,7 +1376,7 @@ async function reading() {
 function answer(r, browser) {
   const earnings = JSON.parse(JSON.stringify(r.e));
   const pub = r.pub;
-  // The price as the app has it: the middle of four markets; each one the
+  // The price as the app has it: the middle of the markets; each one the
   // browser could not read from this server's own reading, else the data job's.
   const price = priceFrom(browser, r.live ? earnings.price : null, pub && pub.price && { ...pub.price, asOf: pub.asOf });
   earnings.price = price;

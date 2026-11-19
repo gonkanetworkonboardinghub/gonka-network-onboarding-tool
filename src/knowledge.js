@@ -81,9 +81,6 @@ const overridable = {
   // v0.2.16 a node pays for every Proof of Compute it takes part in, and
   // without the balance it stays registered but is left out of the epoch.
   feeStartGnk: 10,
-  // Wrapped GNK on Ethereum, the traded form: the only official contract
-  // (gonka.ai/docs FAQ), named where the app says how to get GNK.
-  wgnkContract: "0x972a7a92d92796a98801a8818bcf91f1648f2f68",
 
   // The last state of the Gonka network a person checked this app against.
   // scripts/check-chain.js compares it with the live network every day: a newer
@@ -329,9 +326,8 @@ const overridable = {
     quickstart: "https://gonka.ai/docs/host/quickstart/",
     // The guide's own part on what a host pays from v0.2.16, and how much to keep.
     fees: "https://gonka.ai/docs/host/quickstart/#fund-account-fees",
-    // Getting GNK: Gonka's bridge turns WGNK on Ethereum into GNK, in the browser
-    // on its dashboard; its wallet guide shows sending GNK from Keplr or Tangem.
-    bridge: "https://gonka.ai/docs/cross-chain-transfers/ethereum-bridge/dashboard/",
+    // Getting GNK: Gonka's wallet guide shows sending GNK from Keplr or Tangem.
+    // (No bridge or WGNK: the Ethereum bridge was exploited on 18 Nov 2026.)
     walletGuide: "https://gonka.ai/docs/wallet/wallet-and-transfer-guide/",
     keyManagement: "https://gonka.ai/host/key-management/",
     multiModelPoc: "https://gonka.ai/docs/host/multi_model_poc/",

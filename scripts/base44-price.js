@@ -2,7 +2,7 @@
  * base44-price.js — the GNK price for the website's Base44 functions, as close
  * to the app's as a shared server can get.
  *
- * The app takes the middle of four markets (src/services/earnings.js
+ * The app takes the middle of the markets (src/services/earnings.js
  * gnkPrice), read from the computer it runs on. The markets refuse Base44's
  * servers when they please (they limit how often one address may ask, and that
  * address is shared with many other websites): CoinGecko did so steadily on

@@ -66,7 +66,6 @@ const KNOWLEDGE = ${JSON.stringify(knowledge, null, 2)};
 
 // The GNK price, worked out as the app does.
 const gnkPrice = (() => {
-  const WGNK = ${JSON.stringify(E.WGNK)};
   ${E.getJson.toString()}
   return ${E.gnkPrice.toString()};
 })();
@@ -86,7 +85,7 @@ const KEEP_MS = 60 * 1000;
 const kept = new Map();          // question -> { at, status, data } or { pending }
 let own = { at: 0, p: null };
 
-// The price as the app has it: the middle of four markets, read as the app
+// The price as the app has it: the middle of the markets, read as the app
 // reads them, from the visitor's own computer. The page reads the markets in
 // the visitor's browser (read-markets.js) and sends them as "markets"; the
 // markets limit how often one address may ask, and this server shares its

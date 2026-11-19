@@ -9,7 +9,7 @@
  *   - the earnings: the function's live figures against the app's own live
  *     src/services/earnings.js, rig by rig (what each earns, the machines and
  *     hosts running it, what was left out);
- *   - the price: the app's middle of four markets, read here and sent as a
+ *   - the price: the app's middle of the markets, read here and sent as a
  *     visitor's browser sends them (read-markets.js);
  *   - the comparison: src/services/rentals.js worked out from the function's
  *     own earnings and price, row by row.
