@@ -1,0 +1,37 @@
+PROMPT FOR BASE44 — after GNOT 1.8.25: the new step "Other models" (15 step pictures), one caption, one new FAQ answer
+(attach the 15 pictures from the folder "step-pictures-v1.8.25-png" to this message — 01-welcome.png to 15-finished.png — then paste everything below and publish. If remove-wgnk-2026-11-18.txt is not pasted yet, paste that one first.)
+
+GNOT 1.8.24 added a step to Gonka Host Setup, "Other models", and 1.8.25 downloads each model at the exact version the Gonka network approved. The website should show and say the same. This is words and pictures only: nothing about the site's look, layout or motion changes, and no other word, number, link, data, backend function or page address changes. Nothing people can see today is removed.
+
+1. REGISTER A NODE — 15 STEPS INSTEAD OF 14
+In the section "Step by step with GNOT", add one step card, so there are 15:
+- The new card is step 9, between step 8 ("The model configuration") and "Review and write the configuration". It looks exactly like the other cards: round number badge, bold title, caption, picture, lightbox.
+- The cards from "Review and write the configuration" on move down by one: they become steps 10 to 15. Each keeps its title and caption exactly as now, except the caption of "Download the model" (part 2 below).
+- The numbered chips go from 1 to 15, the anchors from #step-1 to #step-15, and the lightbox's arrow keys go through all 15 pictures.
+
+The new step 9:
+Title: Choose for the other models
+Caption: "Gonka runs several AI models, and asks every host to choose what happens with the ones its node does not run. Delegate: a host that runs that model checks its work for your node and receives 5% of your reward. Refuse: 10% goes to Gonka's community pool. With no choice, 15% goes there, every epoch, for each model. GNOT suggests a host for each model, shows every host's weight and how many hosts already chose it, and the share your node keeps updates as you choose. It sends your choices right after registering; Verify checks them, and you can change them later in Monitor/Vote."
+
+The pictures: replace the step pictures with the 15 attached PNG pictures, in this order:
+   1 — 01-welcome.png, 2 — 02-welcome-needs.png, 3 — 03-your-server.png, 4 — 04-connect.png, 5 — 05-health-check.png, 6 — 06-wallet.png, 7 — 07-network.png, 8 — 08-model.png, 9 — 09-other-models.png, 10 — 10-review.png, 11 — 11-weights.png, 12 — 12-launch.png, 13 — 13-collateral.png, 14 — 14-verify.png, 15 — 15-finished.png.
+The picture in the card "GNOT — Gonka Host Setup" at the top of the page is the new 01-welcome.png too. Remove the old picture files; none of the old ones may still show anywhere.
+How to tell them apart: the new pictures say "v1.8.25" and "Updated Nov 18, 2026" at the bottom of the app's left column (the old ones say "v1.8.23" and "Updated Nov 13, 2026"), the left column lists "Other models" under "Model & GPUs", and the new picture 9 is titled "Your choice for the other models".
+
+2. REGISTER A NODE — ONE CAPTION
+Replace the caption of "Download the model" (now step 11) with exactly this:
+"The model files are hundreds of GB, so this can take a while, depending on the server's connection. GNOT downloads the exact version the Gonka network approved. It resumes by itself if interrupted; you can leave it running. Continue opens once the model is on your server."
+
+3. FAQ (/faq) — ONE NEW QUESTION
+In EARNING, COLLATERAL AND FEES, right after "How does a node earn?", add:
+Q: "What is the choice for the other models?"
+A: "Gonka runs several AI models, and a node runs one of them. For each of the others, Gonka asks every host to choose. Delegate: a host that runs that model checks its work for your node, and receives 5% of your node's reward for it. Refuse: your node takes no part in that model, and 10% of its reward goes to Gonka's community pool. Make no choice and 15% goes there, every epoch, for each model. With three models counting today, a node that runs one and delegates the other two keeps 90% of its reward; without any choice it keeps 70%. GNOT's step "Other models" explains it, suggests a host for each model and sends your choices right after registering. Verify checks that they are on the network, and in Monitor/Vote you can see them and change them."
+The other 32 questions and answers, their order and their sections stay as they are.
+
+4. CHECK BEFORE YOU PUBLISH
+- Register a node shows 15 step cards with the 15 new pictures (v1.8.25), chips 1 to 15, and none of the old pictures.
+- Only the new step 9, the caption of "Download the model" and the one new FAQ question are new; every other word and number on the site is as before.
+- Every language shows the new texts in its own words, and keeps working exactly as now.
+- The look, the motion and the phone layout are untouched: on phones the chips wrap onto several lines and the cards stack.
+
+Change nothing else on the site.
