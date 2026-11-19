@@ -8,6 +8,7 @@
 const K = require("../knowledge");
 const { shq } = require("../executor");
 const Ports = require("./ports");
+const Netdata = require("./netdata");
 
 const JOIN = () => K.get().repo.joinDir; // e.g. gonka/deploy/join
 
@@ -777,19 +778,50 @@ async function launchAll(driver, onData, gpuCount) {
   return { ok: true };
 }
 
+/**
+ * The exact version of each model the network approved, as Hugging Face
+ * commits: the chain's governance list has hf_commit for every model, and
+ * Gonka's quickstart downloads with `--revision <that commit>`. Without it
+ * `hf download` takes the repository's newest files, which stop being the
+ * approved ones as soon as the model's authors change anything. The chain is
+ * asked first (every public node in turn); knowledge.modelRevisions, which
+ * the manifest can update, is the fallback.
+ */
+async function modelRevisions() {
+  const k = K.get();
+  const revisions = { ...(k.modelRevisions || {}) };
+  for (const seed of k.seedNodes) {
+    try {
+      const models = await Netdata.governanceModels(String(seed).replace(/\/+$/, ""));
+      if (!models.length) continue;
+      for (const m of models) if (m.hfCommit) { revisions[m.hfRepo] = m.hfCommit; revisions[m.id] = m.hfCommit; }
+      return { revisions, from: "chain" };
+    } catch (_) { /* the next public node */ }
+  }
+  return { revisions, from: "built-in" };
+}
+
 async function downloadWeights(driver, models, onData, hfHome) {
   const k = K.get();
   // Whichever disk the health check found room on (rented boxes usually keep
   // the terabytes off /), falling back to the documented default.
   const cacheDir = hfHome || k.hfHome;
+  const { revisions, from } = await modelRevisions();
   for (const m of models) {
-    onData && onData(`\n▶ Downloading weights for ${m} (this can take a long time)...\n`);
+    const rev = /^[0-9a-f]{40}$/.test(String(revisions[m] || "")) ? revisions[m] : null;
+    onData && onData(`\n▶ Downloading weights for ${m} (this can take a long time)...\n` +
+      (rev
+        ? `  Version ${rev.slice(0, 12)}, the one the Gonka network approved` +
+          (from === "chain" ? " (read from the network just now).\n" : " (the network did not answer, so GNOT's own copy of the list).\n")
+        : "  The network's approved version of this model could not be found, so the newest files are downloaded.\n"));
     // huggingface_hub 1.x renamed the CLI to `hf`; older installs only have
     // `huggingface-cli`. Prefer the new name, fall back to the old one.
+    // Both take --revision.
+    const revArg = rev ? ` --revision ${shq(rev)}` : "";
     const r = await driver.exec(
       `export PATH=$PATH:$HOME/.local/bin && mkdir -p ${cacheDir} && ` +
-      `if command -v hf >/dev/null; then HF_HOME=${cacheDir} hf download ${shq(m)}; ` +
-      `else HF_HOME=${cacheDir} huggingface-cli download ${shq(m)}; fi`,
+      `if command -v hf >/dev/null; then HF_HOME=${cacheDir} hf download ${shq(m)}${revArg}; ` +
+      `else HF_HOME=${cacheDir} huggingface-cli download ${shq(m)}${revArg}; fi`,
       { onData, timeoutMs: 12 * 60 * 60 * 1000 });
     if (r.code !== 0) throw new Error(`Weights download for ${m} failed:\n` + (r.stderr || "").slice(-600));
   }
@@ -927,6 +959,6 @@ module.exports = {
   cloneRepo, listNodeConfigs, readRepoFile, hardenPorts, writeConfigs, readServerKeyName, serverKeyringLine, withKeyringLine,
   listComposeImages, serverArch,
   pullImages, startCore, reachableSeeds, switchSeed, diagnostics, warmKeyExists, createWarmKey, getConsensusKey,
-  registerHost, launchAll, stepAroundTakenPorts, portClashMessage, downloadWeights, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
+  registerHost, launchAll, stepAroundTakenPorts, portClashMessage, downloadWeights, modelRevisions, containersStatus, nodeSyncStatus, prepareDataDirs, mlnodeStatus, ensureMlnodeCompose, ensureGpuRuntime,
   feeBudget
 };

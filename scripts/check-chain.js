@@ -405,7 +405,23 @@ function commandsIn(html) {
       if (added.length) changed(`New model on the network: ${added.join(", ")}.`);
       if (gone.length) changed(`Model removed from the network: ${gone.join(", ")}.`);
     }
-  } else seen.models = was.models;
+    // The exact version of each model (hf_commit). The weights step reads it
+    // from the chain; knowledge.modelRevisions is only its fallback, so a pin
+    // that differs there is a warning, and a model with no pin at all would be
+    // downloaded as the newest files.
+    const pins = k.modelRevisions || {};
+    for (const m of models.models) {
+      const repo = m.hf_repo || m.id, commit = String(m.hf_commit || "");
+      if (!/^[0-9a-f]{40}$/.test(commit)) warnings.push(`The network names no exact version (hf_commit) for ${repo}: the weights step would download its newest files.`);
+      else if (pins[repo] !== commit) warnings.push(`knowledge.modelRevisions has ${pins[repo] ? pins[repo].slice(0, 12) : "no version"} for ${repo}, the network ${commit.slice(0, 12)}. The app reads the network's, but its fallback should be updated (knowledge.js or the manifest).`);
+    }
+    seen.revisions = Object.fromEntries(models.models.map((m) => [m.hf_repo || m.id, m.hf_commit || null]));
+    if (was.revisions) {
+      for (const [repo, commit] of Object.entries(seen.revisions)) {
+        if (was.revisions[repo] && commit && was.revisions[repo] !== commit) changed(`The network approved a new version of ${repo}: ${commit.slice(0, 12)} (was ${was.revisions[repo].slice(0, 12)}).`);
+      }
+    }
+  } else { seen.models = was.models; seen.revisions = was.revisions; }
 
   const gov = (await get(`${seed}/chain-api/cosmos/gov/v1/proposals?pagination.reverse=true&pagination.limit=8`)).json;
   if (gov && Array.isArray(gov.proposals)) {

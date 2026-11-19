@@ -26,7 +26,11 @@ async function getJson(url, timeout = 12000) {
 async function governanceModels(seed) {
   const k = K.get();
   const j = await getJson(seed + k.api.governanceModels);
-  return (j.models || []).map((m) => ({ id: m.id, args: m.model_args || m.args || null, v_ram: m.v_ram || null }));
+  return (j.models || []).map((m) => ({
+    id: m.id, args: m.model_args || m.args || null, v_ram: m.v_ram || null,
+    // The exact version the network approved (a Hugging Face commit).
+    hfRepo: m.hf_repo || m.id, hfCommit: /^[0-9a-f]{40}$/.test(String(m.hf_commit || "")) ? m.hf_commit : null
+  }));
 }
 
 async function participant(seed, address) {

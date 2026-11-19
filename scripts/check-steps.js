@@ -249,7 +249,8 @@ async function findPage() {
       const seen = [], texts = [];
       for (let i = 0; i < 16; i++) { await new Promise((r) => setTimeout(r, 250)); seen.push(shownNow()); texts.push(document.querySelector("#epoch-text").textContent); }
       const never = seen.every((v, i) => i === 0 || v < seen[i - 1]);
-      const secs = texts.map((x) => Number((x.match(/(\\d\\d)s/) || [])[1]));
+      // "1m 00s" is 60 seconds, not 0: read the minutes too.
+      const secs = texts.map((x) => { const m = x.match(/(?:(\\d+)m\\s*)?(\\d\\d?)s/); return m ? Number(m[1] || 0) * 60 + Number(m[2]) : NaN; });
       const noBack = secs.every((v, i) => i === 0 || v <= secs[i - 1]);
       const closer = (pocTrue.etaMs - (Date.now() - pocTrue.at)) - shownNow();
       // A big difference (another epoch) is taken at once.

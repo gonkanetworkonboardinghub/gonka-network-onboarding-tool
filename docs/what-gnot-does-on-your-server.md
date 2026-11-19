@@ -117,7 +117,9 @@ Code: `src/services/fixes.js`.
     is (5000, your API port, 8443, 9200, 30303) is never moved: GNOT names
     the program that holds it and the command that stops it.
 14. **Launch.** Starts everything (`docker compose ... up -d`) and downloads
-    the model's weights from Hugging Face into the model cache folder.
+    the model's weights from Hugging Face into the model cache folder, at the
+    exact version the Gonka network approved (`hf download <model> --revision
+    <commit>`, the commit read from the network's model list).
 15. **Collateral, if you choose it.** Signed on your computer with your
     wallet.
 

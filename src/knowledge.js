@@ -298,6 +298,21 @@ const overridable = {
   // Default HF cache dir on the server.
   hfHome: "/mnt/shared",
 
+  // The exact version (Hugging Face commit) of each model the network approved.
+  // The weights step reads them from the chain itself (/v1/governance/models,
+  // hf_commit), and Gonka's quickstart pins the same ones with
+  // `hf download <model> --revision <commit>`. This list is only the fallback
+  // for when no public node answers; the manifest can update it without a
+  // release, and scripts/check-chain.js says when the chain's pins differ.
+  // Read from the chain on 2026-11-18.
+  modelRevisions: {
+    "MiniMaxAI/MiniMax-M2.7": "d494266a4affc0d2995ba1fa35c8481cbd84294b",
+    "deepseek-ai/DeepSeek-V4-Flash-0731": "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
+    "moonshotai/Kimi-K2.6": "5a49d036ab7472b7d5912ded487150ec1358c11d",
+    "zai-org/GLM-5.2-FP8": "70311cfa0158cce7dd2cf5d2e04f68e3fdc3efc1",
+    "zai-org/GLM-5.3-Flash": "04c4e9e95c5da8862dced7e5056455116f83a7e0"
+  },
+
   // Collateral: recommended buffer multiplier over network max weight.
   collateralBufferX: 2,
 
