@@ -1,54 +1,14 @@
 {
-  "asOf": "2026-11-20T00:42:37.211Z",
+  "asOf": "2026-11-20T07:49:41.312Z",
   "providers": [
     {
       "id": "spheron",
       "name": "Spheron",
       "site": "https://www.spheron.network/",
-      "at": "2026-11-20T00:42:36.739Z",
-      "offers": 74,
+      "at": "2026-11-20T07:49:40.967Z",
+      "offers": 56,
       "error": null,
       "rows": [
-        {
-          "gpuClass": "H200",
-          "gpuCount": 2,
-          "runs": [
-            {
-              "model": "MiniMaxAI/MiniMax-M2.7",
-              "copies": 1,
-              "breakEvenPerHour": 4.169358284531904,
-              "gnkPerDay": 625.8185341403458,
-              "usdPerDay": 100.0645988287657,
-              "range": null
-            },
-            {
-              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "copies": 1,
-              "breakEvenPerHour": 2.0917675006055263,
-              "gnkPerDay": 313.97322601128656,
-              "usdPerDay": 50.202420014532635,
-              "range": null
-            }
-          ],
-          "offers": 3,
-          "best": {
-            "provider": "Spheron",
-            "gpu": "H200",
-            "gpuName": "H200 SXM5",
-            "gpus": 2,
-            "gpuGB": 141,
-            "ramGB": 600,
-            "diskGB": 1000,
-            "cpus": 56,
-            "region": "noida-india",
-            "pricePerHour": 11.184,
-            "cuda": "13.0",
-            "short": []
-          },
-          "cheapest": null,
-          "gapPerDay": -168.3514011712343,
-          "gapRange": null
-        },
         {
           "gpuClass": "A100",
           "gpuCount": 8,
@@ -56,13 +16,13 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 2,
-              "breakEvenPerHour": 4.56639099512411,
-              "gnkPerDay": 685.4129397999397,
-              "usdPerDay": 109.59338388297866,
+              "breakEvenPerHour": 4.579530037924399,
+              "gnkPerDay": 687.4204039717938,
+              "usdPerDay": 109.90872091018556,
               "range": null
             }
           ],
-          "offers": 9,
+          "offers": 11,
           "best": {
             "provider": "Spheron",
             "gpu": "A100",
@@ -78,47 +38,47 @@
             "short": []
           },
           "cheapest": null,
-          "gapPerDay": -201.4466161170214,
+          "gapPerDay": -201.13127908981443,
           "gapRange": null
         },
         {
           "gpuClass": "H200",
-          "gpuCount": 4,
+          "gpuCount": 8,
           "runs": [
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
-              "copies": 2,
-              "breakEvenPerHour": 8.338716569063807,
-              "gnkPerDay": 1251.6370682806917,
-              "usdPerDay": 200.1291976575314,
+              "copies": 4,
+              "breakEvenPerHour": 16.72541972272687,
+              "gnkPerDay": 2510.6058235630067,
+              "usdPerDay": 401.41007334544486,
               "range": null
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "copies": 2,
-              "breakEvenPerHour": 4.183535001211053,
-              "gnkPerDay": 627.9464520225731,
-              "usdPerDay": 100.40484002906527,
+              "copies": 4,
+              "breakEvenPerHour": 8.391144877086193,
+              "gnkPerDay": 1259.5712122038633,
+              "usdPerDay": 201.3874770500686,
               "range": null
             }
           ],
-          "offers": 3,
+          "offers": 4,
           "best": {
             "provider": "Spheron",
             "gpu": "H200",
             "gpuName": "H200 SXM5",
-            "gpus": 4,
+            "gpus": 8,
             "gpuGB": 141,
-            "ramGB": 1200,
-            "diskGB": 1000,
-            "cpus": 112,
-            "region": "noida-india",
-            "pricePerHour": 22.2,
+            "ramGB": 1904,
+            "diskGB": 30000,
+            "cpus": 208,
+            "region": "tokyo-japan-5",
+            "pricePerHour": 38.4,
             "cuda": "13.0",
             "short": []
           },
           "cheapest": null,
-          "gapPerDay": -332.6708023424686,
+          "gapPerDay": -520.1899266545552,
           "gapRange": null
         },
         {
@@ -128,9 +88,9 @@
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 1,
-              "breakEvenPerHour": 2.283195497562055,
-              "gnkPerDay": 342.7064698999699,
-              "usdPerDay": 54.79669194148933,
+              "breakEvenPerHour": 2.2897650189621994,
+              "gnkPerDay": 343.7102019858969,
+              "usdPerDay": 54.95436045509278,
               "range": null
             }
           ],
@@ -156,123 +116,29 @@
           "gapRange": null
         },
         {
-          "gpuClass": "B300",
-          "gpuCount": 1,
-          "runs": [
-            {
-              "model": "MiniMaxAI/MiniMax-M2.7",
-              "copies": 1,
-              "breakEvenPerHour": 1.9707473984508423,
-              "gnkPerDay": 295.80817092044964,
-              "usdPerDay": 47.297937562820216,
-              "range": null
-            },
-            {
-              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "copies": 1,
-              "breakEvenPerHour": 1.9510770549061336,
-              "gnkPerDay": 292.8556624711623,
-              "usdPerDay": 46.825849317747206,
-              "range": {
-                "low": 291.60060896152993,
-                "high": 389.4188080864359
-              }
-            }
-          ],
-          "offers": 1,
-          "best": null,
-          "cheapest": {
-            "provider": "Spheron",
-            "gpu": "B300",
-            "gpuName": "B300 SXM6",
-            "gpus": 1,
-            "gpuGB": 262,
-            "ramGB": 346,
-            "diskGB": 512,
-            "cpus": 24,
-            "region": "UK South 1",
-            "pricePerHour": 12.415000000000001,
-            "cuda": "13.0",
-            "short": [
-              "memory",
-              "disk"
-            ]
-          },
-          "gapPerDay": null,
-          "gapRange": null
-        },
-        {
-          "gpuClass": "H100",
-          "gpuCount": 4,
-          "runs": [
-            {
-              "model": "MiniMaxAI/MiniMax-M2.7",
-              "copies": 1,
-              "breakEvenPerHour": 2.347508365174796,
-              "gnkPerDay": 352.3597982515021,
-              "usdPerDay": 56.34020076419511,
-              "range": {
-                "low": 259.61253872429063,
-                "high": 438.88199095854304
-              }
-            },
-            {
-              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "copies": 1,
-              "breakEvenPerHour": 1.6024701529202137,
-              "gnkPerDay": 240.5299457772013,
-              "usdPerDay": 38.45928367008513,
-              "range": {
-                "low": 114.80587066829081,
-                "high": 315.4450604119571
-              }
-            }
-          ],
-          "offers": 1,
-          "best": null,
-          "cheapest": {
-            "provider": "Spheron",
-            "gpu": "H100",
-            "gpuName": "H100 SXM5",
-            "gpus": 4,
-            "gpuGB": 80,
-            "ramGB": 900,
-            "diskGB": 11264,
-            "cpus": 104,
-            "region": "dallas-usa-3",
-            "pricePerHour": 19.632,
-            "cuda": "12.4",
-            "short": [
-              "driver"
-            ]
-          },
-          "gapPerDay": null,
-          "gapRange": null
-        },
-        {
           "gpuClass": "H100",
           "gpuCount": 8,
           "runs": [
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 2,
-              "breakEvenPerHour": 4.695016730349592,
-              "gnkPerDay": 704.7195965030043,
-              "usdPerDay": 112.68040152839022,
+              "breakEvenPerHour": 4.708525872653438,
+              "gnkPerDay": 706.7836067646082,
+              "usdPerDay": 113.00462094368251,
               "range": {
-                "low": 519.2250774485813,
-                "high": 877.7639819170861
+                "low": 520.745804122359,
+                "high": 880.3348113291436
               }
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 2,
-              "breakEvenPerHour": 3.2049403058404273,
-              "gnkPerDay": 481.0598915544026,
-              "usdPerDay": 76.91856734017026,
+              "breakEvenPerHour": 3.2141619970831985,
+              "gnkPerDay": 482.4688385420293,
+              "usdPerDay": 77.13988792999676,
               "range": {
-                "low": 229.61174133658162,
-                "high": 630.8901208239142
+                "low": 230.28423716705828,
+                "high": 632.7378964353585
               }
             }
           ],
@@ -302,19 +168,19 @@
           "gpuCount": 8,
           "runs": [
             {
-              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+              "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 4,
-              "breakEvenPerHour": 16.688495717773062,
-              "gnkPerDay": 2504.934624076502,
-              "usdPerDay": 400.52389722655346,
+              "breakEvenPerHour": 16.736514133134857,
+              "gnkPerDay": 2512.271174378774,
+              "usdPerDay": 401.67633919523655,
               "range": null
             },
             {
-              "model": "MiniMaxAI/MiniMax-M2.7",
+              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 4,
-              "breakEvenPerHour": 16.688495717773062,
-              "gnkPerDay": 2504.934624076502,
-              "usdPerDay": 400.52389722655346,
+              "breakEvenPerHour": 16.736514133134857,
+              "gnkPerDay": 2512.271174378774,
+              "usdPerDay": 401.67633919523655,
               "range": null
             }
           ],
@@ -342,25 +208,55 @@
         },
         {
           "gpuClass": "B300",
+          "gpuCount": 1,
+          "runs": [
+            {
+              "model": "MiniMaxAI/MiniMax-M2.7",
+              "copies": 1,
+              "breakEvenPerHour": 1.9764179015778087,
+              "gnkPerDay": 296.67454543774113,
+              "usdPerDay": 47.43402963786741,
+              "range": null
+            },
+            {
+              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+              "copies": 1,
+              "breakEvenPerHour": 1.9566909598385942,
+              "gnkPerDay": 293.713389566462,
+              "usdPerDay": 46.96058303612626,
+              "range": {
+                "low": 292.45466020712206,
+                "high": 390.5593530917692
+              }
+            }
+          ],
+          "offers": 0,
+          "best": null,
+          "cheapest": null,
+          "gapPerDay": null,
+          "gapRange": null
+        },
+        {
+          "gpuClass": "B300",
           "gpuCount": 8,
           "runs": [
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 8,
-              "breakEvenPerHour": 15.765979187606739,
-              "gnkPerDay": 2366.465367363597,
-              "usdPerDay": 378.38350050256173,
+              "breakEvenPerHour": 15.81134321262247,
+              "gnkPerDay": 2373.396363501929,
+              "usdPerDay": 379.4722371029393,
               "range": null
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 8,
-              "breakEvenPerHour": 15.608616439249069,
-              "gnkPerDay": 2342.8452997692984,
-              "usdPerDay": 374.60679454197765,
+              "breakEvenPerHour": 15.653527678708754,
+              "gnkPerDay": 2349.707116531696,
+              "usdPerDay": 375.6846642890101,
               "range": {
-                "low": 2332.8048716922394,
-                "high": 3115.350464691487
+                "low": 2339.6372816569765,
+                "high": 3124.4748247341536
               }
             }
           ],
@@ -375,19 +271,19 @@
           "gpuCount": 2,
           "runs": [
             {
-              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+              "model": "MiniMaxAI/MiniMax-M2.7",
               "copies": 1,
-              "breakEvenPerHour": 4.1721239294432655,
-              "gnkPerDay": 626.2336560191255,
-              "usdPerDay": 100.13097430663836,
+              "breakEvenPerHour": 4.184128533283714,
+              "gnkPerDay": 628.0677935946935,
+              "usdPerDay": 100.41908479880914,
               "range": null
             },
             {
-              "model": "MiniMaxAI/MiniMax-M2.7",
+              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
               "copies": 1,
-              "breakEvenPerHour": 4.1721239294432655,
-              "gnkPerDay": 626.2336560191255,
-              "usdPerDay": 100.13097430663836,
+              "breakEvenPerHour": 4.184128533283714,
+              "gnkPerDay": 628.0677935946935,
+              "usdPerDay": 100.41908479880914,
               "range": null
             }
           ],
@@ -399,23 +295,56 @@
         },
         {
           "gpuClass": "H200",
-          "gpuCount": 8,
+          "gpuCount": 2,
           "runs": [
             {
               "model": "MiniMaxAI/MiniMax-M2.7",
-              "copies": 4,
-              "breakEvenPerHour": 16.677433138127615,
-              "gnkPerDay": 2503.2741365613833,
-              "usdPerDay": 400.2583953150628,
+              "copies": 1,
+              "breakEvenPerHour": 4.181354930681717,
+              "gnkPerDay": 627.6514558907517,
+              "usdPerDay": 100.35251833636121,
               "range": null
             },
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "copies": 4,
-              "breakEvenPerHour": 8.367070002422105,
-              "gnkPerDay": 1255.8929040451462,
-              "usdPerDay": 200.80968005813054,
+              "copies": 1,
+              "breakEvenPerHour": 2.097786219271548,
+              "gnkPerDay": 314.8928030509658,
+              "usdPerDay": 50.34686926251715,
               "range": null
+            }
+          ],
+          "offers": 0,
+          "best": null,
+          "cheapest": null,
+          "gapPerDay": null,
+          "gapRange": null
+        },
+        {
+          "gpuClass": "H100",
+          "gpuCount": 4,
+          "runs": [
+            {
+              "model": "MiniMaxAI/MiniMax-M2.7",
+              "copies": 1,
+              "breakEvenPerHour": 2.354262936326719,
+              "gnkPerDay": 353.3918033823041,
+              "usdPerDay": 56.502310471841255,
+              "range": {
+                "low": 260.3729020611795,
+                "high": 440.1674056645718
+              }
+            },
+            {
+              "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+              "copies": 1,
+              "breakEvenPerHour": 1.6070809985415992,
+              "gnkPerDay": 241.23441927101464,
+              "usdPerDay": 38.56994396499838,
+              "range": {
+                "low": 115.14211858352914,
+                "high": 316.36894821767925
+              }
             }
           ],
           "offers": 0,
@@ -433,28 +362,9 @@
           "runs": [
             {
               "model": "zai-org/GLM-5.3-Flash",
-              "breakEvenPerHour": 31.772604910665446,
-              "gnkPerDay": 4769.051655930159,
-              "usdPerDay": 762.5425178559707,
-              "range": null
-            }
-          ],
-          "offers": 0,
-          "best": null,
-          "cheapest": null,
-          "gapPerDay": null,
-          "gapRange": null
-        },
-        {
-          "gpuClass": "H20",
-          "gpuCount": 4,
-          "own": true,
-          "runs": [
-            {
-              "model": "MiniMaxAI/MiniMax-M2.7",
-              "breakEvenPerHour": 9.12825412506757,
-              "gnkPerDay": 1370.1462493650176,
-              "usdPerDay": 219.0780990016217,
+              "breakEvenPerHour": 31.864025381720953,
+              "gnkPerDay": 4783.019440570752,
+              "usdPerDay": 764.7366091613029,
               "range": null
             }
           ],
@@ -471,13 +381,48 @@
           "runs": [
             {
               "model": "zai-org/GLM-5.3-Flash",
-              "breakEvenPerHour": 7.461481826357944,
-              "gnkPerDay": 1119.9645845764512,
-              "usdPerDay": 179.07556383259066,
+              "breakEvenPerHour": 7.482951019244574,
+              "gnkPerDay": 1123.2447805674094,
+              "usdPerDay": 179.59082446186977,
               "range": {
-                "low": 1100.5015768075732,
-                "high": 1828.196744446816
+                "low": 1103.724768781677,
+                "high": 1833.5512384320746
               }
+            }
+          ],
+          "offers": 4,
+          "best": {
+            "provider": "Spheron",
+            "gpu": "H200",
+            "gpuName": "H200 SXM5",
+            "gpus": 8,
+            "gpuGB": 141,
+            "ramGB": 1904,
+            "diskGB": 30000,
+            "cpus": 208,
+            "region": "tokyo-japan-5",
+            "pricePerHour": 38.4,
+            "cuda": "13.0",
+            "short": []
+          },
+          "cheapest": null,
+          "gapPerDay": -742.0091755381302,
+          "gapRange": {
+            "low": -745.1301470937105,
+            "high": -628.4413009346389
+          }
+        },
+        {
+          "gpuClass": "H20",
+          "gpuCount": 3,
+          "own": true,
+          "runs": [
+            {
+              "model": "MiniMaxAI/MiniMax-M2.7",
+              "breakEvenPerHour": 6.832513670425066,
+              "gnkPerDay": 1025.6094552433942,
+              "usdPerDay": 163.9803280902016,
+              "range": null
             }
           ],
           "offers": 0,
@@ -493,9 +438,9 @@
           "runs": [
             {
               "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-              "breakEvenPerHour": 4.189020863792968,
-              "gnkPerDay": 628.7698771746514,
-              "usdPerDay": 100.53650073103123,
+              "breakEvenPerHour": 4.20107408579683,
+              "gnkPerDay": 630.611442933736,
+              "usdPerDay": 100.82577805912393,
               "range": null
             }
           ],
