@@ -242,12 +242,16 @@ async function modelChoices(seeds) {
     hosts.push({ address: h.address, weight: h.weight, models: h.models, choices, read: !!d, listed: listed.has(h.address) });
   }
   const total = hosts.reduce((a, h) => a + h.weight, 0);
+  // How long each host has been there and run each model, how many requests it
+  // missed, and its GPUs on the model (the data job's files; empty when unknown).
+  const [byEpoch, file] = await Promise.all([epochArchive().catch(() => null), networkFile().catch(() => null)]);
   const byModel = {};
   for (const model of counted.map((c) => c.id)) {
     byModel[model] = hosts.filter((h) => h.models.includes(model)).map((h) => {
       const from = hosts.filter((o) => o.address !== h.address && o.choices[model] && o.choices[model].mode === "delegate" && o.choices[model].to === h.address);
       const w = from.reduce((a, o) => a + o.weight, 0);
-      return { address: h.address, weight: h.weight, delegatedBy: from.length, delegatedWeight: w, delegatedShare: total ? w / total : 0, listed: h.listed };
+      return { address: h.address, weight: h.weight, delegatedBy: from.length, delegatedWeight: w, delegatedShare: total ? w / total : 0, listed: h.listed,
+        ...hostRecord(h.address, model, byEpoch, archive.ran, file) };
     }).sort((a, b) => b.weight - a.weight);
   }
   const data = { epoch: m.epoch, total, rates, counted, hosts, byModel, at: Date.now() };
@@ -270,7 +274,7 @@ async function choicesOf(seeds, address) {
  * pace the node accepts, so the app does not have to ask thirty questions to
  * draw one chart. Kept in memory for ten minutes. null when it cannot be had.
  */
-let archive = { at: 0, byEpoch: null, began: {} };
+let archive = { at: 0, byEpoch: null, began: {}, ran: {} };
 async function epochArchive() {
   const url = K.get().epochsUrl;
   if (!url) return null;
@@ -279,9 +283,47 @@ async function epochArchive() {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return archive.byEpoch;
     const file = await res.json();
-    archive = { at: Date.now(), byEpoch: unpackEpochs(file), began: epochStarts(file) };
+    archive = { at: Date.now(), byEpoch: unpackEpochs(file), began: epochStarts(file), ran: modelsRun(file) };
   } catch (_) { /* keep whatever was read before */ }
   return archive.byEpoch;
+}
+/** epoch -> { model: Set of the hosts that ran it }, for the epochs the file has that for (its `m`). */
+function modelsRun(file) {
+  const hosts = (file && file.hosts) || [], models = (file && file.models) || [], out = {};
+  for (const e of (file && file.epochs) || []) {
+    if (!e.m) continue;
+    out[e.e] = {};
+    for (const [mi, list] of e.m) if (models[mi]) out[e.e][models[mi]] = new Set(list.map((i) => hosts[i]).filter(Boolean));
+  }
+  return out;
+}
+/**
+ * What the delegation list says about a host, from the epochs file and the
+ * network file, all as the network recorded it:
+ *   epochs       how many of the file's epochs it took part in (plus: it was
+ *                there in the file's first one, so it may be longer)
+ *   modelEpochs  how many epochs it ran `model` (modelPlus: the same, for the
+ *                first epoch the file knows models for); null when not known
+ *   missedShare  requests it missed in the last 10 epochs, of all it was sent
+ *   gpus         GPUs it reports on working machines that serve `model`
+ *   answers      whether its public address answered at the data job's last check
+ */
+function hostRecord(address, model, byEpoch, ran, file) {
+  const eps = Object.keys(byEpoch || {}).map(Number).sort((a, b) => a - b);
+  const inIt = eps.filter((e) => byEpoch[e].some((r) => r.address === address));
+  const mEps = Object.keys(ran || {}).map(Number).sort((a, b) => a - b);
+  const mIn = mEps.filter((e) => ran[e][model] && ran[e][model].has(address));
+  let sent = 0, missed = 0;
+  for (const e of eps.slice(-10)) for (const r of byEpoch[e]) if (r.address === address) { sent += r.requests + r.missed; missed += r.missed; }
+  const h = file && file.hosts && file.hosts[address];
+  const reach = file && file.reach && file.reach.hosts && file.reach.hosts[address];
+  return {
+    epochs: eps.length ? inIt.length : null, epochsPlus: !!(eps.length && inIt[0] === eps[0]),
+    modelEpochs: mEps.length ? mIn.length : null, modelPlus: !!(mEps.length && mIn[0] === mEps[0]),
+    missedShare: sent > 0 ? missed / sent : null,
+    gpus: h && h.models && h.models[model] != null ? h.models[model] : null,
+    answers: reach ? !!reach.ok : null      // its public address at the data job's last check
+  };
 }
 /** epoch -> when it began (Unix seconds), for the epochs the file has dated. */
 function epochStarts(file) {
@@ -1182,5 +1224,5 @@ module.exports = {
   proposals, voteOf,
   looksLikeAddress, loadNodes, saveNodes, loadVotes, rememberVote,
   attention, recentTrouble,
-  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere }
+  _internal: { median, place, epochLine, missedShare, invalidShare, tidyProposal, askedIn, payoutsIn, ask, clearlyMore, beside, unpackEpochs, joinedAt, settleKnock, knockHere, hostRecord, modelsRun }
 };

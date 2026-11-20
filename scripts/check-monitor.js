@@ -133,6 +133,24 @@ const row = (address, rewarded, requests, missed, validated, invalidated, claime
     { address: B, rewarded: 9, earned: 0, requests: 4, missed: 0, validated: 4, invalidated: 0, claimed: false, burned: 0 }]);
   check("an empty or broken history file is just empty", [unpackEpochs(null), unpackEpochs({})], [{}, {}]);
 
+  /* ---- a host's record in the delegation list (2026-11-20) ---- */
+  const { hostRecord, modelsRun } = M._internal;
+  const hfile = { hosts: [ME, B], models: ["m/A", "m/B"], epochs: [
+    { e: 5, r: [[0, 1, 1, 90, 10, 0, 0, 1], [1, 1, 1, 50, 0, 0, 0, 1]], m: [[0, [0, 1]], [1, [1]]] },
+    { e: 6, r: [[0, 1, 1, 100, 0, 0, 0, 1]], m: [[0, [0]], [1, [0]]] },
+    { e: 7, r: [[0, 1, 1, 100, 0, 0, 0, 1], [1, 1, 1, 50, 0, 0, 0, 1]] }] };
+  const hRan = modelsRun(hfile), hBy = unpackEpochs(hfile);
+  const net = { hosts: { [ME]: { models: { "m/A": 16 } } }, reach: { hosts: { [B]: { ok: false } } } };
+  check("which hosts ran which model opens back per epoch", [...hRan[5]["m/A"]].sort(), [ME, B].sort());
+  check("an epoch read before models were kept has none", hRan[7], undefined);
+  check("a host's record: epochs, epochs with the model, missed share, GPUs", hostRecord(ME, "m/A", hBy, hRan, net),
+    { epochs: 3, epochsPlus: true, modelEpochs: 2, modelPlus: true, missedShare: 10 / 300, gpus: 16, answers: null });
+  check("a host that sat out an epoch, ran a model once, and did not answer", hostRecord(B, "m/B", hBy, hRan, net),
+    { epochs: 2, epochsPlus: true, modelEpochs: 1, modelPlus: true, missedShare: 0, gpus: null, answers: false });
+  check("a model it joined later is not counted from the first epoch", hostRecord(ME, "m/B", hBy, hRan, net).modelPlus, false);
+  check("with no files nothing is invented", hostRecord(ME, "m/A", null, null, null),
+    { epochs: null, epochsPlus: false, modelEpochs: null, modelPlus: false, missedShare: null, gpus: null, answers: null });
+
   /* ---- proposals ---- */
   const prop = tidyProposal({
     id: "9", title: "T", summary: "S", status: "PROPOSAL_STATUS_PASSED",

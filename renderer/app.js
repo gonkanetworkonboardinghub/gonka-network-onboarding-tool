@@ -1148,6 +1148,11 @@ RENDER.welcome = () => {
       let act = {};
       try { act = await api("modelActivity", { seed }); } catch (_) {}
       const hostsOf = (id) => (act[id] ? act[id].hosts : null);
+      // The model's part of the network's work, as the network measured it at its
+      // Proof of Compute (not what hosts report about themselves).
+      const shareOf = (id) => (act[id] && act[id].share != null ? act[id].share : null);
+      const shareText = (s) => (s === null ? "—" : s > 0 && s < 0.005 ? "<1%" : `${Math.round(s * 100)}%`);
+      const hostsLine = (id) => { const n = hostsOf(id); return n === null ? "" : n === 1 ? t("1 host runs it in this epoch") : t("{n} hosts run it in this epoch", { n }); };
       // Governance approval is not payment. A model can sit approved for weeks
       // while the network pays nobody to serve it (Kimi-K2.6 did), and renting
       // hardware for one of those earns nothing. The epoch's own model list is
@@ -1247,8 +1252,8 @@ RENDER.welcome = () => {
       };
       const split = (id) => { const i = String(id).indexOf("/"); return i > 0 ? [id.slice(i + 1), id.slice(0, i)] : [id, ""]; };
       const hostsBox = (id) => {
-        const n = hostsOf(id);
-        return `<div class="model-hosts${n === 0 ? " none" : ""}"><b>${n === null ? "—" : n}</b><span>${esc(t("hosts now"))}</span></div>`;
+        const n = hostsOf(id), s = shareOf(id);
+        return `<div class="model-hosts${n === 0 ? " none" : ""}" title="${esc(hostsLine(id))}"><b>${esc(n === 0 ? "0%" : shareText(s))}</b><span>${esc(t("of the network"))}</span></div>`;
       };
       const ids = (list) => list.map((id) => `<code>${esc(id)}</code>`).join(", ");
       const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
@@ -1274,7 +1279,7 @@ RENDER.welcome = () => {
         <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
           <p>${esc(t("Each line is a model the network pays hosts to run. The boxes are the GPU setups Gonka has a ready-made configuration for, for example 2 × H200. A server with more of the same GPU runs the setup once for every set, which is why whole 8-GPU servers are listed too."))}</p>
           <p>${esc(t("A word after the GPU, such as nvfp4, marks a variant of the same setup. nvfp4, for example, is a 4-bit build."))}</p>
-          <p>${esc(t("Hosts now: how many hosts run that model in this epoch, read live from the chain. One host can run several models."))}</p>
+          <p>${esc(t("Of the network: how much of the network's work runs on that model. The network measures it itself at every Proof of Compute, so it is not what hosts say about themselves. Point at the figure to see how many hosts run the model in this epoch."))}</p>
           <p>${esc(t("The list comes live from the network and Gonka's repository, so it changes by itself when Gonka adds a model or a GPU."))}</p>
         </div></details>
         ${notReady.length || unpaid.length ? `
@@ -1282,7 +1287,7 @@ RENDER.welcome = () => {
           ${notReady.length ? `${notReady.map((m) => {
             const su = setupsFor(m);
             return `<div class="why-model">
-              <div><code>${esc(m.id)}</code>${m.v_ram ? ` · <span dir="ltr">${m.v_ram} GB VRAM</span>` : ""}${hostsOf(m.id) !== null ? ` · ${hostsOf(m.id)} ${esc(t("hosts now"))}` : ""}</div>
+              <div><code>${esc(m.id)}</code>${m.v_ram ? ` · <span dir="ltr">${m.v_ram} GB VRAM</span>` : ""}${hostsOf(m.id) !== null ? ` · ${esc(t("{share} of the network", { share: hostsOf(m.id) === 0 ? "0%" : shareText(shareOf(m.id)) }))}` : ""}</div>
               ${su ? `<div class="chips-label">${esc(t(su.real ? "Hosts run it on now:" : "Fits, by memory alone:"))}</div>
                 <div class="gpu-chips">${su.list.map((s) => chipHtml({ model: m.id, gpu: s.gpu, kind: s.kind, count: s.count, custom: true, machines: s.machines })).join("")}</div>` : ""}
             </div>`;
@@ -2429,6 +2434,29 @@ const CHOICE_RATES = { delegate: 0.05, refuse: 0.10, none: 0.15 };
 const niceModel = (m) => String(m || "").split("/").pop().replace(/-0731$/, "");
 const shortAddr = (a) => (a && a.length > 20 ? `${a.slice(0, 12)}…${a.slice(-6)}` : a || "");
 const pct = (x) => `${Math.round(x * 100)}%`;
+/**
+ * A host's record, as the delegation list shows it (monitor.hostRecord, all as
+ * the network recorded it): epochs on the network and with the model ("180+"
+ * when it was there in the first epoch GNOT's file holds), requests missed in
+ * the last 10 epochs, GPUs it reports on the model. "" when nothing is known.
+ */
+function hostRecordLine(h) {
+  const n = (k, plus) => `${Number(k).toLocaleString(window.I18N.lang())}${plus ? "+" : ""}`;
+  const bits = [];
+  if (h.epochs) bits.push(t("on the network for {n} epochs", { n: n(h.epochs, h.epochsPlus) }));
+  if (h.modelEpochs) bits.push(t("has run it for {n} epochs", { n: n(h.modelEpochs, h.modelPlus) }));
+  if (h.missedShare != null) bits.push(t("missed {p} of its requests in the last 10 epochs", { p: h.missedShare > 0 && h.missedShare < 0.1 ? `${(h.missedShare * 100).toFixed(1)}%` : pct(h.missedShare) }));
+  if (h.gpus) bits.push(h.gpus === 1 ? t("1 GPU on it, as it reports") : t("{n} GPUs on it, as it reports", { n: n(h.gpus) }));
+  return bits.join(" · ");
+}
+/**
+ * GNOT's first choice among the hosts it may suggest: one that has run the model
+ * for 10 epochs or more, missed no more than 2% of its requests lately, runs it
+ * on more than one GPU, and whose address answered at the last check. What is
+ * not known yet does not count against a host.
+ */
+const provenHost = (h) => (h.modelEpochs == null || h.modelEpochs >= 10 || h.modelPlus)
+  && (h.missedShare == null || h.missedShare <= 0.02) && (h.gpus == null || h.gpus > 1) && h.answers !== false;
 function choiceRates(data) {
   const r = (data && data.rates) || {};
   return { delegate: r.delegate != null ? r.delegate : CHOICE_RATES.delegate, refuse: r.refuse != null ? r.refuse : CHOICE_RATES.refuse, none: r.none != null ? r.none : CHOICE_RATES.none };
@@ -2454,19 +2482,24 @@ function choiceKeeps(runs, choices, data) {
  * GNOT's suggestion: a host that runs the model and is in this epoch, not on
  * Gonka's own lists, not already carrying a tenth of the network in
  * delegations, big enough to stay (1% or more) and not one of the very
- * biggest (15% or more), since a delegation hands over a say. Among those,
- * each wallet gets its own (by its address), so GNOT's nodes spread out
- * instead of all landing on the same host.
+ * biggest (15% or more), since a delegation hands over a say; and of those,
+ * the proven ones first (provenHost: 10+ epochs on the model, few missed
+ * requests, more than one GPU on it). Among those, each wallet gets its own
+ * (by its address), so GNOT's nodes spread out instead of all landing on the
+ * same host.
  */
 function pickDelegate(model, data, self) {
   const list = ((data && data.byModel && data.byModel[model]) || []).filter((h) => h.address !== self);
   const share = (h) => (data && data.total ? h.weight / data.total : 0);
+  const first = list.filter((h) => !h.listed && h.delegatedShare < 0.10 && share(h) >= 0.01 && share(h) < 0.15);
+  // Within every tier, a host whose address answered at the last check comes first.
   const tiers = [
-    list.filter((h) => !h.listed && h.delegatedShare < 0.10 && share(h) >= 0.01 && share(h) < 0.15),
+    first.filter(provenHost),
+    first,
     list.filter((h) => !h.listed && h.delegatedShare < 0.10 && share(h) >= 0.01),
     list.filter((h) => !h.listed),
     list
-  ];
+  ].flatMap((x) => [x.filter((h) => h.answers !== false), x]);
   const pool = (tiers.find((x) => x.length) || []).slice().sort((a, b) => a.address.localeCompare(b.address));
   if (!pool.length) return null;
   let hsh = 0;
@@ -2529,7 +2562,8 @@ RENDER.choices = () => {
     return `<label class="choice-host${picked ? " picked" : ""}">
         <input type="radio" name="to-${esc(model)}" value="${esc(h.address)}" ${picked ? "checked" : ""}>
         <span><code title="${esc(h.address)}">${esc(shortAddr(h.address))}</code>
-        <span class="small">${esc(t("runs it, in this epoch · its own weight {own} of the network · {by}", { own: pct(own), by }))}${h.listed ? " · " + esc(t("on Gonka's own lists")) : ""}</span></span>
+        <span class="small">${esc(t("runs it, in this epoch · its own weight {own} of the network · {by}", { own: pct(own), by }))}${h.listed ? " · " + esc(t("on Gonka's own lists")) : ""}</span>
+        ${hostRecordLine(h) ? `<span class="small choice-record">${esc(hostRecordLine(h))}</span>` : ""}</span>
       </label>`;
   }
 

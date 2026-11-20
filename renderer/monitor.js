@@ -134,6 +134,7 @@ async function showMonitor(address) {
   if (address) monGo("node", address, "mine");
   else monGo("hub");
   if (!MON.timer) MON.timer = setInterval(monRefresh, MON_REFRESH_MS);
+  monWatchDelegates();
 }
 
 function leaveMonitor() {
@@ -167,6 +168,7 @@ function monGo(view, address, from) {
 
 function monRefresh() {
   if (!document.body.classList.contains("on-monitor")) return;
+  monWatchDelegates();
   if (MON.view === "network" || MON.view === "mine" || MON.view === "hub") monLoadOverview(true);
   // Never redraw under someone typing a passphrase.
   else if (MON.view === "votes") { if (!MON.ballot) monLoadProposals(); }
@@ -917,6 +919,7 @@ function monMineHtml() {
           ${fig(t("Last epoch"), h && h.lastReward !== null ? monGnkShort(h.lastReward) : "—")}
           ${fig(t("GPUs"), h && h.gpus !== null ? monNum(h.gpus) : "—")}
         </span>
+        ${monOwn(n) && monDelegateIssues(n.address).length ? `<span class="mon-nc-warn">⚠ ${esc(t("A host it chose for another model needs a look"))}</span>` : ""}
       </button>`;
   };
   const linkable = MON.keyNames.length && !MON.nodes.some(monOwn);
@@ -1716,11 +1719,65 @@ function monChoicesData() {
   const fresh = MON.choicesData && Date.now() - MON.choicesData.readAt < 3 * 60 * 1000;
   if (!fresh && !MON.choicesLoading) {
     MON.choicesLoading = true;
-    api("modelChoices").then((x) => { x.readAt = Date.now(); MON.choicesData = x; MON.choicesError = null; })
+    api("modelChoices").then((x) => { x.readAt = Date.now(); MON.choicesData = x; MON.choicesError = null; monWatchDelegates(); })
       .catch((e) => { MON.choicesError = e.message; })
       .finally(() => { MON.choicesLoading = false; if (!MON.choicesEdit || MON.choicesEdit.stage === "pick") monRenderMain(); });
   }
   return MON.choicesData || null;
+}
+
+/*
+ * Your nodes' chosen hosts, checked before every epoch. A delegation counts
+ * only while the chosen host runs that model in the epoch. While the tool is
+ * open, every host's choices are read again every 15 minutes, and each of your
+ * own nodes' delegates is looked at: one that no longer runs the model ("gone":
+ * it counts as no choice now), or whose address did not answer at the data
+ * job's last check ("quiet": it may miss the next epoch). The node's card and
+ * page say so, and a desktop notice says it once per epoch. Nothing changes
+ * without you: the page's button opens the choices with another host picked,
+ * and you send them with your passphrase.
+ */
+function monDelegateIssues(address) {
+  const cd = MON.choicesData;
+  const me = cd && cd.hosts.find((h) => h.address === address);
+  if (!me) return [];
+  const out = [];
+  for (const [model, c] of Object.entries(me.choices || {})) {
+    if (c.mode !== "delegate" || (me.models || []).includes(model) || !cd.counted.some((x) => x.id === model)) continue;
+    const h = (cd.byModel[model] || []).find((x) => x.address === c.to);
+    if (!h) out.push({ model, to: c.to, kind: "gone" });
+    else if (h.answers === false) out.push({ model, to: c.to, kind: "quiet" });
+  }
+  return out;
+}
+function monDelegateText(i) {
+  return i.kind === "gone"
+    ? t("Your chosen host for {m}, {h}, no longer runs it in this epoch, so your choice counts as no choice. Choose another host.", { m: monModel(i.model), h: monShort(i.to) })
+    : t("Your chosen host for {m}, {h}, did not answer at the network's last check. If it is not in the next epoch, your choice counts as no choice. You can choose another host now.", { m: monModel(i.model), h: monShort(i.to) });
+}
+function monWatchDelegates() {
+  const own = MON.nodes.filter(monOwn);
+  if (!own.length) return;
+  const cd = MON.choicesData && Date.now() - MON.choicesData.readAt < 15 * 60 * 1000 ? MON.choicesData : monChoicesData();
+  if (!cd) return;   // read now; this runs again when it comes in
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem("gnot.delegateNotices") || "{}"); } catch (_) { /* none kept */ }
+  let changed = false;
+  for (const n of own) for (const i of monDelegateIssues(n.address)) {
+    const key = `${n.address}|${i.model}|${i.to}|${i.kind}|${cd.epoch}`;
+    if (seen[key]) continue;
+    seen[key] = Date.now(); changed = true;
+    try {
+      const note = new Notification(t("{name}: a chosen host needs a look", { name: monName(n) }), { body: monDelegateText(i) });
+      note.onclick = () => { window.focus(); if (document.body.classList.contains("on-monitor")) monGo("node", n.address, "mine"); };
+    } catch (_) { /* no desktop notices here: the card and the page still say it */ }
+  }
+  if (changed) {
+    const cut = Date.now() - 30 * 24 * 3600 * 1000;
+    for (const k of Object.keys(seen)) if (seen[k] < cut) delete seen[k];
+    try { localStorage.setItem("gnot.delegateNotices", JSON.stringify(seen)); } catch (_) { /* said again next time */ }
+    if (MON.view === "mine") monRenderMain();
+  }
 }
 
 function monChoicesCard(d) {
@@ -1749,7 +1806,9 @@ function monChoicesCard(d) {
   const node = MON.nodes.find((n) => n.address === d.address);
   const own = monOwn(node);
   const ed = MON.choicesEdit && MON.choicesEdit.address === d.address ? MON.choicesEdit : null;
+  const issues = own ? monDelegateIssues(d.address) : [];
   return `<div class="card">${head}
+    ${issues.map((i) => `<p class="mon-deleg-warn ${i.kind === "gone" ? "bad" : "warn"}">⚠ ${esc(monDelegateText(i))}</p>`).join("")}
     <p>${bad ? `<span class="pill warn">${esc(t("A MODEL HAS NO CHOICE"))}</span> ` : ""}<span class="small">${esc(cd.counted.every((c) => runs.includes(c.id))
       ? t("It runs every model that counts: nothing is taken.")
       : k.keeps < best - 0.0001
@@ -1757,7 +1816,7 @@ function monChoicesCard(d) {
         : t("With its choices this node keeps {k} of its reward (with no choice at all: {w}).", { k: Math.round(k.keeps * 100) + "%", w: Math.round(k.without * 100) + "%" }))}</span></p>
     <div class="mon-table">${rows}</div>
     ${chosenBy.length ? `<p class="small">${esc(t("Other hosts have chosen this one: {list}.", { list: chosenBy.join(", ") }))}</p>` : ""}
-    ${own ? (ed ? monChoicesEditor(d, ed, runs, cd) : `<div class="btn-row" style="margin-top:8px"><button class="${bad ? "primary" : ""}" id="mon-choices-edit">${esc(bad ? t("Choose now") : t("Change the choices"))}</button></div>`)
+    ${own ? (ed ? monChoicesEditor(d, ed, runs, cd) : `<div class="btn-row" style="margin-top:8px"><button class="${bad || issues.length ? "primary" : ""}" id="mon-choices-edit">${esc(issues.length ? t("Choose another host") : bad ? t("Choose now") : t("Change the choices"))}</button></div>`)
       : node && !own && bad ? `<p class="small">${esc(t("Link this node's wallet to choose here."))}</p>` : ""}
   </div>`;
 }
@@ -1773,6 +1832,7 @@ function monChoicesEditor(d, ed, runs, cd) {
       <label class="choice-opt"><input type="radio" name="mc-${esc(c.id)}" value="delegate" ${p.mode === "delegate" ? "checked" : ""} ${hosts.length ? "" : "disabled"} ${ed.stage !== "pick" ? "disabled" : ""}>
         <span><b>${esc(t("Delegate"))}</b> (${esc(t("you keep {k}", { k: Math.round((1 - rates.delegate) * 100) + "%" }))}) ${esc(t("to"))}
         <select data-mc-to="${esc(c.id)}" ${p.mode === "delegate" && ed.stage === "pick" ? "" : "disabled"}>${hosts.map((h) => `<option value="${esc(h.address)}" ${p.to === h.address ? "selected" : ""}>${esc(monShort(h.address))} · ${esc(t("{own} of the network, chosen by {n}", { own: Math.round((cd.total ? h.weight / cd.total : 0) * 100) + "%", n: h.delegatedBy }))}</option>`).join("")}</select></span></label>
+      ${p.mode === "delegate" && hosts.some((h) => h.address === p.to) && hostRecordLine(hosts.find((h) => h.address === p.to)) ? `<div class="small choice-record">${esc(hostRecordLine(hosts.find((h) => h.address === p.to)))}</div>` : ""}
       <label class="choice-opt"><input type="radio" name="mc-${esc(c.id)}" value="refuse" ${p.mode === "refuse" ? "checked" : ""} ${ed.stage !== "pick" ? "disabled" : ""}>
         <span><b>${esc(t("Refuse"))}</b> (${esc(t("you keep {k}", { k: Math.round((1 - rates.refuse) * 100) + "%" }))})</span></label>
     </div>`;
@@ -1810,7 +1870,8 @@ function monWireChoices(main) {
     for (const c of cd.counted) {
       if (runs.includes(c.id)) continue;
       const dl = d.poc.delegations.find((x) => x.model === c.id), rf = d.poc.refusals.find((x) => x.model === c.id);
-      const stillRuns = dl && (cd.byModel[c.id] || []).some((h) => h.address === dl.to);
+      // A host that left, or whose address did not answer at the last check, is replaced by GNOT's pick (shown before anything is sent).
+      const stillRuns = dl && (cd.byModel[c.id] || []).some((h) => h.address === dl.to && h.answers !== false);
       picks[c.id] = rf ? { mode: "refuse" } : stillRuns ? { mode: "delegate", to: dl.to } : { mode: "delegate", to: pickDelegate(c.id, cd, node && node.address) };
     }
     MON.choicesEdit = { address: d.address, stage: "pick", picks };

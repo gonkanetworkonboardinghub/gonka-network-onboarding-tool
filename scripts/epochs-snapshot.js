@@ -30,6 +30,13 @@
  * time of its Proof of Compute's first block, in Unix seconds, so the charts
  * can say when an epoch was. Epochs read before `t` existed get it filled in
  * with whatever questions a run has left over.
+ *
+ * And `m`, which hosts ran which model that epoch: [[model, [host, …]], …],
+ * models listed once in `models` like the addresses. Read from each model's
+ * own member list (epoch_group_data/<epoch>?model_id=<model>), one question a
+ * model, so the delegation list can say how long a host has run a model
+ * (2026-11-20). Epochs read before `m` existed get it filled in, newest first,
+ * with the questions a run has left over.
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
@@ -95,14 +102,32 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
   if (!seed) throw new Error("no Gonka node gave past results");
 
   // What the previous file already holds, back in plain form.
-  const have = {}, began = {};
+  const have = {}, began = {}, ran = {};      // ran: epoch -> { model: [address, …] }
   try {
     const prev = JSON.parse(fs.readFileSync(prevPath, "utf8"));
     for (const e of prev.epochs || []) {
       have[e.e] = e.r.map((r) => [prev.hosts[r[0]], ...r.slice(1)]);
       if (e.t) began[e.e] = e.t;
+      if (e.m && prev.models) {
+        ran[e.e] = {};
+        for (const [mi, list] of e.m) ran[e.e][prev.models[mi]] = list.map((i) => prev.hosts[i]).filter(Boolean);
+      }
     }
   } catch (_) { /* first run */ }
+
+  /** Which hosts ran each of the epoch's models, from each model's own member list. null if one could not be read. */
+  async function modelsOf(e, group) {
+    const models = ((group && group.epoch_group_data && group.epoch_group_data.sub_group_models) || []);
+    if (!models.length || models.length > budgetLeft()) return null;
+    const out = {};
+    for (const model of models) {
+      const g = await getJson(`${seed}${INF}/epoch_group_data/${e}?model_id=${encodeURIComponent(model)}`);
+      const list = (g && g.epoch_group_data && g.epoch_group_data.validation_weights) || null;
+      if (!list) return null;
+      out[model] = list.map((m) => m.member_address).filter(Boolean);
+    }
+    return out;
+  }
 
   /** When an epoch began: the time of the block its Proof of Compute started at. */
   async function startOf(group) {
@@ -131,6 +156,7 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
       if (j && j.epochPerformanceSummary) rows.push(toRow(j.epochPerformanceSummary));
     }
     if (rows.length && !began[e]) { try { const t = await startOf(group); if (t) began[e] = t; } catch (_) { /* filled in later */ } }
+    if (rows.length && !ran[e]) { try { const m = await modelsOf(e, group); if (m) ran[e] = m; } catch (_) { /* filled in later */ } }
     return rows.length ? rows : null;
   }
 
@@ -169,16 +195,33 @@ const toRow = (s) => [s.participant_id, Number(s.rewarded_coins) || 0, Number(s.
     } catch (err) { console.error(`epoch ${e} start: ${err.message}`); }
   }
 
-  // Back to the compact form: each address once.
-  const hosts = [], at = new Map();
+  // 4. Which hosts ran which model, for the held epochs read before that was
+  //    kept: one question for the epoch's record, then one a model, newest first.
+  let modelled = 0;
+  for (let e = last; e >= first; e--) {
+    if (!have[e] || ran[e]) continue;
+    if (budgetLeft() < 6) break;
+    try {
+      const m = await modelsOf(e, await getJson(`${seed}${INF}/epoch_group_data/${e}`));
+      if (m) { ran[e] = m; modelled++; }
+    } catch (err) { console.error(`epoch ${e} models: ${err.message}`); }
+  }
+
+  // Back to the compact form: each address and each model once.
+  const hosts = [], at = new Map(), models = [], mat = new Map();
   const id = (address) => { if (!at.has(address)) { at.set(address, hosts.length); hosts.push(address); } return at.get(address); };
+  const mid = (model) => { if (!mat.has(model)) { mat.set(model, models.length); models.push(model); } return mat.get(model); };
   const epochs = [];
-  for (let e = first; e <= last; e++) if (have[e]) epochs.push({ e, ...(began[e] ? { t: began[e] } : {}), r: have[e].map((r) => [id(r[0]), ...r.slice(1)]) });
+  for (let e = first; e <= last; e++) {
+    if (!have[e]) continue;
+    const m = ran[e] ? Object.entries(ran[e]).map(([model, list]) => [mid(model), list.map(id)]) : null;
+    epochs.push({ e, ...(began[e] ? { t: began[e] } : {}), r: have[e].map((r) => [id(r[0]), ...r.slice(1)]), ...(m ? { m } : {}) });
+  }
   if (!epochs.length) throw new Error("nothing could be read");
 
-  const out = { asOf: new Date().toISOString(), from: epochs[0].e, to: epochs[epochs.length - 1].e, hosts, epochs };
+  const out = { asOf: new Date().toISOString(), from: epochs[0].e, to: epochs[epochs.length - 1].e, hosts, models, epochs };
   fs.writeFileSync(outPath, JSON.stringify(out) + "\n");
   const missing = last - first + 1 - epochs.length;
-  console.log(`epochs ${out.from}-${out.to}: ${epochs.length} held (${epochs.filter((x) => x.t).length} dated, ${dated} this run), ${filled} filled in and ${rechecked} claims re-checked this run ` +
+  console.log(`epochs ${out.from}-${out.to}: ${epochs.length} held (${epochs.filter((x) => x.t).length} dated, ${dated} this run; ${epochs.filter((x) => x.m).length} with their models, ${modelled} this run), ${filled} filled in and ${rechecked} claims re-checked this run ` +
     `(${asked} questions), ${missing} still missing${stopped ? " — out of questions for this run, the next run goes on" : ""}; ${hosts.length} hosts, ${fs.statSync(outPath).size} bytes`);
 })().catch((e) => { console.error("epochs-snapshot failed: " + e.message); process.exit(1); });

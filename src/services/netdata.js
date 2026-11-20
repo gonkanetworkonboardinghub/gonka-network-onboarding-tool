@@ -56,17 +56,30 @@ async function epochParticipants(seed) {
  * stale docs or marketing. A governance-approved model with zero active
  * hosts is a caution sign (paused, re-bootstrapping, or abandoned).
  */
+/**
+ * share: the model's part of the network's measured work, 0 to 1. Each
+ * participant lists its models and, at the same index, the ML nodes that
+ * serve each one with their Proof of Compute weight (what the network itself
+ * measured, not what the host says). A model's share is its ML nodes' weight
+ * over all ML nodes' weight. null when the chain gives no ML node weights.
+ */
 async function modelActivity(seed) {
   const ep = await epochParticipants(seed);
   const list = (ep && ep.active_participants && ep.active_participants.participants) || [];
-  const act = {};
+  const act = {}, poc = {};
+  let pocTotal = 0;
   for (const p of list) {
-    for (const m of p.models || []) {
-      if (!act[m]) act[m] = { hosts: 0, weight: 0 };
+    (p.models || []).forEach((m, i) => {
+      if (!act[m]) act[m] = { hosts: 0, weight: 0, share: null };
       act[m].hosts++;
       act[m].weight += Number(p.weight) || 0;
-    }
+      const group = ((p.ml_nodes || [])[i] || {}).ml_nodes || [];
+      const w = group.reduce((a, n) => a + (Number(n.poc_weight) || 0), 0);
+      poc[m] = (poc[m] || 0) + w;
+      pocTotal += w;
+    });
   }
+  if (pocTotal > 0) for (const m of Object.keys(act)) act[m].share = poc[m] / pocTotal;
   return act;
 }
 
@@ -261,6 +274,15 @@ async function repoGpuConfigs() {
   // like the classed files do.
   const files = (list || []).filter((f) => /^node-config(-.*)?\.json$/.test(f.name));
 
+  // A GPU class GNOT does not know yet, named in Gonka's own file names
+  // (node-config-<model>-<CLASS>[-variant].json, e.g. a future "-H20"), is
+  // learnt from them, so its setups work without an app update. Matched as a
+  // whole word, so a new "H20" never takes an "H200".
+  for (const f of files) {
+    const m = /^node-config-[^-]+-([A-Za-z]+\d+[A-Za-z0-9]*)(?:-[^.]+)?\.json$/.exec(f.name);
+    if (!m || k.gpuClasses.some((c) => c.id.toUpperCase() === m[1].toUpperCase() || c.match.test(m[1]))) continue;
+    k.gpuClasses.push({ match: new RegExp(`\\b${m[1]}\\b`, "i"), id: m[1].toUpperCase(), learnt: true });
+  }
   const rows = [];
   await Promise.all(files.map(async (f) => {
     if (!f.download_url) return;

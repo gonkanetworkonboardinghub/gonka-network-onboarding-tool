@@ -16,6 +16,8 @@
  *   models  { model: [{ gpus: [{ kind, count }], machines, hosts }] }, working
  *           machines only, most common setup first
  *   vram    { kind: GB per GPU }, as the machines report it
+ * and for each host, hosts[address].models { model: GPUs on its working
+ * machines that serve it }, for the delegation list (2026-11-20).
  */
 const fs = require("fs");
 const K = require("../src/knowledge");
@@ -99,9 +101,13 @@ const UNDER_REPORTED_ABOVE = 3;
       }
       if (!WORKING.test(n.status || "") || !gpus.length) continue;
       const key = gpus.map((g) => `${g.count}× ${g.kind}`).join(" + ");
+      const count = gpus.reduce((a, g) => a + g.count, 0);
       for (const m of n.models || []) {
         const s = ((setups[m] = setups[m] || {})[key] = setups[m][key] || { gpus, machines: 0, hosts: new Set() });
         s.machines++; s.hosts.add(p.index);
+        // The GPUs it reports on working machines that serve this model (the delegation list shows them).
+        h.models = h.models || {};
+        h.models[m] = (h.models[m] || 0) + count;
       }
     }
     hosts[p.index] = h;

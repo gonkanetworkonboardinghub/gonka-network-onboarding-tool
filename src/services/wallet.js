@@ -447,10 +447,34 @@ async function waitForTx(seed, txhash, onData, tries = 30, delayMs = 3000) {
 const gasFor = (gasUsed, gasAdjustment) => Math.max(Math.floor(gasUsed * gasAdjustment), gasUsed + 50000);
 
 /**
+ * The price per unit of gas the chain asks for the wallet's transactions: its
+ * "cosmos" fee group (fee_params, from v0.2.16), or else its general minimum.
+ * Read from the chain and kept ten minutes, so a change there needs no app
+ * update; `fallback` (knowledge.js gasPriceNgonka) when it cannot be read or
+ * asks nothing. Whole ngonka, rounded up.
+ */
+let gasCache = { at: 0, seed: null, price: null };
+async function chainGasPrice(seed, fallback) {
+  if (gasCache.price && gasCache.seed === seed && Date.now() - gasCache.at < 10 * 60 * 1000) return gasCache.price;
+  try {
+    const res = await fetch(`${seed}/chain-api/productscience/inference/inference/params`, { signal: AbortSignal.timeout(8000) });
+    const f = res.ok ? (((await res.json()) || {}).params || {}).fee_params : null;
+    if (f) {
+      const groups = (f.groups || []).filter((g) => (f.enabled_fee_groups || []).includes(g.name));
+      const cosmos = groups.find((g) => g.name === "cosmos");
+      const need = Math.ceil(Number(cosmos ? cosmos.min_gas_price : f.min_gas_price_ngonka) || 0);
+      if (need > 0) { gasCache = { at: Date.now(), seed, price: need }; return need; }
+    }
+  } catch (_) { /* the fallback below */ }
+  return fallback;
+}
+
+/**
  * What sending `messages` would cost, without sending anything: the chain runs
  * them unsigned and says the gas they use, or why it would refuse them.
  */
 async function estimate({ seed, priv, messages, gasAdjustment, gasPrice = 10, memo = "" }) {
+  gasPrice = await chainGasPrice(seed, gasPrice);
   const pub = pubOf(priv);
   const acct = await getAccount(seed, addressOf(pub));
   if (!acct) throw new Error(`account ${addressOf(pub)} not found on the network — it has never received any GNK.`);
@@ -467,6 +491,7 @@ async function estimate({ seed, priv, messages, gasAdjustment, gasPrice = 10, me
  * block resolves with `pending: true` (the caller verifies on-chain itself).
  */
 async function signAndBroadcast({ seed, chainId, priv, messages, gasAdjustment, gasPrice = 10, memo = "", onData, requireInclusion = true }) {
+  gasPrice = await chainGasPrice(seed, gasPrice);
   const pub = pubOf(priv);
   const address = addressOf(pub);
   const acct = await getAccount(seed, address);
@@ -522,7 +547,7 @@ module.exports = {
   PREFIX, HD_PATH, DENOM, Msg, VOTE_OPTIONS,
   privFromMnemonic, pubOf, addressOf, pubkeyJson,
   createKey, importKey, loadKey, saveKey, passphraseOk, fileNameFor,
-  getAccount, getChainId, simulate, estimate, broadcast, waitForTx, signAndBroadcast,
+  getAccount, getChainId, simulate, estimate, broadcast, waitForTx, signAndBroadcast, chainGasPrice,
   // exposed for the format tests
   _internal: { fields, txBody, authInfo, signDoc, txRaw, jweEncrypt, jweDecrypt, recordBytes, parseRecord, keyWrap, keyUnwrap }
 };
