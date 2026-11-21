@@ -1,9 +1,9 @@
 {
- "asOf": "2026-11-20T22:56:17.946Z",
+ "asOf": "2026-11-21T03:33:44.855Z",
  "ok": true,
  "chain": {
   "version": "v0.2.16-post3",
-  "height": 7158555,
+  "height": 7161677,
   "upgrade": null
  },
  "checkedAgainst": {
@@ -18,15 +18,15 @@
  },
  "problems": [],
  "warnings": [],
- "unknown": [
-  "dry run of the grant: could not read the dry-run account from the chain",
-  "dry run of the registration: could not read the dry-run account from the chain",
-  "dry run of a vote: could not read the dry-run account from the chain",
-  "fee rules: the chain's parameters could not be read"
- ],
+ "unknown": [],
  "fix": null,
- "grant": null,
- "register": null,
+ "grant": {
+  "feeNgonka": 1022460,
+  "setupNgonka": 10000000
+ },
+ "register": {
+  "feeNgonka": 148424
+ },
  "changes": [
   {
    "at": "2026-11-20T21:21:02.567Z",
