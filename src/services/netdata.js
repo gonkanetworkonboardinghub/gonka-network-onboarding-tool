@@ -71,10 +71,13 @@ async function modelActivity(seed) {
   for (const p of list) {
     (p.models || []).forEach((m, i) => {
       if (!act[m]) act[m] = { hosts: 0, weight: 0, share: null };
-      act[m].hosts++;
-      act[m].weight += Number(p.weight) || 0;
       const group = ((p.ml_nodes || [])[i] || {}).ml_nodes || [];
       const w = group.reduce((a, n) => a + (Number(n.poc_weight) || 0), 0);
+      // A host counts for a model only when the network measured its machines
+      // doing that model's work at this epoch's Proof of Compute: never for
+      // naming a model alone.
+      if (w > 0) act[m].hosts++;
+      act[m].weight += Number(p.weight) || 0;
       poc[m] = (poc[m] || 0) + w;
       pocTotal += w;
     });

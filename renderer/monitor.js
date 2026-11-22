@@ -301,6 +301,8 @@ function monHubHtml() {
 
 async function monSave() {
   try { MON.nodes = await api("monitorSaveNodes", { nodes: MON.nodes }); } catch (_) { /* kept for this session at least */ }
+  // A node newly yours (followed, linked to its wallet): the bell looks at it now.
+  if (typeof watchSoon === "function" && MON.nodes.filter(monOwn).length !== WATCH.own) watchSoon();
 }
 async function monKeep(address, name) {
   if (!monKept(address)) { MON.nodes.push({ address, name: String(name || "").trim() }); await monSave(); await monAutoLink(); }
@@ -1499,26 +1501,29 @@ function monNodeHtml(d) {
 
 /* What deserves a look, in plain sentences. The codes and figures come from
    the service; the words are written here so they can be translated. */
+/** One thing worth a look about a node, in words (the node's page and GNOT's bell both say it this way). */
+function monAttentionText(a) {
+  switch (a.code) {
+    case "excluded": return t("The network left this node out of the current epoch: {why}.", { why: monReason(a.reason) });
+    case "not-in-epoch": return t("The node is registered but is not in the current epoch, so it is earning nothing.");
+    case "no-answer": return t("Its public address, {url}, does not answer. Until it does, it misses the work the network sends it, and that can cost this epoch's reward.", { url: a.url });
+    case "machines-down": return t(a.machines.length === 1 ? "One of its {of} machines is not working: {list}." : "{n} of its {of} machines are not working: {list}.", { n: a.machines.length, of: a.of, list: a.machines.slice(0, 6).map((m) => `${m.id} (${m.status || "?"})`).join(", ") + (a.machines.length > 6 ? ` … +${monNum(a.machines.length - 6)} ${t("other")}` : "") });
+    case "no-allowance": return t("The wallet has no fee allowance for the node. Since Gonka v0.2.16 the node cannot pay its fees without one.");
+    case "allowance-low": return t("Only {left} is left of the fee allowance. When it runs out the node cannot pay its fees until the allowance is renewed.", { left: monGnk(a.left) });
+    case "wallet-low": return t("The wallet holds only {balance}. The node's fees are paid from it.", { balance: monGnk(a.balance) });
+    case "confirmation": return t("It passed {pct} of the confirmation checks this epoch.", { pct: monPct(a.ratio, 0) });
+    case "no-reward": return t("It took part in epoch {n} but was paid nothing for it.", { n: a.epoch });
+    case "missed": return t("In epoch {n} it missed {mine} of its requests. A typical host missed {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
+    case "judged-wrong": return t("In epoch {n}, {mine} of its checked answers were judged wrong. For a typical host it was {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
+    case "ds-missed": return t("In epoch {n} it missed {missed} answers in {sessions} AI sessions, about {mine} a session. A typical host missed about {typical}.", { n: a.epoch, missed: monNum(a.missed), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
+    case "ds-wrong": return t("In epoch {n}, {invalid} of its answers were judged wrong in {sessions} AI sessions, about {mine} a session. For a typical host it was about {typical}.", { n: a.epoch, invalid: monNum(a.invalid), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
+    default: return a.code;
+  }
+}
+
 function monAttentionCard(d) {
   if (!d.standing.known) return "";
-  const say = (a) => {
-    switch (a.code) {
-      case "excluded": return t("The network left this node out of the current epoch: {why}.", { why: monReason(a.reason) });
-      case "not-in-epoch": return t("The node is registered but is not in the current epoch, so it is earning nothing.");
-      case "no-answer": return t("Its public address, {url}, does not answer. Until it does, it misses the work the network sends it, and that can cost this epoch's reward.", { url: a.url });
-      case "machines-down": return t(a.machines.length === 1 ? "One of its {of} machines is not working: {list}." : "{n} of its {of} machines are not working: {list}.", { n: a.machines.length, of: a.of, list: a.machines.slice(0, 6).map((m) => `${m.id} (${m.status || "?"})`).join(", ") + (a.machines.length > 6 ? ` … +${monNum(a.machines.length - 6)} ${t("other")}` : "") });
-      case "no-allowance": return t("The wallet has no fee allowance for the node. Since Gonka v0.2.16 the node cannot pay its fees without one.");
-      case "allowance-low": return t("Only {left} is left of the fee allowance. When it runs out the node cannot pay its fees until the allowance is renewed.", { left: monGnk(a.left) });
-      case "wallet-low": return t("The wallet holds only {balance}. The node's fees are paid from it.", { balance: monGnk(a.balance) });
-      case "confirmation": return t("It passed {pct} of the confirmation checks this epoch.", { pct: monPct(a.ratio, 0) });
-      case "no-reward": return t("It took part in epoch {n} but was paid nothing for it.", { n: a.epoch });
-      case "missed": return t("In epoch {n} it missed {mine} of its requests. A typical host missed {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
-      case "judged-wrong": return t("In epoch {n}, {mine} of its checked answers were judged wrong. For a typical host it was {typical}.", { n: a.epoch, mine: monPct(a.mine), typical: monPct(a.typical) });
-      case "ds-missed": return t("In epoch {n} it missed {missed} answers in {sessions} AI sessions, about {mine} a session. A typical host missed about {typical}.", { n: a.epoch, missed: monNum(a.missed), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
-      case "ds-wrong": return t("In epoch {n}, {invalid} of its answers were judged wrong in {sessions} AI sessions, about {mine} a session. For a typical host it was about {typical}.", { n: a.epoch, invalid: monNum(a.invalid), sessions: monNum(a.sessions), mine: monPer(a.mine), typical: monPer(a.typical) });
-      default: return a.code;
-    }
-  };
+  const say = monAttentionText;
   if (!d.attention.length) return `<div class="mon-attention none"><b>${esc(t("Nothing needs your attention"))}</b><span>${esc(t("Nothing in what the network reports about this node stands out."))}</span></div>`;
   return `
     <div class="mon-attention">

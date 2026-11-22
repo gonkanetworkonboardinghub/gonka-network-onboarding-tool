@@ -1251,9 +1251,29 @@ RENDER.welcome = () => {
         return est.length ? { real: false, list: est } : null;
       };
       const split = (id) => { const i = String(id).indexOf("/"); return i > 0 ? [id.slice(i + 1), id.slice(0, i)] : [id, ""]; };
+      // The share, big; under it, small, how many hosts do that work this epoch.
       const hostsBox = (id) => {
         const n = hostsOf(id), s = shareOf(id);
-        return `<div class="model-hosts${n === 0 ? " none" : ""}" title="${esc(hostsLine(id))}"><b>${esc(n === 0 ? "0%" : shareText(s))}</b><span>${esc(t("of the network"))}</span></div>`;
+        return `<div class="model-hosts${n === 0 ? " none" : ""}" title="${esc(hostsLine(id))}"><b>${esc(n === 0 ? "0%" : shareText(s))}</b><span>${esc(t("of the network"))}</span>${n !== null ? `<small>${esc(n === 1 ? t("1 host") : t("{n} hosts", { n }))}</small>` : ""}</div>`;
+      };
+      // A model the network pays for and hosts run, with no ready-made setup in
+      // the files GNOT installs from (2026-11: GLM-5.3-Flash, whose setup Gonka
+      // publishes on a branch of its own). Shown in the list like the others:
+      // its share and hosts, and the GPUs hosts run it on.
+      const otherRow = (m) => {
+        const [name, org] = split(m.id);
+        const su = setupsFor(m);
+        return `
+          <div class="model-row other">
+            <div class="model-id">
+              <div class="model-name">${esc(name)}</div>
+              ${org ? `<div class="model-org">${esc(org)}</div>` : ""}
+              ${su ? `<div class="chips-label">${esc(t(su.real ? "Hosts run it on now:" : "Fits, by memory alone:"))}</div>
+                <div class="gpu-chips">${su.list.map((x) => chipHtml({ model: m.id, gpu: x.gpu, kind: x.kind, count: x.count, custom: true, machines: x.machines })).join("")}</div>` : ""}
+              <div class="small model-note">${esc(t("No ready-made setup for it in GNOT yet. If you know vLLM, you can paste your own configuration at the Model & GPUs step."))}</div>
+            </div>
+            ${hostsBox(m.id)}
+          </div>`;
       };
       const ids = (list) => list.map((id) => `<code>${esc(id)}</code>`).join(", ");
       const inactive = Object.keys(act).length ? models.filter((m) => paysFor(m.id) && !hostsOf(m.id)) : [];
@@ -1273,26 +1293,18 @@ RENDER.welcome = () => {
             </div>
             ${hostsBox(id)}
           </div>`;
-        }).join("")}</div>` :
-          `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>`}
+        }).join("")}${notReady.map(otherRow).join("")}</div>` :
+          `<p class="small">Nothing is ready to deploy automatically right now — check back before renting.</p>
+           ${notReady.length ? `<div class="model-list">${notReady.map(otherRow).join("")}</div>` : ""}`}
         ${inactive.length ? `<div class="warn-banner">⚠ ${ids(inactive.map((m) => m.id))} — ${t("no hosts are earning on this model this epoch — ask in the community before renting hardware for it")}</div>` : ""}
         <details class="more"><summary>${esc(t("What does this mean?"))}</summary><div class="more-body">
           <p>${esc(t("Each line is a model the network pays hosts to run. The boxes are the GPU setups Gonka has a ready-made configuration for, for example 2 × H200. A server with more of the same GPU runs the setup once for every set, which is why whole 8-GPU servers are listed too."))}</p>
           <p>${esc(t("A word after the GPU, such as nvfp4, marks a variant of the same setup. nvfp4, for example, is a 4-bit build."))}</p>
-          <p>${esc(t("Of the network: how much of the network's work runs on that model. The network measures it itself at every Proof of Compute, so it is not what hosts say about themselves. Point at the figure to see how many hosts run the model in this epoch."))}</p>
+          <p>${esc(t("Of the network: how much of the network's work runs on that model, and under it, how many hosts do that work in this epoch. The network measures both itself at every Proof of Compute, so they are not what hosts say about themselves."))}</p>
           <p>${esc(t("The list comes live from the network and Gonka's repository, so it changes by itself when Gonka adds a model or a GPU."))}</p>
         </div></details>
-        ${notReady.length || unpaid.length ? `
+        ${unpaid.length ? `
         <details class="more"><summary>${esc(t("Why aren't other models here?"))}</summary><div class="more-body">
-          ${notReady.length ? `${notReady.map((m) => {
-            const su = setupsFor(m);
-            return `<div class="why-model">
-              <div><code>${esc(m.id)}</code>${m.v_ram ? ` · <span dir="ltr">${m.v_ram} GB VRAM</span>` : ""}${hostsOf(m.id) !== null ? ` · ${esc(t("{share} of the network", { share: hostsOf(m.id) === 0 ? "0%" : shareText(shareOf(m.id)) }))}` : ""}</div>
-              ${su ? `<div class="chips-label">${esc(t(su.real ? "Hosts run it on now:" : "Fits, by memory alone:"))}</div>
-                <div class="gpu-chips">${su.list.map((s) => chipHtml({ model: m.id, gpu: s.gpu, kind: s.kind, count: s.count, custom: true, machines: s.machines })).join("")}</div>` : ""}
-            </div>`;
-          }).join("")}
-            <p>${esc(t("Earning on the network, but Gonka has not published a ready-made setup for them yet. They appear above by themselves once it does. If you know vLLM, you can paste your own node-config.json in the Model & GPUs step."))}</p>` : ""}
           ${unpaid.length ? `<p>${ids(unpaid)}</p>
             <p>${esc(t("Approved, but the network pays nobody to run them this epoch, so a server rented for them would earn nothing. They come back by themselves when the network pays for them again."))}</p>` : ""}
         </div></details>` : ""}`;
@@ -1928,6 +1940,35 @@ RENDER.wallet = () => {
     };
   }
 
+  /* One wallet is one node: the network keeps one address per wallet. A wallet
+     that already runs a node on another server would move that node here, and
+     the old server would drop out. Said here, before anything is changed, with
+     the way to a second node: a new wallet. A server known by name instead of
+     its number can look different, so the words leave room for that. */
+  async function otherNodeWarning(stopWatching) {
+    let rec = null;
+    try { const p = await api("participant", { seed: S.seed || S.K.seedNodes[0], address: w.address }); rec = p && (p.participant || p); } catch (_) { return; }
+    const url = rec && (rec.inferenceUrl || rec.inference_url || "");
+    let host = "";
+    try { host = new URL(url).hostname; } catch (_) { return; }
+    const here = [S.ssh && S.ssh.host, S.scan && S.scan.facts && S.scan.facts.publicIp, S.net && S.net.host].filter(Boolean);
+    const slot = $("#wallet-node-warn");
+    if (!host || here.includes(host) || !slot || !onStep("wallet")) return;
+    slot.innerHTML = `
+      <div class="warn-banner">
+        <b>${esc(t("This wallet already has a node"))}</b>
+        <p>${esc(t("The network has it at {url}. If that is another server: one wallet is one node, so going on here moves that node to this server, and the other server stops taking part. For a second node, use a new wallet.", { url }))}</p>
+        <button id="b-new-wallet">${esc(t("Use a new wallet"))}</button>
+      </div>`;
+    $("#b-new-wallet").onclick = () => {
+      stopWatching();
+      Object.assign(S.wallet, { name: null, address: null, pubkey: null, confirmed: false, passphrase: undefined });
+      S.walletPickOther = true;
+      saveSession();
+      RENDER.wallet();
+    };
+  }
+
   function walletDone() {
     stage(`
       ${header("Step 5", "Wallet ready", "Your Account Key is set up on this computer.")}
@@ -1936,6 +1977,7 @@ RENDER.wallet = () => {
         ${copyLine(w.address, "w-addr")}
         ${more("Public key", `<p>${esc(t("The pubkey goes into your server's configuration automatically. The key itself stays here."))}</p>${copyLine(w.pubkey, "w-pub")}`)}
       </div>
+      <div id="wallet-node-warn"></div>
       <div id="bal-area"><div class="info-banner">${loadingInline(t("Checking your GNK balance…"))}</div></div>
       <div class="btn-row">
         <button id="b-back">Back</button>
@@ -1943,6 +1985,7 @@ RENDER.wallet = () => {
       </div>`);
     $("#b-back").onclick = () => { stopWatching(); RENDER.wallet(); };
     wireCopy();
+    otherNodeWarning(stopWatching);
     $("#b-next").onclick = () => {
       stopWatching();
       // Wallet is unlocked, so a resumed session can now jump the rest of the
@@ -3124,7 +3167,7 @@ RENDER.deploy = () => {
    ParticipantStatus), which showed as a bare "1". */
 function participantStatus(v) {
   const names = { 0: "Unspecified", 1: "Active", 2: "Inactive", 3: "Invalid", 4: "Ramping", 5: "Unconfirmed" };
-  const n = typeof v === "number" || /^d+$/.test(String(v)) ? names[Number(v)] : null;
+  const n = typeof v === "number" || /^\d+$/.test(String(v)) ? names[Number(v)] : null;
   const word = n || (v ? String(v).replace(/^PARTICIPANT_STATUS_/, "").toLowerCase().replace(/^./, (c) => c.toUpperCase()) : "—");
   return word === "—" ? word : t(word);
 }
@@ -3885,6 +3928,7 @@ async function addToMyNodes() {
     for (let k = 2; taken.has(name) && k < 100; k++) name = `${t("My node")} ${k}`;
     if (i >= 0) nodes[i] = { ...nodes[i], ...mine, name: nodes[i].name || name }; else nodes.unshift({ ...mine, name });
     await api("monitorSaveNodes", { nodes });
+    if (typeof watchSoon === "function") watchSoon();
   } catch (e) { logLine("\nCouldn't add the node to Monitor/Vote: " + e.message + "\n", "stderr"); }
 }
 

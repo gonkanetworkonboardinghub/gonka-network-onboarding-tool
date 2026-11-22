@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, screen, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -36,6 +36,12 @@ const updates = require("./src/update");
 const updater = require("./src/updater");
 
 let win = null;
+// Watching your nodes after the window is closed (renderer/watch.js checks,
+// src/background.js decides). quitting: closing now really closes GNOT.
+const Background = require("./src/background");
+let quitting = false, tray = null;
+let watchState = { own: 0, count: 0, labels: null };
+const startHidden = Background.startsHidden(process.argv, process.platform === "darwin" ? (() => { try { return app.getLoginItemSettings(); } catch (_) { return null; } })() : null);
 let driver = null;          // active server driver (local or ssh)
 let lastScanFacts = {};     // cached scan facts for fixes / config suggestions
 let updateState = { state: "ok", checked: false };   // set once at boot
@@ -81,6 +87,7 @@ function createWindow() {
     height: size.height,
     minWidth: 830,
     minHeight: 580,
+    show: !startHidden,
     backgroundColor: "#0e131c",
     title: "The Gonka Network Onboarding Tool",
     webPreferences: {
@@ -137,7 +144,7 @@ function createWindow() {
   let runningNow = "";
   ipcMain.on("app:busy", (_e, label) => { runningNow = String(label || "").slice(0, 200); });
   win.on("close", (e) => {
-    if (win.isDestroyed()) return;
+    if (win.isDestroyed() || quitting) return;
     if (runningNow) {
       const wait = dialog.showMessageBoxSync(win, {
         type: "warning",
@@ -151,19 +158,86 @@ function createWindow() {
       if (wait === 0) { e.preventDefault(); return; }
       return;
     }
-    if (!confirmClose) return;
-    const choice = dialog.showMessageBoxSync(win, {
+    if (confirmClose) {
+      const choice = dialog.showMessageBoxSync(win, {
+        type: "question",
+        buttons: ["Stay", "Close anyway"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "Gonka Host Setup",
+        message: "Close the setup wizard?",
+        detail: "Your server keeps running and any progress on it is saved — but this window's connection will close, and you'll reconnect to continue. Close it?"
+      });
+      if (choice === 0) e.preventDefault();
+      return;
+    }
+    // Nothing of a setup to protect: keep watching your nodes near the clock?
+    const act = Background.onClose({ watchOn: readUi().bgWatch, own: watchState.own,
+      updatePending: updateState && updateState.checked && updateState.state === "required" });
+    if (act === "close") return;
+    e.preventDefault();
+    if (act === "hide") { hideToTray(); return; }
+    const L = watchState.labels || {};
+    dialog.showMessageBox(win, {
       type: "question",
-      buttons: ["Stay", "Close anyway"],
+      buttons: [L.keep || "Keep watching", L.quitNow || "Quit GNOT"],
       defaultId: 0,
-      cancelId: 0,
-      title: "Gonka Host Setup",
-      message: "Close the setup wizard?",
-      detail: "Your server keeps running and any progress on it is saved — but this window's connection will close, and you'll reconnect to continue. Close it?"
+      cancelId: 1,
+      title: "GNOT",
+      message: L.ask || "Keep watching your nodes?",
+      detail: L.askDetail || "GNOT can stay near the clock and tell you when one of your nodes needs a look. You can quit it from there at any time.",
+      checkboxLabel: L.login || "Start GNOT with the computer",
+      checkboxChecked: false
+    }).then(({ response, checkboxChecked }) => {
+      saveUi({ bgWatch: response === 0 });
+      if (response === 0) { if (checkboxChecked) setLoginItem(true); hideToTray(); }
+      else { quitting = true; if (!win.isDestroyed()) win.close(); }
     });
-    if (choice === 0) e.preventDefault();
   });
 }
+
+/* ---- watching from near the clock ------------------------------------- */
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+const loginItemOn = () => { try { return !!app.getLoginItemSettings({ args: ["--hidden"] }).openAtLogin; } catch (_) { return false; } };
+function setLoginItem(on) {
+  try { app.setLoginItemSettings({ openAtLogin: !!on, openAsHidden: true, args: ["--hidden"] }); } catch (_) { /* not on this system */ }
+  if (tray) trayMenu();
+}
+function trayMenu() {
+  if (!tray) return;
+  const L = watchState.labels || {};
+  tray.setToolTip(L.tip || "GNOT");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: L.open || "Open GNOT", click: showWindow },
+    { type: "separator" },
+    { label: L.watch || "Watch my nodes in the background", type: "checkbox", checked: readUi().bgWatch !== false,
+      click: (i) => saveUi({ bgWatch: i.checked }) },
+    { label: L.login || "Start GNOT with the computer", type: "checkbox", checked: loginItemOn(), click: (i) => setLoginItem(i.checked) },
+    { type: "separator" },
+    { label: L.quit || "Quit GNOT", click: () => { quitting = true; app.quit(); } }
+  ]));
+}
+function ensureTray() {
+  if (tray) return;
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "renderer", "tray.png")));
+  tray.on("click", showWindow);
+  trayMenu();
+}
+function hideToTray() {
+  ensureTray();
+  if (win && !win.isDestroyed()) win.hide();
+}
+ipcMain.on("watch:state", (_e, st) => {
+  watchState = { own: Number(st && st.own) || 0, count: Number(st && st.count) || 0, labels: (st && st.labels) || null };
+  trayMenu();
+});
+ipcMain.on("app:showWindow", () => showWindow());
+app.on("before-quit", () => { quitting = true; });
 
 app.whenReady().then(async () => {
   await K.loadRemoteManifest();
@@ -175,6 +249,7 @@ app.whenReady().then(async () => {
   try { updateState = updates.evaluate(VERSION, K.get().app, { platform: process.platform, arch: process.arch }); }
   catch (_) { updateState = { state: "ok", checked: false }; }
   createWindow();
+  if (startHidden) ensureTray();
   // Say the app is open, so the website can count computers exactly instead of
   // guessing from downloads. At most once an hour, whatever the timer does; the
   // timer covers a window left open for days.

@@ -111,5 +111,9 @@ contextBridge.exposeInMainWorld("gonka", {
   mineSetMachines: call("mine:setMachines"),
   mineClaimReward: call("mine:claimReward"),
   mineSwitchOff: call("mine:switchOff"),
-  myEpochWeight: call("net:myEpochWeight")
+  myEpochWeight: call("net:myEpochWeight"),
+
+  // Your nodes, watched (renderer/watch.js): what the icon near the clock says, and opening the window from a notice.
+  watchState: (st) => ipcRenderer.send("watch:state", st),
+  showWindow: () => ipcRenderer.send("app:showWindow")
 });
