@@ -15,6 +15,21 @@
 const WATCH = { items: [], own: 0, at: 0, busy: false, open: false };
 const WATCH_EVERY = 15 * 60 * 1000;
 const WATCH_SEEN = "gnot.attentionNotices";
+// Notices cleared from the bell, by key. A key names the epoch, so something
+// still true in the next epoch comes back once; kept 30 days.
+const WATCH_CLEARED = "gnot.bellCleared";
+function watchCleared() { try { return JSON.parse(localStorage.getItem(WATCH_CLEARED) || "{}"); } catch (_) { return {}; } }
+/** What the bell shows: today's notices, less the ones cleared. */
+const watchShown = () => { const c = watchCleared(); return WATCH.items.filter((it) => !c[it.key]); };
+/** Clear notices from the bell at once (and from the icon near the clock). */
+function watchClear(items) {
+  const c = watchCleared(), cut = Date.now() - 30 * 24 * 3600 * 1000;
+  for (const it of items) c[it.key] = Date.now();
+  for (const k of Object.keys(c)) if (c[k] < cut) delete c[k];
+  try { localStorage.setItem(WATCH_CLEARED, JSON.stringify(c)); } catch (_) { /* cleared for this session */ }
+  paintBell();
+  if (window.gonka.watchState) window.gonka.watchState(watchSummary());
+}
 
 const BELL_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>`;
 
@@ -80,7 +95,7 @@ function watchNotify(items) {
     try {
       const title = it.update ? t("GNOT has an update") : t("{name} needs a look", { name: it.name });
       const note = new Notification(title, { body: it.text });
-      note.onclick = () => watchOpen(it);
+      note.onclick = () => { try { note.close(); } catch (_) { /* gone already */ } watchOpen(it); };
     } catch (_) { /* no desktop notices here: the bell still says it */ }
   }
   const cut = Date.now() - 30 * 24 * 3600 * 1000;
@@ -95,14 +110,14 @@ function watchNotify(items) {
 async function watchOpen(it) {
   if (window.gonka.showWindow) window.gonka.showWindow();
   WATCH.open = false;
-  paintBell();
+  watchClear([it]);
   if (it.update || !it.address) return;
   await showMonitor(it.address);
 }
 
 /** What the tray icon near the clock says (main.js), in this window's language. */
 function watchSummary() {
-  const n = WATCH.items.length;
+  const n = watchShown().length;
   return {
     own: WATCH.own, count: n,
     labels: {
@@ -122,8 +137,8 @@ function paintBell() {
   if (!WATCH.own) { if (el) el.remove(); document.body.classList.remove("has-bell"); return; }
   if (!el) { el = document.createElement("div"); el.id = "gnot-bell"; document.body.appendChild(el); }
   document.body.classList.add("has-bell");
-  const n = WATCH.items.length;
-  const tone = n === 0 ? "" : WATCH.items.some((x) => x.level === "bad") ? " bad" : " warn";
+  const shown = watchShown(), n = shown.length;
+  const tone = n === 0 ? "" : shown.some((x) => x.level === "bad") ? " bad" : " warn";
   const when = WATCH.at ? new Date(WATCH.at).toLocaleTimeString(window.I18N.lang(), { hour: "numeric", minute: "2-digit" }) : "";
   el.innerHTML = `
     <button type="button" class="bell-btn${tone}" id="bell-btn" aria-expanded="${WATCH.open}"
@@ -131,18 +146,20 @@ function paintBell() {
       ${BELL_ICON}${n ? `<span class="bell-n">${n}</span>` : ""}</button>
     ${WATCH.open ? `
     <div class="bell-panel" role="dialog">
-      <div class="bell-head"><b>${esc(t("Your nodes"))}</b><span class="small">${when ? esc(t("checked at {time}", { time: when })) : ""}</span></div>
-      ${n ? WATCH.items.map((it, i) => `
+      <div class="bell-head"><b>${esc(t("Your nodes"))}</b><span class="small">${when ? esc(t("checked at {time}", { time: when })) : ""}</span>
+        ${n ? `<button type="button" class="link-btn" id="bell-clear">${esc(t("Clear all"))}</button>` : ""}</div>
+      ${n ? shown.map((it, i) => `
         <div class="bell-item ${it.level}">
           <b>${esc(it.name)}</b>
           <p>${esc(it.text)}</p>
           <button type="button" class="mon-quiet" data-bell="${i}">${esc(it.update ? t("Got it") : t("Open"))}</button>
         </div>`).join("")
-      : `<p class="bell-none">${esc(t("Nothing needs your attention"))}</p>`}
+      : `<p class="bell-none">${esc(WATCH.items.length ? t("Nothing new. What you cleared comes back if it is still so in the next epoch.") : t("Nothing needs your attention"))}</p>`}
       <p class="small bell-foot">${esc(t("GNOT looks at your nodes every 15 minutes while it runs, and tells you when something needs a look."))}</p>
     </div>` : ""}`;
   $("#bell-btn").onclick = (e) => { e.stopPropagation(); WATCH.open = !WATCH.open; paintBell(); };
-  el.querySelectorAll("[data-bell]").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); watchOpen(WATCH.items[Number(b.dataset.bell)]); }; });
+  el.querySelectorAll("[data-bell]").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); watchOpen(shown[Number(b.dataset.bell)]); }; });
+  if ($("#bell-clear")) $("#bell-clear").onclick = (e) => { e.stopPropagation(); watchClear(shown); };
   const panel = el.querySelector(".bell-panel");
   if (panel) panel.onclick = (e) => e.stopPropagation();
 }
