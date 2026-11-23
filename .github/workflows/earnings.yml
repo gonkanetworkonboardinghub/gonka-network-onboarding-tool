@@ -31,6 +31,14 @@
 #   fees.json       - what each host paid in network fees over about the last
 #                     epoch, by size, for Host Setup's fee card
 #                     (scripts/fees-snapshot.js)
+#   machines/       - every machine on the network, one file per epoch
+#                     (machines/<epoch>.json, listed in machines/index.json):
+#                     status, work proved, GPUs, software version, and each
+#                     host's requests and confirmation inside the epoch. The
+#                     chain only shows machines as they are now and keeps none
+#                     of it, so this is written down each run and never
+#                     rewritten once the epoch is over
+#                     (scripts/machines-snapshot.js)
 #
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/earnings.json
 #   https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data/onboarded.json
@@ -93,6 +101,9 @@ jobs:
           for f in earnings onboarded stats compat epochs network governance capacity usage rentals fees; do
             git show origin/data:$f.json > "$RUNNER_TEMP/prev-$f.json" 2>/dev/null || echo "{}" > "$RUNNER_TEMP/prev-$f.json"
           done
+          # the machine history so far (one file per epoch); empty the first time
+          mkdir -p "$RUNNER_TEMP/machines"
+          git archive origin/data machines 2>/dev/null | tar -x -C "$RUNNER_TEMP" 2>/dev/null || true
 
       - name: Keep every host's results for the recent epochs
         id: epochs
@@ -161,6 +172,13 @@ jobs:
           node scripts/network-snapshot.js "$RUNNER_TEMP/network.json" \
             || { rm -f "$RUNNER_TEMP/network.json"; exit 1; }
 
+      - name: Write down every machine's figures for this epoch
+        id: machines
+        continue-on-error: true
+        run: |
+          # adds one reading to this epoch's file; a failed run leaves the folder as it was
+          node scripts/machines-snapshot.js "$RUNNER_TEMP/machines" && touch "$RUNNER_TEMP/machines.ok"
+
       - name: Add up what the proposals paid, and what the treasuries hold
         id: governance
         continue-on-error: true
@@ -196,6 +214,7 @@ jobs:
               kept="$kept $f"
             fi
           done
+          [ -f "$RUNNER_TEMP/machines.ok" ] || kept="$kept machines"
           echo "KEPT=$kept" >> "$GITHUB_ENV"
           git config user.name "Gonka Network Onboarding Hub"
           git config user.email "noreply@thegonkanetworkonboardinghub.com"
@@ -207,6 +226,9 @@ jobs:
           fi
           for f in earnings onboarded stats compat epochs network governance capacity usage rentals fees; do cp "$RUNNER_TEMP/out-$f.json" "$f.json"; done
           git add earnings.json onboarded.json stats.json compat.json epochs.json network.json governance.json capacity.json usage.json rentals.json fees.json
+          # the machine history: this epoch's file and the index (files of past epochs come back unchanged)
+          mkdir -p machines
+          if ls "$RUNNER_TEMP"/machines/*.json >/dev/null 2>&1; then cp "$RUNNER_TEMP"/machines/*.json machines/; git add machines; fi
           # services.json listed Use Gonka's services; nothing reads it since 1.5.0.
           git rm -q --ignore-unmatch services.json
           git commit -m "Snapshot $(date -u +%Y-%m-%dT%H:%MZ)${kept:+ (kept from last time:$kept)}" || { echo "nothing changed"; exit 0; }
