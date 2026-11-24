@@ -9,7 +9,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { merge, indexOf } = require("./machines-snapshot");
+const { merge, foldAgain, indexOf } = require("./machines-snapshot");
 
 let ok = 0, bad = 0;
 function check(name, got, want) {
@@ -62,6 +62,18 @@ fs.writeFileSync(path.join(dir, "index.json"), "{}");
 const ix = indexOf(dir, 467, "u1");
 check("the index lists epochs in order and leaves itself out", [ix.epochs, ix.current, ix.asOf], [[466, 467], 467, "u1"]);
 fs.rmSync(dir, { recursive: true, force: true });
+
+// re-measurements: written once, the machines kept serving added when they are caught later
+let ag = merge(null, { epoch: 470, at: "t1", hosts: {}, again: [{ h: "1000", n: 0, at: "2026-11-24T10:00:00.000Z", raw: { hostA: { a1: 900, a2: 0 } }, kept: null }] });
+check("a re-measurement is written down as read", ag.again["1000"], { n: 0, at: "2026-11-24T10:00:00.000Z", raw: { hostA: { a1: 900, a2: 0 } }, kept: null });
+ag = merge(ag, { epoch: 470, at: "t2", hosts: {}, again: [{ h: "1000", n: 0, kept: { hostA: ["a2"] } }, { h: "2000", n: 1, at: "2026-11-24T15:00:00.000Z", raw: { hostA: { a1: 880 } }, kept: { hostA: ["a2"] } }] });
+check("a later reading adds the machines kept serving, and changes nothing else", ag.again["1000"], { n: 0, at: "2026-11-24T10:00:00.000Z", raw: { hostA: { a1: 900, a2: 0 } }, kept: { hostA: ["a2"] } });
+check("a second re-measurement is added beside the first", [Object.keys(ag.again), ag.again["2000"].n], [["1000", "2000"], 1]);
+ag = merge(ag, { epoch: 470, at: "t3", hosts: {}, again: [{ h: "1000", n: 0, raw: { hostA: { a1: 1 } }, kept: { hostA: [] } }] });
+check("what machines proved in a finished re-measurement is never overwritten", [ag.again["1000"].raw, ag.again["1000"].kept], [{ hostA: { a1: 900, a2: 0 } }, { hostA: ["a2"] }]);
+check("a reading with no re-measurements leaves them as they are", Object.keys(merge(ag, { epoch: 470, at: "t4", hosts: {} }).again), ["1000", "2000"]);
+const past = { epoch: 469, readings: 3, times: [], hosts: {}, again: { "500": { n: 0, at: null, raw: {}, kept: null } } };
+check("the epoch before takes the ones that came after its last reading", [foldAgain(past, [{ h: "500", n: 0, raw: {} }, { h: "700", n: 1, at: "x", raw: { hostB: { b1: 5 } }, kept: null }]), Object.keys(past.again)], [1, ["500", "700"]]);
 
 console.log(`check-machines: ${ok} passed, ${bad} failed`);
 process.exit(bad ? 1 : 0);
