@@ -1,0 +1,18 @@
+Rename the site from GNOH to GNOT. Change ONLY the name and the site's own address. Do not change, add or remove anything else: no layout, no other words, no numbers, no links to other sites, no functions or data.
+
+1. Everywhere the site shows "The Gonka Network Onboarding Hub", write "The Gonka Network Onboarding Tool" instead. That includes the header, the footer, every page's browser-tab title (for example "Monitor/Vote | The Gonka Network Onboarding Hub" becomes "Monitor/Vote | The Gonka Network Onboarding Tool"), and any sentence in a page.
+
+2. Everywhere the site shows "GNOH" (the text next to the logo in the header, and anywhere else), write "GNOT" instead.
+
+3. In the page head (index.html):
+   - <title>: "GNOT · The Gonka Network Onboarding Tool"
+   - og:title and og:site_name: "GNOT · The Gonka Network Onboarding Tool"
+   - og:url: "https://gonkanetworkonboardingtool.com"
+   - add <link rel="canonical" href="https://gonkanetworkonboardingtool.com"> if there is none; if pages set their own canonical address, use https://gonkanetworkonboardingtool.com plus that page's path
+   - leave the meta description and the og:image as they are
+
+4. If any page, link or text anywhere on the site contains the address "thegonkanetworkonboardinghub.com", replace it with "gonkanetworkonboardingtool.com". Keep every link that goes to GitHub exactly as it is, even though the GitHub account name contains "onboardinghub": that name stays.
+
+5. "GNOT" is a name: it must never be translated in any language. In Russian and the other languages, "The Gonka Network Onboarding Tool" also stays in English, like it does now for the old name.
+
+When done, search the whole site's code for "Onboarding Hub", "GNOH" and "thegonkanetworkonboardinghub.com" and tell me every place that is left. The only ones allowed to stay are inside GitHub links.

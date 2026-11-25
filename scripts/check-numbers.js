@@ -34,7 +34,7 @@ if (!nowPath) { console.error("Usage: node scripts/check-numbers.js <last.json> 
 const DATA = "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool/data";
 const MANIFEST = "https://raw.githubusercontent.com/gonkanetworkonboardinghub/gonka-host-setup/main/manifest.json";
 const LATEST = "https://api.github.com/repos/gonkanetworkonboardinghub/gonka-host-setup/releases/latest";
-const USAGE = "https://thegonkanetworkonboardinghub.com/api/apps/6a30335a7788e73f356c2536/functions/gnot-usage-stats";
+const USAGE = "https://gonkanetworkonboardingtool.com/api/apps/6a30335a7788e73f356c2536/functions/gnot-usage-stats";
 const FILES = ["capacity", "compat", "earnings", "epochs", "fees", "governance", "network", "onboarded", "rentals", "stats", "usage"];
 // The data job asks GitHub for a run every 15 minutes; GitHub runs it every 3 to 6 hours.
 const OLD_HOURS = 12, STALE_HOURS = 24;

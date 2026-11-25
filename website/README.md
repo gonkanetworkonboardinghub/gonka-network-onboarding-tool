@@ -1,6 +1,6 @@
 # The Gonka Network Onboarding Tool (GNOT)
 
-An app for Windows and macOS from [The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com) that takes a GPU server to a registered Gonka node in about an hour or two. It never asks for your money or holds any.
+An app for Windows and macOS ([gonkanetworkonboardingtool.com](https://gonkanetworkonboardingtool.com)) that takes a GPU server to a registered Gonka node in about an hour or two. It never asks for your money or holds any.
 
 - **Gonka Host Setup** takes a GPU server from bare metal to a registered Gonka node, step by step: it checks the server, fixes what's missing, creates your wallet on your own computer, and sets up and registers the node.
 - **Gonka Host Monitor/Vote** follows any node from public network data, shows every host and what the network is voting on, and for your own node votes with it and shuts it down safely.

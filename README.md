@@ -2,8 +2,8 @@
 
 **From a GPU server to a registered Gonka node in about an hour or two.**
 
-GNOT is a Windows and Mac app from
-[The Gonka Network Onboarding Hub](https://thegonkanetworkonboardinghub.com).
+GNOT is a Windows and Mac app, with its website at
+[gonkanetworkonboardingtool.com](https://gonkanetworkonboardingtool.com).
 It checks your server against everything Gonka needs, fixes what's missing,
 creates your wallet on your own computer, sets up and registers the node, and
 then follows it: how it's doing, what it earns, voting, and a safe shutdown.
@@ -16,7 +16,7 @@ then follows it: how it's doing, what it earns, voting, and a safe shutdown.
 
 ## Get the app
 
-Install it from the [Download page](https://thegonkanetworkonboardinghub.com/download).
+Install it from the [Download page](https://gonkanetworkonboardingtool.com/download).
 Official builds, their checksums and the install scripts live in
 [gonkanetworkonboardinghub/gonka-host-setup](https://github.com/gonkanetworkonboardinghub/gonka-host-setup).
 

@@ -328,13 +328,13 @@ const overridable = {
   // Where the app says it was opened (src/services/usage.js), which is how the
   // website's Impact page counts computers. Empty means nothing is ever sent;
   // the published manifest can set it without a release.
-  usageEndpoint: "https://thegonkanetworkonboardinghub.com/functions/gnot-usage",
+  usageEndpoint: "https://gonkanetworkonboardingtool.com/functions/gnot-usage",
 
   docs: {
     // Community-run explorer/dashboard (same site as the faucet) — usually the
     // fastest to update; participants list is the page people check for "am I in".
     // GNOT's website.
-    website: "https://thegonkanetworkonboardinghub.com",
+    website: "https://gonkanetworkonboardingtool.com",
     // This app's own code, public so anyone can read what it does — and check
     // that the build they installed came from it (see the repository's README).
     sourceCode: "https://github.com/gonkanetworkonboardinghub/gonka-network-onboarding-tool",
