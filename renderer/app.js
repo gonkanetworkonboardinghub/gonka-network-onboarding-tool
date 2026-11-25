@@ -3939,6 +3939,7 @@ function applyChrome() {
   document.documentElement.dir = window.I18N.lang() === "ar" ? "rtl" : "ltr";
   $("#t-sub").textContent = t("from zero to earning node");
   $("#t-needhelp").textContent = t("Need help?");
+  $("#link-hub").textContent = t("GNOT website");
   $("#link-home").innerHTML = `<span aria-hidden="true">←</span> ${esc(t("All tools"))}`;
   if (!S.consoleBusy) $("#console-title").textContent = t("Activity log");
   renderVersionLine();
@@ -4627,7 +4628,6 @@ function renderHome() {
       <div class="home-top">
         <header class="home-brand">
           <div class="gnot-mark home"><b>GNOT</b><span>The Gonka Network Onboarding Tool</span></div>
-          <div class="sub">${esc(t("by GNOH · The Gonka Network Onboarding Hub"))}</div>
         </header>
         <button class="earn-strip" id="earn-strip" hidden></button>
       </div>
@@ -4656,7 +4656,7 @@ function renderHome() {
             <select id="home-theme">${$("#theme-pick").innerHTML}</select>
           </div>
           <div style="margin-top:10px">${esc(t("Need help?"))} <a href="#" data-doc="discord">Gonka Discord</a> ·
-            <a href="#" data-doc="faq">FAQ</a> · <a href="#" data-doc="website">Onboarding Hub</a> ·
+            <a href="#" data-doc="faq">FAQ</a> · <a href="#" data-doc="website">${esc(t("GNOT website"))}</a> ·
             <a href="#" data-doc="sourceCode">${esc(t("Source code"))}</a></div>
         </div>
         <div class="version-line" id="home-version"></div>

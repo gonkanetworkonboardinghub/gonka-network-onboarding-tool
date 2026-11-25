@@ -216,7 +216,7 @@ jobs:
           done
           [ -f "$RUNNER_TEMP/machines.ok" ] || kept="$kept machines"
           echo "KEPT=$kept" >> "$GITHUB_ENV"
-          git config user.name "Gonka Network Onboarding Hub"
+          git config user.name "GNOT data job"
           git config user.email "noreply@thegonkanetworkonboardinghub.com"
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
             git checkout -B data origin/data

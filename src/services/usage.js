@@ -6,7 +6,7 @@
  * written plainly in the app and on the website, because people should never
  * discover this by reading the code.
  *
- * One kind of note goes to The Gonka Network Onboarding Hub:
+ * One kind of note goes to GNOT's website:
  *
  *   "open"   the app was opened:
  *            { kind, install, version, os, at }

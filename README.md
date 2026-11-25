@@ -73,8 +73,8 @@ The short version:
   supported configurations, and this repository's `data` branch for the
   network's figures), GitHub Container Registry (to check node images),
   two public GNK price sources for "Mine it or buy it?" (CoinGecko and
-  CoinPaprika), your own server — and The Gonka
-  Network Onboarding Hub's website, at most once an hour while it is open, to
+  CoinPaprika), your own server — and GNOT's
+  website, at most once an hour while it is open, to
   say it was opened: a random number made for that computer, the app's version
   and whether it is Windows or Mac, nothing else (`src/services/usage.js`).
   That is how the website counts the computers that use the app; the app says
@@ -152,5 +152,5 @@ website/README.md        README of the public releases repository
 
 ## License
 
-Copyright (c) 2026 The Gonka Network Onboarding Hub. All rights reserved.
+Copyright (c) 2026 The Gonka Network Onboarding Tool (GNOT). All rights reserved.
 See [LICENSE](LICENSE).
