@@ -1,9 +1,9 @@
 {
- "asOf": "2026-11-24T15:21:45.529Z",
+ "asOf": "2026-11-24T23:58:14.398Z",
  "ok": true,
  "chain": {
   "version": "v0.2.16-post3",
-  "height": 7217268,
+  "height": 7223063,
   "upgrade": null
  },
  "checkedAgainst": {
@@ -28,6 +28,10 @@
   "feeNgonka": 148424
  },
  "changes": [
+  {
+   "at": "2026-11-24T23:58:14.398Z",
+   "text": "The quickstart's commands changed (0 new, 1 gone)."
+  },
   {
    "at": "2026-11-24T15:21:45.529Z",
    "text": "Gonka tagged v0.2.18-testnet-2 in its code — a sign of what comes next."
@@ -242,7 +246,6 @@
    "export NODE_URL=\"<seed_api_url from server's config.env>\" # e.g. http://node2.gonka.ai:8000",
    "git clone https://github.com/gonka-ai/gonka.git -b feat/glm-5-3-flash-release && \\",
    "git clone https://github.com/gonka-ai/gonka.git -b main && \\",
-   "git clone https://github.com/gonka-ai/gonka.git -b vllm-0.25.1-upgrade && \\",
    "inferenced query inference show-epoch-performance-summary <EPOCH> <YOUR_ADDRESS> --node http://node1.gonka.ai:8000/chain-rpc/ --output json",
    "inferenced register-new-participant \\"
   ],
