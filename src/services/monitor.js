@@ -700,12 +700,23 @@ async function knockHere(url) {
 async function overview(seeds, address, { epochs = 30 } = {}) {
   const [now, mem, raw, file, use] = await Promise.all([epochNow(seeds), members(seeds), host(seeds, address), networkFile(), usageFile()]);
   const me = mem.hosts.find((h) => h.address === address);
-  const [hist, knocked] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), me ? knock(me.url, address) : null]);
+  // Its public address, from the epoch's list or, for a node out of the epoch, from its own record.
+  const url = me ? me.url : ((raw.record && raw.record.participant && raw.record.participant.inference_url) || "");
+  const [hist, knocked] = await Promise.all([history(seeds, mem.epoch || now.index, epochs), url ? knock(url, address) : null]);
   const view = summarise({ address, now, mem, hist, raw });
   view.standing.answers = knocked ? knocked.ok : null;
   // When that was found out: null means just now; a time means the data job's check from GitHub
   // (the website's server cannot reach most hosts itself), which can be hours old.
   view.standing.answersCheckedAt = knocked && knocked.seenAt ? knocked.seenAt : null;
+  // The network keeps each machine's last report for ever, even after the server is gone. Out of the epoch and with a
+  // server that does not answer (or a node the network lists as inactive), those reports say what the machines were
+  // doing, not what they do now: nothing is counted as working.
+  const st = view.standing;
+  if (!st.inEpoch && view.hardware.nodes.length && (st.answers === false || /INACTIVE/i.test(st.status))) {
+    view.hardware.stale = st.answers === false ? "quiet" : "inactive";
+    view.hardware.lastWorking = view.hardware.working;
+    view.hardware.working = 0;
+  }
   view.work = devshardWork(use, address, mem.epoch || now.index);
   view.attention = attention(view);
   // Its weight in H100s, and whether it reports far fewer GPUs than that weight

@@ -1489,7 +1489,7 @@ function monNodeHtml(d) {
         <div class="mon-tile-sub">${esc([monUsd(d.now.estimate), t("the network's own estimate")].filter(Boolean).join(" · "))}</div></div>` : `
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("GPUs"))}${tip(TIPS.nodeGpus)}</div>
         <div class="mon-tile-num">${d.hardware.gpuCount ? esc(monNum(d.hardware.gpuCount)) : "—"}</div>
-        <div class="mon-tile-sub">${d.hardware.gpuCount && st.answers === false ? esc(t("not answering")) : d.hardware.gpuCount ? esc(t(d.hardware.nodes.length === 1 ? "{n} working · 1 machine" : "{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
+        <div class="mon-tile-sub">${d.hardware.gpuCount && d.hardware.stale ? esc(t(d.hardware.stale === "quiet" ? "last reported · server not answering" : "last reported · node inactive")) : d.hardware.gpuCount && st.answers === false ? esc(t("not answering")) : d.hardware.gpuCount ? esc(t(d.hardware.nodes.length === 1 ? "{n} working · 1 machine" : "{n} working · {m} machines", { n: monNum(d.hardware.nodes.filter((n) => /INFERENCE|POC|POW/i.test(n.status)).reduce((x, n) => x + n.gpus.reduce((y, g) => y + g.count, 0), 0)), m: monNum(d.hardware.nodes.length) })) : "&nbsp;"}</div></div>`}
       <div class="mon-tile"><div class="mon-tile-label">${esc(t("Still on its way"))}${tip(TIPS.onItsWay)}</div>
         <div class="mon-tile-num">${esc(monGnkShort(d.money.vesting.total))}</div>
         <div class="mon-tile-sub">${d.money.vesting.total > 0 && d.money.vesting.epochs ? esc([monUsd(d.money.vesting.total), t("unlocking over {n} epochs", { n: d.money.vesting.epochs })].filter(Boolean).join(" · ")) : "&nbsp;"}</div></div>
@@ -1674,7 +1674,12 @@ function monHardwareCard(d) {
   return `
     <div class="card">
       <h3>${esc(t("Hardware the network sees"))}</h3>
-      <p class="small">${esc(t(h.nodes.length === 1 ? "{working} of 1 machine working · {gpus}" : "{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
+      <p class="small">${esc(h.stale
+        ? t(h.nodes.length === 1 ? "1 machine, as it last reported · {gpus}" : "{n} machines, as they last reported · {gpus}", { n: h.nodes.length, gpus: kinds || "—" })
+        : t(h.nodes.length === 1 ? "{working} of 1 machine working · {gpus}" : "{working} of {n} machines working · {gpus}", { working: h.working, n: h.nodes.length, gpus: kinds || "—" }))}</p>
+      ${h.stale ? `<div class="info-banner">${esc(t(h.stale === "quiet"
+        ? "The node is not in this epoch and its server does not answer. The network keeps what each machine last reported, so the states below are old: none of these machines is counted as working."
+        : "The network lists this node as inactive, and it is not in this epoch. The states below are what each machine last reported, not what it is doing now."))}</div>` : ""}
       ${h.underReported ? `<div class="warn-banner">${esc(t("Its weight equals about {n} H100s, but it reports {g} GPUs: it runs far more than it reports. Hosts report their own hardware, and the network does not check it.", { n: monNum(h.h100 || 0), g: monNum(h.gpuCount) }))}</div>` : h.h100 ? `<p class="small">${esc(t("Its weight equals about {n} H100s.", { n: monNum(h.h100) }))}</p>` : ""}
       <div class="mon-table mon-hw-table">
         <div class="mon-row mon-row-head"><span>${esc(t("Machine"))}</span><span>${esc(t("State"))}</span><span>${esc(t("GPUs"))}</span><span>${esc(t("Model"))}</span><span class="r">${esc(t("Proved"))}${tip(TIPS.machineWeight)}</span><span class="r">${esc(t("Counts"))}${tip(TIPS.machineCounts)}</span></div>
@@ -1682,7 +1687,7 @@ function monHardwareCard(d) {
           const ok = /INFERENCE|POC|POW/i.test(n.status);
           return `<div class="mon-row">
             <span class="mono">${esc(n.id)}</span>
-            <span><i class="mon-led ${ok ? "ok" : "bad"}"></i>${esc(n.status || "—")}</span>
+            <span${h.stale ? ` title="${esc(t("What it last reported"))}"` : ""}><i class="mon-led ${h.stale ? "" : ok ? "ok" : "bad"}"></i>${esc(n.status || "—")}</span>
             <span>${esc(n.gpus.map((g) => `${g.count}× ${g.type}${g.memory ? " (" + g.memory + ")" : ""}`).join(", ") || "—")}</span>
             <span>${esc(n.models.map(monModel).join(", ") || "—")}</span>
             <span class="r">${n.pocWeight ? esc(monNum(n.pocWeight)) : "—"}</span>
